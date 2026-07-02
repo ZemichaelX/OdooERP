@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_l10n_et_wht_config_list" model="ir.ui.view">
+        <field name="name">l10n.et.wht.config.list</field>
+        <field name="model">l10n.et.wht.config</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="effective_from"/>
+                <field name="effective_to"/>
+                <field name="rate_standard"/>
+                <field name="rate_punitive"/>
+                <field name="rate_foreign_digital"/>
+                <field name="threshold_goods"/>
+                <field name="threshold_service"/>
+                <field name="punitive_respects_thresholds"/>
+                <field name="source_note"/>
+                <field name="company_id" groups="base.group_multi_company"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_l10n_et_wht_config_form" model="ir.ui.view">
+        <field name="name">l10n.et.wht.config.form</field>
+        <field name="model">l10n.et.wht.config</field>
+        <field name="arch" type="xml">
+            <form>
+                <sheet>
+                    <group>
+                        <group string="Validity">
+                            <field name="effective_from"/>
+                            <field name="effective_to"/>
+                            <field name="company_id" groups="base.group_multi_company"/>
+                        </group>
+                        <group string="Rates &amp; Thresholds">
+                            <field name="rate_standard"/>
+                            <field name="rate_punitive"/>
+                            <field name="rate_foreign_digital"/>
+                            <field name="threshold_goods"/>
+                            <field name="threshold_service"/>
+                            <field name="punitive_respects_thresholds"/>
+                        </group>
+                        <group string="Tax Records (optional overrides)">
+                            <field name="tax_goods_id"/>
+                            <field name="tax_service_id"/>
+                            <field name="tax_punitive_id"/>
+                            <field name="tax_foreign_digital_id"/>
+                        </group>
+                        <group string="Source">
+                            <field name="source_note"/>
+                        </group>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_l10n_et_wht_config" model="ir.actions.act_window">
+        <field name="name">Withholding Tax Configuration</field>
+        <field name="res_model">l10n.et.wht.config</field>
+        <field name="view_mode">list,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Define the effective-dated Ethiopian withholding tax parameters.
+            </p><p>
+                A rate change is a NEW record with a new effective date — historical
+                bills keep the rules of their day.
+            </p>
+        </field>
+    </record>
+</odoo>

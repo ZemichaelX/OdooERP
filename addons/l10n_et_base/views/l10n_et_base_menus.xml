@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <menuitem id="menu_l10n_et_base_config"
+              name="Ethiopian Localization"
+              parent="account.menu_finance_configuration"
+              sequence="99"/>
+    <menuitem id="menu_l10n_et_wht_config"
+              action="action_l10n_et_wht_config"
+              parent="menu_l10n_et_base_config"
+              sequence="10"/>
+    <menuitem id="menu_l10n_et_cash_cap_config"
+              action="action_l10n_et_cash_cap_config"
+              parent="menu_l10n_et_base_config"
+              sequence="20"/>
+</odoo>

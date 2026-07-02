@@ -8,6 +8,7 @@ Run: pytest tests_fast/
 """
 import importlib.util
 import os
+import sys as _sys
 
 import pytest
 
@@ -16,7 +17,6 @@ _CALC = os.path.join(
 )
 _spec = importlib.util.spec_from_file_location("et_payroll_calc", _CALC)
 calc = importlib.util.module_from_spec(_spec)
-import sys as _sys
 _sys.modules[_spec.name] = calc
 _spec.loader.exec_module(calc)
 

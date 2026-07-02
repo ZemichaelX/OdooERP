@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Three partners exercising every WHT path. -->
+    <record id="demo_partner_compliant" model="res.partner">
+        <field name="name">Abyssinia Trading PLC</field>
+        <field name="is_company" eval="True"/>
+        <field name="country_id" ref="base.et"/>
+        <field name="city">Addis Ababa</field>
+        <field name="l10n_et_tin">0011223344</field>
+        <field name="l10n_et_vat_reg_no">VAT-778899</field>
+        <field name="l10n_et_business_licence_no">AA/1234/2016</field>
+        <field name="l10n_et_business_licence_expiry">2030-06-30</field>
+        <field name="l10n_et_name_amharic">አቢሲኒያ ትሬዲንግ</field>
+    </record>
+
+    <record id="demo_partner_no_tin" model="res.partner">
+        <field name="name">Habesha General Services</field>
+        <field name="is_company" eval="True"/>
+        <field name="country_id" ref="base.et"/>
+        <field name="city">Adama</field>
+        <!-- Deliberately no TIN and no licence: punitive 30% WHT path. -->
+    </record>
+
+    <record id="demo_partner_foreign_digital" model="res.partner">
+        <field name="name">CloudServe Digital Inc.</field>
+        <field name="is_company" eval="True"/>
+        <field name="country_id" ref="base.us"/>
+        <field name="l10n_et_is_foreign_digital" eval="True"/>
+    </record>
+
+    <!-- Products: one goods, one service, to exercise both thresholds. -->
+    <record id="demo_product_goods" model="product.product">
+        <field name="name">Imported Office Furniture</field>
+        <field name="type">consu</field>
+        <field name="list_price">60000</field>
+        <field name="standard_price">50000</field>
+    </record>
+
+    <record id="demo_product_service" model="product.product">
+        <field name="name">Business Consulting Service</field>
+        <field name="type">service</field>
+        <field name="list_price">20000</field>
+        <field name="standard_price">15000</field>
+    </record>
+
+    <!-- Posted demo documents on the ET demo company (guarded + idempotent). -->
+    <function model="l10n.et.wht.config" name="_l10n_et_base_generate_demo_documents"/>
+</odoo>

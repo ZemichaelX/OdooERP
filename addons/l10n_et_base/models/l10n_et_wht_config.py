@@ -1,0 +1,297 @@
+# -*- coding: utf-8 -*-
+"""Effective-dated Ethiopian withholding-tax configuration.
+
+Rates, thresholds and the punitive-gating flag are CONFIGURATION DATA (CLAUDE.md
+rule #4): a future rate change is a NEW record with a new effective_from — it must
+never rewrite bills posted under the old rules. The actual math lives in the pure-
+Python reference calculator (reference/et_tax_calc.py); this model only stores and
+serves the parameters.
+"""
+
+from datetime import date
+
+from odoo import Command, api, fields, models
+from odoo.exceptions import ValidationError
+
+from ..reference import et_tax_calc
+
+# Template xml ids of the WHT taxes shipped by this module, by decision kind.
+TEMPLATE_TAX_XMLID_BY_KIND = {
+    "goods": "l10n_et_base_tax_wht_purchase_goods_3",
+    "service": "l10n_et_base_tax_wht_purchase_services_3",
+    "foreign_digital": "l10n_et_base_tax_wht_purchase_foreign_digital_15",
+    "punitive": "l10n_et_base_tax_wht_purchase_punitive_30",
+}
+
+DEFAULT_SOURCE_NOTE = (
+    "WHT 3% goods >20,000 / services >10,000; 30% punitive without TIN+licence; "
+    "15% foreign digital services (Aug 2025 rules, Proc 979/2016 art. 92 lineage). "
+    "Re-verify with the Ministry of Revenue before go-live."
+)
+
+
+class L10nEtWhtConfig(models.Model):
+    _name = "l10n.et.wht.config"
+    _description = "Ethiopian Withholding Tax Configuration (effective-dated)"
+    _order = "effective_from desc"
+
+    name = fields.Char(compute="_compute_name", store=True)
+    effective_from = fields.Date(
+        required=True,
+        help="First date (inclusive) on which this configuration applies.",
+    )
+    effective_to = fields.Date(
+        help="Last date (inclusive) on which this configuration applies. "
+        "Leave empty for open-ended.",
+    )
+    company_id = fields.Many2one(
+        "res.company",
+        required=True,
+        default=lambda self: self.env.company,
+        index=True,
+        help="Configuration is per company; never leaks across companies.",
+    )
+    rate_standard = fields.Float(
+        string="Standard Rate (fraction)",
+        required=True,
+        default=et_tax_calc.DEFAULT_WHT_RATE_STANDARD,
+        help="Domestic WHT rate as a fraction, e.g. 0.03 for 3%.",
+    )
+    rate_punitive = fields.Float(
+        string="Punitive Rate (fraction)",
+        required=True,
+        default=et_tax_calc.DEFAULT_WHT_RATE_PUNITIVE,
+        help="Rate applied when the supplier lacks a TIN and/or a valid business "
+        "licence, e.g. 0.30 for 30%.",
+    )
+    rate_foreign_digital = fields.Float(
+        string="Foreign Digital Rate (fraction)",
+        required=True,
+        default=et_tax_calc.DEFAULT_WHT_RATE_FOREIGN_DIGITAL,
+        help="Rate for foreign digital service providers, e.g. 0.15 for 15%.",
+    )
+    threshold_goods = fields.Float(
+        string="Goods Threshold (ETB)",
+        required=True,
+        default=et_tax_calc.DEFAULT_WHT_THRESHOLD_GOODS,
+        help="Per-transaction goods base ABOVE which WHT applies (exclusive).",
+    )
+    threshold_service = fields.Float(
+        string="Services Threshold (ETB)",
+        required=True,
+        default=et_tax_calc.DEFAULT_WHT_THRESHOLD_SERVICE,
+        help="Per-transaction services base ABOVE which WHT applies (exclusive).",
+    )
+    punitive_respects_thresholds = fields.Boolean(
+        string="Punitive Rate Respects Thresholds",
+        default=True,
+        help="If set (current reading of the Aug 2025 rules), the 30% punitive rate "
+        "only applies above the same goods/services thresholds. Unset for the "
+        "ungated reading (Proc 979/2016 art. 92 predecessor rule) — flippable "
+        "without a code release, pending accountant sign-off.",
+    )
+    source_note = fields.Char(
+        required=True,
+        default=DEFAULT_SOURCE_NOTE,
+        help="Legal source of these figures. Displayed so every go-live re-verifies "
+        "against gazetted proclamation text.",
+    )
+    tax_goods_id = fields.Many2one(
+        "account.tax",
+        string="Goods WHT Tax",
+        check_company=True,
+        domain=[("type_tax_use", "=", "purchase")],
+        help="Tax record used for standard WHT on goods. Empty = the tax shipped by "
+        "this module's chart template.",
+    )
+    tax_service_id = fields.Many2one(
+        "account.tax",
+        string="Services WHT Tax",
+        check_company=True,
+        domain=[("type_tax_use", "=", "purchase")],
+        help="Tax record used for standard WHT on services. Empty = template default.",
+    )
+    tax_punitive_id = fields.Many2one(
+        "account.tax",
+        string="Punitive WHT Tax",
+        check_company=True,
+        domain=[("type_tax_use", "=", "purchase")],
+        help="Tax record used for punitive WHT. Empty = template default.",
+    )
+    tax_foreign_digital_id = fields.Many2one(
+        "account.tax",
+        string="Foreign Digital WHT Tax",
+        check_company=True,
+        domain=[("type_tax_use", "=", "purchase")],
+        help="Tax record used for foreign digital services WHT. Empty = template " "default.",
+    )
+
+    @api.depends("rate_standard", "effective_from", "effective_to")
+    def _compute_name(self):
+        """Human-readable label, e.g. 'WHT 3% from 2025-08-01'."""
+        for config in self:
+            config.name = self.env._(
+                "WHT %(rate).0f%% from %(date_from)s%(date_to)s",
+                rate=config.rate_standard * 100,
+                date_from=config.effective_from or "?",
+                date_to=config.effective_to and self.env._(" to %s", config.effective_to) or "",
+            )
+
+    @api.constrains("effective_from", "effective_to", "company_id")
+    def _check_no_overlap(self):
+        """Two configs for one company must not overlap: the applicable config must
+        be unambiguous for any bill date (historical correctness)."""
+        for config in self:
+            domain = [
+                ("id", "!=", config.id),
+                ("company_id", "=", config.company_id.id),
+                ("effective_from", "<=", config.effective_to or date.max),
+                "|",
+                ("effective_to", "=", False),
+                ("effective_to", ">=", config.effective_from),
+            ]
+            if self.search_count(domain):
+                raise ValidationError(
+                    self.env._(
+                        "Withholding tax configurations must not overlap in "
+                        "time for the same company."
+                    )
+                )
+
+    @api.constrains(
+        "rate_standard",
+        "rate_punitive",
+        "rate_foreign_digital",
+        "threshold_goods",
+        "threshold_service",
+    )
+    def _check_values(self):
+        """Rates are fractions in [0, 1]; thresholds cannot be negative."""
+        for config in self:
+            rates = (config.rate_standard, config.rate_punitive, config.rate_foreign_digital)
+            if any(not 0 <= rate <= 1 for rate in rates):
+                raise ValidationError(
+                    self.env._("WHT rates are fractions: use 0.03 for 3%, not 3.")
+                )
+            if config.threshold_goods < 0 or config.threshold_service < 0:
+                raise ValidationError(self.env._("WHT thresholds cannot be negative."))
+
+    @api.model
+    def _get_config(self, company, on_date=None):
+        """Return the configuration effective for ``company`` on ``on_date``.
+
+        Empty recordset when none applies — the WHT engine then stays inert, so the
+        module is safe to install on non-Ethiopian companies.
+        """
+        on_date = on_date or fields.Date.context_today(self)
+        return self.search(
+            [
+                ("company_id", "=", company.id),
+                ("effective_from", "<=", on_date),
+                "|",
+                ("effective_to", "=", False),
+                ("effective_to", ">=", on_date),
+            ],
+            order="effective_from desc",
+            limit=1,
+        )
+
+    @api.model
+    def _l10n_et_ensure_default(self, company):
+        """Seed the Aug-2025 default configuration for ``company`` if it has none.
+
+        Called when the 'et' chart loads and from the module's post_init hook.
+        Defaults come from the reference calculator (single source of truth) with
+        the mandatory source note.
+        """
+        if not self.search_count([("company_id", "=", company.id)]):
+            self.create(
+                {
+                    "company_id": company.id,
+                    "effective_from": date(2025, 8, 1),
+                    "source_note": DEFAULT_SOURCE_NOTE,
+                }
+            )
+
+    def _l10n_et_get_tax(self, kind):
+        """Return the account.tax record to apply for a WHT decision ``kind``.
+
+        Prefers the explicitly configured tax; falls back to the tax this module
+        ships in the chart template (resolved per company).
+        """
+        self.ensure_one()
+        field_by_kind = {
+            "goods": "tax_goods_id",
+            "service": "tax_service_id",
+            "foreign_digital": "tax_foreign_digital_id",
+            "punitive": "tax_punitive_id",
+        }
+        tax = self[field_by_kind[kind]]
+        if not tax:
+            tax = (
+                self.env["account.chart.template"]
+                .with_company(self.company_id)
+                .ref(TEMPLATE_TAX_XMLID_BY_KIND[kind], raise_if_not_found=False)
+            )
+        return tax
+
+    @api.model
+    def _l10n_et_base_generate_demo_documents(self):
+        """Create demo bills/invoices on the ET demo company (demo data only).
+
+        Exercises every tax path of the localization: 3% WHT on goods, 30%
+        punitive WHT (supplier without TIN), 15% foreign digital WHT and a 15%
+        VAT sale invoice. Guarded (needs the core `l10n_et` demo company on the
+        'et' chart) and idempotent (marker reference), so demo reloads are safe.
+        """
+        company = self.env.ref("base.demo_company_et", raise_if_not_found=False)
+        if not company or company.chart_template != "et":
+            return
+        # Module demo data loads BEFORE the post_init hook, and the demo company's
+        # chart was loaded by core l10n_et before this module registered its
+        # template extension — without the reload below the demo company has
+        # neither the WHT taxes nor the configs, and posting the demo bills
+        # would fail (or silently skip WHT).
+        self.env["account.chart.template"]._l10n_et_base_reload_for_company(company)
+        move_model = self.env["account.move"].with_company(company)
+        if move_model.search_count(
+            [
+                ("company_id", "=", company.id),
+                ("ref", "=", "L10N-ET-BASE-DEMO"),
+            ]
+        ):
+            return
+
+        def create_move(move_type, partner_xmlid, product_xmlid, price):
+            return move_model.create(
+                {
+                    "move_type": move_type,
+                    "partner_id": self.env.ref(f"l10n_et_base.{partner_xmlid}").id,
+                    "invoice_date": "2026-07-01",
+                    "ref": "L10N-ET-BASE-DEMO",
+                    "company_id": company.id,
+                    "invoice_line_ids": [
+                        Command.create(
+                            {
+                                "product_id": self.env.ref(f"l10n_et_base.{product_xmlid}").id,
+                                "quantity": 1,
+                                "price_unit": price,
+                            }
+                        )
+                    ],
+                }
+            )
+
+        moves = (
+            # goods 50,000 from a compliant supplier → 3% WHT = 1,500
+            create_move("in_invoice", "demo_partner_compliant", "demo_product_goods", 50000)
+            # services 15,000 from a no-TIN supplier → punitive 30% = 4,500
+            | create_move("in_invoice", "demo_partner_no_tin", "demo_product_service", 15000)
+            # foreign digital services 8,000 → 15% = 1,200 (no threshold)
+            | create_move(
+                "in_invoice", "demo_partner_foreign_digital", "demo_product_service", 8000
+            )
+            # sale 10,000 → default 15% VAT = 1,500
+            | create_move("out_invoice", "demo_partner_compliant", "demo_product_goods", 10000)
+        )
+        moves.action_post()

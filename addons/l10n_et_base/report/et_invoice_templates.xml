@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Ethiopian VAT invoice layout: company + buyer TIN, sequential number and an
+         explicit per-tax VAT/WHT breakdown. Branding (logo, colors, footer) comes
+         from web.external_layout, so sapian_theme restyling applies automatically. -->
+    <template id="report_et_invoice">
+        <t t-call="web.html_container">
+            <t t-foreach="docs" t-as="o">
+                <t t-call="web.external_layout">
+                    <div class="page">
+                        <h2>
+                            <span t-if="o.move_type == 'out_invoice'">VAT Invoice</span>
+                            <span t-elif="o.move_type == 'out_refund'">Credit Note</span>
+                            <span t-else="">Document</span>
+                            <span t-field="o.name"/>
+                        </h2>
+
+                        <div class="row mt-4">
+                            <div class="col-6">
+                                <strong>Seller</strong>
+                                <div t-field="o.company_id.partner_id.name"/>
+                                <div>TIN: <span t-out="o.company_id.partner_id.l10n_et_tin or '—'"/></div>
+                                <div t-if="o.company_id.partner_id.l10n_et_vat_reg_no">
+                                    VAT Reg. No.:
+                                    <span t-field="o.company_id.partner_id.l10n_et_vat_reg_no"/>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <strong>Buyer</strong>
+                                <div t-field="o.commercial_partner_id.name"/>
+                                <div>TIN: <span t-out="o.commercial_partner_id.l10n_et_tin or '—'"/></div>
+                                <div t-if="o.commercial_partner_id.l10n_et_vat_reg_no">
+                                    VAT Reg. No.:
+                                    <span t-field="o.commercial_partner_id.l10n_et_vat_reg_no"/>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="row mt-3">
+                            <div class="col-4">
+                                Invoice No.: <strong t-field="o.name"/>
+                            </div>
+                            <div class="col-4">
+                                Date: <span t-field="o.invoice_date"/>
+                            </div>
+                            <div class="col-4" t-if="o.invoice_date_due">
+                                Due: <span t-field="o.invoice_date_due"/>
+                            </div>
+                        </div>
+
+                        <table class="table table-sm mt-4">
+                            <thead>
+                                <tr>
+                                    <th>Description</th>
+                                    <th class="text-end">Qty</th>
+                                    <th class="text-end">Unit Price</th>
+                                    <th class="text-end">Taxes</th>
+                                    <th class="text-end">Subtotal</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr t-foreach="o.invoice_line_ids.filtered(lambda l: l.display_type == 'product')"
+                                    t-as="line">
+                                    <td><span t-field="line.name"/></td>
+                                    <td class="text-end"><span t-field="line.quantity"/></td>
+                                    <td class="text-end">
+                                        <span t-out="line.price_unit"
+                                              t-options="{'widget': 'monetary', 'display_currency': o.currency_id}"/>
+                                    </td>
+                                    <td class="text-end">
+                                        <span t-out="', '.join(line.tax_ids.mapped('invoice_label'))"/>
+                                    </td>
+                                    <td class="text-end">
+                                        <span t-field="line.price_subtotal"/>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+
+                        <div class="row justify-content-end">
+                            <div class="col-5">
+                                <table class="table table-sm">
+                                    <tr>
+                                        <td>Untaxed Amount</td>
+                                        <td class="text-end"><span t-field="o.amount_untaxed"/></td>
+                                    </tr>
+                                    <!-- Explicit VAT/WHT breakdown per tax. -->
+                                    <tr t-foreach="o.line_ids.filtered('tax_line_id')" t-as="tax_line">
+                                        <td><span t-field="tax_line.tax_line_id.name"/></td>
+                                        <td class="text-end">
+                                            <span t-out="-tax_line.balance if o.is_sale_document() else tax_line.balance"
+                                                  t-options="{'widget': 'monetary', 'display_currency': o.company_id.currency_id}"/>
+                                        </td>
+                                    </tr>
+                                    <tr class="border-top">
+                                        <td><strong>Total</strong></td>
+                                        <td class="text-end"><strong t-field="o.amount_total"/></td>
+                                    </tr>
+                                </table>
+                            </div>
+                        </div>
+
+                        <p t-if="o.narration" t-field="o.narration"/>
+                    </div>
+                </t>
+            </t>
+        </t>
+    </template>
+</odoo>

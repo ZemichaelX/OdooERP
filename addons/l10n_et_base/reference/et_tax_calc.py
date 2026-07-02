@@ -24,6 +24,7 @@ Sources (re-verify before go-live):
   No public check-digit algorithm is gazetted, so validation is format-only; if MoR
   publishes a checksum, extend ``validate_tin`` here (single source of truth).
 """
+
 from __future__ import annotations
 
 import math
@@ -31,18 +32,18 @@ from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
 
 # --- WHT configuration defaults (fallbacks; the Odoo layer overrides from data) -------
-DEFAULT_WHT_RATE_STANDARD = 0.03          # domestic 3%
-DEFAULT_WHT_RATE_PUNITIVE = 0.30          # 30% when supplier lacks TIN + licence
-DEFAULT_WHT_RATE_FOREIGN_DIGITAL = 0.15   # 15% on foreign digital services
-DEFAULT_WHT_THRESHOLD_GOODS = 20000.0     # per-transaction threshold, goods (exclusive)
-DEFAULT_WHT_THRESHOLD_SERVICE = 10000.0   # per-transaction threshold, services (exclusive)
+DEFAULT_WHT_RATE_STANDARD = 0.03  # domestic 3%
+DEFAULT_WHT_RATE_PUNITIVE = 0.30  # 30% when supplier lacks TIN + licence
+DEFAULT_WHT_RATE_FOREIGN_DIGITAL = 0.15  # 15% on foreign digital services
+DEFAULT_WHT_THRESHOLD_GOODS = 20000.0  # per-transaction threshold, goods (exclusive)
+DEFAULT_WHT_THRESHOLD_SERVICE = 10000.0  # per-transaction threshold, services (exclusive)
 
 # --- Cash-payment cap default ---------------------------------------------------------
-DEFAULT_CASH_CAP = 30000.0                # ETB per party per day (Proc 1395/2025)
+DEFAULT_CASH_CAP = 30000.0  # ETB per party per day (Proc 1395/2025)
 
 # --- TIN format -----------------------------------------------------------------------
-TIN_LENGTH = 10                           # MoR TINs are 10 digits
-_TIN_SEPARATORS = " -/."                  # characters tolerated in user input
+TIN_LENGTH = 10  # MoR TINs are 10 digits
+_TIN_SEPARATORS = " -/."  # characters tolerated in user input
 
 # Supply kinds understood by the WHT calculator.
 KIND_GOODS = "goods"
@@ -127,8 +128,11 @@ def compute_wht(
     if kind == KIND_FOREIGN_DIGITAL:
         amount = _times_rate(base_amount, rate_foreign_digital)
         return WhtResult(
-            True, rate_foreign_digital, amount,
-            "Foreign digital services WHT (15%).", threshold=0.0,
+            True,
+            rate_foreign_digital,
+            amount,
+            "Foreign digital services WHT (15%).",
+            threshold=0.0,
         )
 
     if kind == KIND_SERVICE:
@@ -142,7 +146,9 @@ def compute_wht(
     threshold_gated = compliant or punitive_respects_thresholds
     if threshold_gated and base_amount <= threshold:
         return WhtResult(
-            False, 0.0, 0.0,
+            False,
+            0.0,
+            0.0,
             f"Base {base_amount:,.2f} at/under {kind} threshold {threshold:,.0f} — no WHT.",
             threshold=threshold,
         )
@@ -161,7 +167,7 @@ def compute_wht(
 class CashCapResult:
     """Outcome of a daily cash-payment cap check for one party."""
 
-    total_day: float   # cumulative cash to this party today, including the new payment
+    total_day: float  # cumulative cash to this party today, including the new payment
     cap: float
     exceeded: bool
     excess: float = 0.0  # amount over the cap (0.0 when within cap)
@@ -229,7 +235,8 @@ def validate_tin(tin: str | None) -> TinResult:
         return TinResult(False, "", f"TIN {tin!r} contains non-digit characters.")
     if len(normalized) != TIN_LENGTH:
         return TinResult(
-            False, "",
+            False,
+            "",
             f"TIN must be exactly {TIN_LENGTH} digits; got {len(normalized)}.",
         )
     if len(set(normalized)) == 1:

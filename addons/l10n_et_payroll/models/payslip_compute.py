@@ -6,13 +6,13 @@ tested with pytest, no Odoo needed). We load it by file path to avoid coupling t
 package layout to the standalone test layout."""
 import importlib.util
 import os
+import sys as _sys
 
 from odoo import api, models
 
 _CALC_PATH = os.path.join(os.path.dirname(__file__), "..", "reference", "et_payroll_calc.py")
 _spec = importlib.util.spec_from_file_location("et_payroll_calc", _CALC_PATH)
 _calc = importlib.util.module_from_spec(_spec)
-import sys as _sys
 _sys.modules[_spec.name] = _calc
 _spec.loader.exec_module(_calc)
 

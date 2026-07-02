@@ -63,9 +63,32 @@ Prefer configuration over code. Prefer extending an existing Odoo app over a new
 Re-verify tax/PAYE/pension figures against the Ministry of Revenue before a payroll go-live.
 
 ## Build backlog
-Authoritative phased backlog: docs/01_CLAUDE_CODE_BUILD_SPEC.md (§8). Work it top to bottom.
 Implemented so far: repo skeleton (S0), sapian_core starter (S0-4/S1-1/S1-2),
-l10n_et_payroll PAYE + pension engine (S1-7/S1-8) with tests.
+l10n_et_payroll PAYE + pension engine (S1-7/S1-8) with tests, and l10n_et_base
+Ethiopian accounting (Epic 3: extends core l10n_et chart 'et'; WHT automation
+3%/30%/15% with effective-dated config incl. punitive_respects_thresholds flag;
+cash cap warn/block; partner TIN/licence compliance; WHT certificate + ET VAT
+invoice reports; 33 Odoo tests + 45 fast goldens).
+
+REVISED ORDER (July 2026, token-conscious — supersedes the epic ordering in
+docs/10-claude-code-roadmap.md and 01_CLAUDE_CODE_BUILD_SPEC §8 for now; those
+remain the task-level detail):
+- Epic A — Payroll workflow completion (l10n_et_payroll): payslip batch run,
+  payroll journal posting (salary expense, PAYE/pension payables), bank salary
+  transfer export, branded payslip PDF (EN), PAYE monthly declaration + pension
+  remittance reports. Overtime = manual payslip input line in v1 (no attendance
+  engine). Skip: severance calculator, Amharic payslip, Telebirr payout.
+- Epic B — Statutory reports slice (l10n_et_reports): monthly VAT declaration
+  export + WHT summary (certificate exists from Epic 3). Skip: EC-period columns,
+  IFRS statement engine (use Odoo/OCA reports).
+- Epic C — Thin onboarding + demo tenant: minimal company-profile wizard (TIN,
+  fiscal year, ETB, module picks from sapian_core catalog), light branding only
+  (logo + primary color), one demo tenant (stock, sale, purchase, account, hr +
+  our modules) with realistic Ethiopian demo data.
+- DEFERRED until a client signs (do NOT start even though specs exist):
+  verticals, payments/SMS, e-invoice, Ethiopian calendar, full theme/debrand, BI.
+Goal: a sellable standalone Payroll+HR product and a sellable Essential/Business
+ERP for a generic trader, with minimal token spend.
 
 ## Planning refresh (July 2026): docs/plan-2026/
 docs/plan-2026/ is the v2 master-planning package (researched Jul 2026). Where it and the

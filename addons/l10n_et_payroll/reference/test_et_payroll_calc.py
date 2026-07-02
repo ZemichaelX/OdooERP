@@ -5,7 +5,9 @@ Every expected number here is hand-computed from the 2024/25 monthly PAYE bands
 (tax-free <= 2,000; 15/20/25/30/35% with deductions 300/500/850/1350/2050) and the
 7%/11% pension split. If a band changes, update both the config data AND these goldens.
 """
-import os, sys
+import os
+import sys
+
 sys.path.insert(0, os.path.dirname(__file__))
 
 import pytest

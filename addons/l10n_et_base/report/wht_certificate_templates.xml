@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <template id="report_wht_certificate">
+        <t t-call="web.html_container">
+            <t t-foreach="docs" t-as="o">
+                <t t-call="web.external_layout">
+                    <div class="page">
+                        <h2>Withholding Tax Certificate</h2>
+                        <t t-set="wht_lines" t-value="o._l10n_et_wht_move_lines()"/>
+                        <div t-if="not wht_lines" class="alert alert-warning" role="alert">
+                            No Ethiopian withholding tax lines on this document.
+                        </div>
+                        <t t-else="">
+                            <div class="row mt-4">
+                                <div class="col-6">
+                                    <strong>Withholding Agent (Payer)</strong>
+                                    <div t-field="o.company_id.partner_id.name"/>
+                                    <div>TIN: <span t-out="o.company_id.partner_id.l10n_et_tin or '—'"/></div>
+                                </div>
+                                <div class="col-6">
+                                    <strong>Payee (Supplier)</strong>
+                                    <div t-field="o.commercial_partner_id.name"/>
+                                    <div>TIN: <span t-out="o.commercial_partner_id.l10n_et_tin or '—'"/></div>
+                                    <div t-if="o.commercial_partner_id.l10n_et_business_licence_no">
+                                        Business Licence:
+                                        <span t-field="o.commercial_partner_id.l10n_et_business_licence_no"/>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="row mt-3">
+                                <div class="col-6">
+                                    Document: <span t-field="o.name"/>
+                                </div>
+                                <div class="col-6">
+                                    Date: <span t-field="o.invoice_date"/>
+                                </div>
+                            </div>
+                            <table class="table table-sm mt-4">
+                                <thead>
+                                    <tr>
+                                        <th>Withholding Tax</th>
+                                        <th class="text-end">Taxable Base</th>
+                                        <th class="text-end">Rate</th>
+                                        <th class="text-end">Amount Withheld</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr t-foreach="wht_lines" t-as="line">
+                                        <td><span t-field="line.tax_line_id.name"/></td>
+                                        <td class="text-end">
+                                            <span t-out="line.tax_base_amount"
+                                                  t-options="{'widget': 'monetary', 'display_currency': o.company_id.currency_id}"/>
+                                        </td>
+                                        <td class="text-end">
+                                            <span t-out="abs(line.tax_line_id.amount)"/>%
+                                        </td>
+                                        <td class="text-end">
+                                            <span t-out="abs(line.balance)"
+                                                  t-options="{'widget': 'monetary', 'display_currency': o.company_id.currency_id}"/>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                                <tfoot>
+                                    <tr>
+                                        <td colspan="3" class="text-end"><strong>Total Withheld</strong></td>
+                                        <td class="text-end">
+                                            <strong t-out="sum(abs(l.balance) for l in wht_lines)"
+                                                    t-options="{'widget': 'monetary', 'display_currency': o.company_id.currency_id}"/>
+                                        </td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                            <p class="mt-3">
+                                The amounts above were withheld in accordance with the
+                                Ethiopian withholding tax rules and will be remitted to
+                                the Ministry of Revenue within the statutory period.
+                            </p>
+                            <div class="row mt-5">
+                                <div class="col-6">
+                                    <div>________________________</div>
+                                    <div>Authorized Signature (Withholding Agent)</div>
+                                </div>
+                                <div class="col-6">
+                                    <div>________________________</div>
+                                    <div>Date &amp; Stamp</div>
+                                </div>
+                            </div>
+                        </t>
+                    </div>
+                </t>
+            </t>
+        </t>
+    </template>
+</odoo>

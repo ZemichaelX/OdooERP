@@ -1,0 +1,10 @@
+# Ruff configuration for SapianERP (Odoo 19 addons + pure-Python reference calcs).
+target-version = "py310"
+
+[lint]
+select = ["E4", "E7", "E9", "F"]
+
+[lint.per-file-ignores]
+# Odoo module/tests __init__.py files import submodules for their registration
+# side effects — that's the framework contract, not dead code.
+"**/__init__.py" = ["F401"]

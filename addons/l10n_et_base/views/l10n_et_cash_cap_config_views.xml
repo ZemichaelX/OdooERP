@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_l10n_et_cash_cap_config_list" model="ir.ui.view">
+        <field name="name">l10n.et.cash.cap.config.list</field>
+        <field name="model">l10n.et.cash.cap.config</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="effective_from"/>
+                <field name="effective_to"/>
+                <field name="cap_amount"/>
+                <field name="enforcement"/>
+                <field name="source_note"/>
+                <field name="company_id" groups="base.group_multi_company"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_l10n_et_cash_cap_config_form" model="ir.ui.view">
+        <field name="name">l10n.et.cash.cap.config.form</field>
+        <field name="model">l10n.et.cash.cap.config</field>
+        <field name="arch" type="xml">
+            <form>
+                <sheet>
+                    <group>
+                        <group string="Validity">
+                            <field name="effective_from"/>
+                            <field name="effective_to"/>
+                            <field name="company_id" groups="base.group_multi_company"/>
+                        </group>
+                        <group string="Cap">
+                            <field name="cap_amount"/>
+                            <field name="enforcement"/>
+                            <field name="source_note"/>
+                        </group>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_l10n_et_cash_cap_config" model="ir.actions.act_window">
+        <field name="name">Cash Payment Cap</field>
+        <field name="res_model">l10n.et.cash.cap.config</field>
+        <field name="view_mode">list,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Configure the Proc 1395/2025 daily cash-payment cap.
+            </p><p>
+                Choose whether breaching the cap warns on the payment or blocks it.
+            </p>
+        </field>
+    </record>
+</odoo>

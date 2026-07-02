@@ -1,0 +1,11 @@
+[MASTER]
+load-plugins=pylint_odoo
+
+[ODOOLINT]
+; SapianERP is a proprietary product, not an OCA repository.
+manifest-required-authors=Sapian Technologies PLC
+valid-odoo-versions=19.0
+
+[MESSAGES CONTROL]
+disable=all
+enable=odoolint

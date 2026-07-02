@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Ethiopian compliance page on the partner form. Restricted to accounting
+         users: compliance identifiers are finance data. -->
+    <record id="view_partner_form_l10n_et_compliance" model="ir.ui.view">
+        <field name="name">res.partner.form.l10n.et.compliance</field>
+        <field name="model">res.partner</field>
+        <field name="inherit_id" ref="base.view_partner_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//notebook" position="inside">
+                <page string="Ethiopian Compliance" name="l10n_et_compliance"
+                      groups="account.group_account_invoice">
+                    <group>
+                        <group string="Tax Identification">
+                            <field name="l10n_et_tin"/>
+                            <field name="l10n_et_vat_reg_no"/>
+                            <field name="l10n_et_name_amharic"/>
+                            <field name="l10n_et_is_foreign_digital"/>
+                        </group>
+                        <group string="Business Licence">
+                            <field name="l10n_et_business_licence_no"/>
+                            <field name="l10n_et_business_licence_expiry"/>
+                            <field name="l10n_et_has_valid_licence"/>
+                            <field name="l10n_et_wht_compliant"/>
+                        </group>
+                    </group>
+                </page>
+            </xpath>
+        </field>
+    </record>
+</odoo>

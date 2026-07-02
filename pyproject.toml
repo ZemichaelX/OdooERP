@@ -1,0 +1,4 @@
+[tool.black]
+# 96 matches the pre-existing addon style (payroll module) better than black's 88,
+# keeping future repo-wide formatting churn low.
+line-length = 96
