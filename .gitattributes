@@ -1,0 +1,7 @@
+# Everything text is LF: shell scripts, odoo.conf and compose files are mounted
+# into Linux containers, where CRLF breaks them.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.ico binary
+*.pdf binary

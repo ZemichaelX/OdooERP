@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo noupdate="1">
+    <!--
+      Ethiopia monthly PAYE bands — 2024/25 reform (tax-free <= 2,000; top 35% above 14,000).
+      These are CONFIGURATION records with effective dates. To apply a future proclamation,
+      add NEW records with a new effective_from (and set effective_to on the old ones).
+      Never edit historical bands, so past payslips stay reproducible.
+      VERIFY against the Ministry of Revenue before payroll go-live.
+    -->
+    <record id="paye_band_2024_1" model="l10n.et.paye.band">
+        <field name="lower_bound">0</field>
+        <field name="upper_bound">2000</field>
+        <field name="rate">0.00</field>
+        <field name="deduction">0</field>
+        <field name="effective_from">2024-07-01</field>
+    </record>
+    <record id="paye_band_2024_2" model="l10n.et.paye.band">
+        <field name="lower_bound">2000</field>
+        <field name="upper_bound">4000</field>
+        <field name="rate">0.15</field>
+        <field name="deduction">300</field>
+        <field name="effective_from">2024-07-01</field>
+    </record>
+    <record id="paye_band_2024_3" model="l10n.et.paye.band">
+        <field name="lower_bound">4000</field>
+        <field name="upper_bound">7000</field>
+        <field name="rate">0.20</field>
+        <field name="deduction">500</field>
+        <field name="effective_from">2024-07-01</field>
+    </record>
+    <record id="paye_band_2024_4" model="l10n.et.paye.band">
+        <field name="lower_bound">7000</field>
+        <field name="upper_bound">10000</field>
+        <field name="rate">0.25</field>
+        <field name="deduction">850</field>
+        <field name="effective_from">2024-07-01</field>
+    </record>
+    <record id="paye_band_2024_5" model="l10n.et.paye.band">
+        <field name="lower_bound">10000</field>
+        <field name="upper_bound">14000</field>
+        <field name="rate">0.30</field>
+        <field name="deduction">1350</field>
+        <field name="effective_from">2024-07-01</field>
+    </record>
+    <record id="paye_band_2024_6" model="l10n.et.paye.band">
+        <field name="lower_bound">14000</field>
+        <field name="is_top_band">1</field>
+        <field name="rate">0.35</field>
+        <field name="deduction">2050</field>
+        <field name="effective_from">2024-07-01</field>
+    </record>
+</odoo>

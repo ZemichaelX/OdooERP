@@ -1,0 +1,5 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_paye_band_user,l10n.et.paye.band.user,model_l10n_et_paye_band,base.group_user,1,0,0,0
+access_paye_band_admin,l10n.et.paye.band.admin,model_l10n_et_paye_band,base.group_system,1,1,1,1
+access_pension_config_user,l10n.et.pension.config.user,model_l10n_et_pension_config,base.group_user,1,0,0,0
+access_pension_config_admin,l10n.et.pension.config.admin,model_l10n_et_pension_config,base.group_system,1,1,1,1

@@ -1,0 +1,15 @@
+.env
+*.pyc
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.claude/settings.local.json
+.venv/
+*.log
+/data/
+/filestore/
+.odoo/
+*.sqlite3
+.DS_Store
+.idea/
+.vscode/

@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_sapian_module_catalog_list" model="ir.ui.view">
+        <field name="name">sapian.module.catalog.list</field>
+        <field name="model">sapian.module.catalog</field>
+        <field name="arch" type="xml">
+            <list string="Module Catalog" editable="bottom">
+                <field name="sequence" widget="handle"/>
+                <field name="name"/>
+                <field name="technical_name"/>
+                <field name="category"/>
+                <field name="tier"/>
+                <field name="enabled" widget="boolean_toggle"/>
+                <field name="company_id" groups="base.group_multi_company"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_sapian_module_catalog_form" model="ir.ui.view">
+        <field name="name">sapian.module.catalog.form</field>
+        <field name="model">sapian.module.catalog</field>
+        <field name="arch" type="xml">
+            <form string="Module Catalog Entry">
+                <header>
+                    <button name="action_toggle_enabled" type="object"
+                            string="Enable / Disable" class="btn-primary"/>
+                </header>
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="name"/>
+                            <field name="technical_name"/>
+                            <field name="category"/>
+                            <field name="tier"/>
+                        </group>
+                        <group>
+                            <field name="enabled"/>
+                            <field name="sequence"/>
+                            <field name="company_id" groups="base.group_multi_company"/>
+                        </group>
+                    </group>
+                    <group string="Description">
+                        <field name="description" nolabel="1"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_sapian_module_catalog" model="ir.actions.act_window">
+        <field name="name">Module Catalog</field>
+        <field name="res_model">sapian.module.catalog</field>
+        <field name="view_mode">list,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">Configure which product modules are enabled for this client.</p>
+        </field>
+    </record>
+
+    <menuitem id="menu_sapian_root" name="SapianERP" sequence="5"/>
+    <menuitem id="menu_sapian_config" name="Configuration" parent="menu_sapian_root" sequence="10"/>
+    <menuitem id="menu_sapian_module_catalog" name="Module Catalog"
+              parent="menu_sapian_config" action="action_sapian_module_catalog" sequence="10"/>
+</odoo>
