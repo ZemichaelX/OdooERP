@@ -6,7 +6,8 @@ turn a product module on for a client (see docs/06_CUSTOMIZATION_GUIDE.md, Layer
 Actual installation of the underlying Odoo module is triggered by the onboarding wizard;
 this model records the client's intended configuration and per-module settings.
 """
-from odoo import api, fields, models, _
+
+from odoo import fields, models
 
 
 class SapianModuleCatalog(models.Model):
@@ -16,7 +17,6 @@ class SapianModuleCatalog(models.Model):
 
     name = fields.Char(string="Module", required=True, translate=True)
     technical_name = fields.Char(
-        string="Technical Name",
         required=True,
         help="The Odoo technical module name installed when this entry is enabled "
         "(e.g. 'stock', 'sale', 'l10n_et_payroll').",
@@ -40,24 +40,20 @@ class SapianModuleCatalog(models.Model):
         required=True,
         help="How central the module is to a typical deployment.",
     )
-    enabled = fields.Boolean(string="Enabled", default=False)
+    enabled = fields.Boolean(default=False)
     sequence = fields.Integer(default=10)
     description = fields.Text(translate=True)
     company_id = fields.Many2one(
         "res.company",
-        string="Company",
         required=True,
         default=lambda self: self.env.company,
         index=True,
     )
 
-    _sql_constraints = [
-        (
-            "technical_name_company_uniq",
-            "unique(technical_name, company_id)",
-            "A module can only appear once per company in the catalog.",
-        ),
-    ]
+    _technical_name_company_uniq = models.Constraint(
+        "unique(technical_name, company_id)",
+        "A module can only appear once per company in the catalog.",
+    )
 
     def action_toggle_enabled(self):
         """Flip the enabled flag. In a full build this also queues installation of the
@@ -65,7 +61,3 @@ class SapianModuleCatalog(models.Model):
         for entry in self:
             entry.enabled = not entry.enabled
         return True
-
-    @api.model
-    def name_get(self):
-        return [(rec.id, _("%s") % rec.name) for rec in self]

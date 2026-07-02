@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_l10n_et_payslip_list" model="ir.ui.view">
+        <field name="name">l10n.et.payslip.list</field>
+        <field name="model">l10n.et.payslip</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="name"/>
+                <field name="employee_id"/>
+                <field name="run_id"/>
+                <field name="basic_salary"/>
+                <field name="gross" sum="Total"/>
+                <field name="paye" sum="Total"/>
+                <field name="net_pay" sum="Total"/>
+                <field name="state" widget="badge"
+                       decoration-success="state == 'done'"/>
+                <field name="company_id" groups="base.group_multi_company"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_l10n_et_payslip_form" model="ir.ui.view">
+        <field name="name">l10n.et.payslip.form</field>
+        <field name="model">l10n.et.payslip</field>
+        <field name="arch" type="xml">
+            <form>
+                <sheet>
+                    <div class="oe_title"><h1><field name="name"/></h1></div>
+                    <group>
+                        <group string="Employee">
+                            <field name="employee_id"
+                                   readonly="state == 'done'"/>
+                            <field name="run_id"/>
+                            <field name="date_from"/>
+                            <field name="date_to"/>
+                            <field name="state"/>
+                        </group>
+                        <group string="Salary">
+                            <field name="basic_salary"
+                                   readonly="state == 'done'"/>
+                            <field name="is_citizen"
+                                   readonly="state == 'done'"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Input Lines" name="inputs">
+                            <field name="input_line_ids"
+                                   readonly="state == 'done'">
+                                <list editable="bottom">
+                                    <field name="name"/>
+                                    <field name="category"/>
+                                    <field name="taxable"/>
+                                    <field name="amount"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="Computation" name="computation">
+                            <group>
+                                <group string="Earnings">
+                                    <field name="gross"/>
+                                    <field name="taxable_income"/>
+                                </group>
+                                <group string="Deductions &amp; Net">
+                                    <field name="paye"/>
+                                    <field name="pension_employee"/>
+                                    <field name="pension_employer"/>
+                                    <field name="other_deductions"/>
+                                    <field name="net_pay" class="fw-bold"/>
+                                </group>
+                            </group>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+</odoo>

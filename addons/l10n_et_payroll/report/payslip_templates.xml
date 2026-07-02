@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Branded payslip (EN). Branding via web.external_layout, like the Epic 3
+         invoice, so sapian_theme restyling applies automatically. -->
+    <template id="report_payslip">
+        <t t-call="web.html_container">
+            <t t-foreach="docs" t-as="o">
+                <t t-call="web.external_layout">
+                    <div class="page">
+                        <h2>Payslip <span t-field="o.name"/></h2>
+                        <div class="row mt-3">
+                            <div class="col-6">
+                                <strong>Employer</strong>
+                                <div t-field="o.company_id.name"/>
+                                <div>TIN: <span t-out="o.company_id.partner_id.l10n_et_tin or '—'"/></div>
+                            </div>
+                            <div class="col-6">
+                                <strong>Employee</strong>
+                                <div t-field="o.employee_id.name"/>
+                                <div>TIN: <span t-out="o.employee_id.sudo().l10n_et_tin or '—'"/></div>
+                                <div>Period:
+                                    <span t-field="o.date_from"/> – <span t-field="o.date_to"/>
+                                </div>
+                            </div>
+                        </div>
+
+                        <h5 class="mt-4">Earnings</h5>
+                        <table class="table table-sm">
+                            <thead>
+                                <tr>
+                                    <th>Description</th>
+                                    <th class="text-end">Amount</th>
+                                    <th class="text-center">Taxable</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>Basic Salary</td>
+                                    <td class="text-end"><span t-field="o.basic_salary"/></td>
+                                    <td class="text-center">Yes</td>
+                                </tr>
+                                <tr t-foreach="o.input_line_ids.filtered(lambda l_line: l_line.category == 'earning')"
+                                    t-as="line">
+                                    <td><span t-field="line.name"/></td>
+                                    <td class="text-end"><span t-field="line.amount"/></td>
+                                    <td class="text-center">
+                                        <span t-out="'Yes' if line.taxable else 'No'"/>
+                                    </td>
+                                </tr>
+                                <tr class="fw-bold">
+                                    <td>Gross</td>
+                                    <td class="text-end"><span t-field="o.gross"/></td>
+                                    <td/>
+                                </tr>
+                            </tbody>
+                        </table>
+
+                        <h5 class="mt-3">Deductions</h5>
+                        <table class="table table-sm">
+                            <tbody>
+                                <tr>
+                                    <td>PAYE (on taxable income <span t-field="o.taxable_income"/>)</td>
+                                    <td class="text-end"><span t-field="o.paye"/></td>
+                                </tr>
+                                <tr>
+                                    <td>Pension — Employee (7%)</td>
+                                    <td class="text-end"><span t-field="o.pension_employee"/></td>
+                                </tr>
+                                <tr t-foreach="o.input_line_ids.filtered(lambda l_line: l_line.category == 'deduction')"
+                                    t-as="line">
+                                    <td><span t-field="line.name"/></td>
+                                    <td class="text-end"><span t-field="line.amount"/></td>
+                                </tr>
+                            </tbody>
+                        </table>
+
+                        <div class="row justify-content-end mt-3">
+                            <div class="col-5">
+                                <table class="table table-sm">
+                                    <tr class="fw-bold border-top">
+                                        <td>NET PAY</td>
+                                        <td class="text-end"><span t-field="o.net_pay"/></td>
+                                    </tr>
+                                    <tr class="text-muted">
+                                        <td>Employer pension (11%), not deducted</td>
+                                        <td class="text-end"><span t-field="o.pension_employer"/></td>
+                                    </tr>
+                                </table>
+                            </div>
+                        </div>
+                        <p class="text-muted mt-3">
+                            PAYE and pension per the configuration effective on
+                            <span t-field="o.date_to"/>. Re-verify rates with the
+                            Ministry of Revenue before go-live.
+                        </p>
+                    </div>
+                </t>
+            </t>
+        </t>
+    </template>
+</odoo>

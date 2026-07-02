@@ -64,11 +64,15 @@ Re-verify tax/PAYE/pension figures against the Ministry of Revenue before a payr
 
 ## Build backlog
 Implemented so far: repo skeleton (S0), sapian_core starter (S0-4/S1-1/S1-2),
-l10n_et_payroll PAYE + pension engine (S1-7/S1-8) with tests, and l10n_et_base
+l10n_et_payroll PAYE + pension engine (S1-7/S1-8) with tests, l10n_et_base
 Ethiopian accounting (Epic 3: extends core l10n_et chart 'et'; WHT automation
 3%/30%/15% with effective-dated config incl. punitive_respects_thresholds flag;
 cash cap warn/block; partner TIN/licence compliance; WHT certificate + ET VAT
-invoice reports; 33 Odoo tests + 45 fast goldens).
+invoice reports; 33 Odoo tests + 45 fast goldens), and Epic A payroll workflow
+(l10n_et_payroll v2: batch runs on hr.version wages — no hr_contract in Odoo 19;
+input lines; aggregated PAY-journal posting; bank CSV; payslip PDF; PAYE
+declaration + pension remittance with missing-TIN/POESSA-ID warnings; employee
+TIN + pension ID fields; 21 Odoo tests). NEXT: Epic B.
 
 REVISED ORDER (July 2026, token-conscious — supersedes the epic ordering in
 docs/10-claude-code-roadmap.md and 01_CLAUDE_CODE_BUILD_SPEC §8 for now; those

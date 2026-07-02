@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Demo payroll on the ET demo company: 3 employees (both golden cases +
+         below-threshold), one deliberately missing a POESSA pension ID to show
+         the statutory-report warning; run confirmed, bank file exported.
+         Everything is created in python (guarded + idempotent) because employee
+         wages live on hr.version records. -->
+    <function model="l10n.et.payroll.run" name="_l10n_et_payroll_generate_demo"/>
+</odoo>

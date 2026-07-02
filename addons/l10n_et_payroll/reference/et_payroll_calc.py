@@ -11,6 +11,7 @@ split. Re-verify against the Ministry of Revenue before any payroll go-live. In 
 build, the bands live in effective-dated data records so historical payslips never change
 when a future rate is amended.
 """
+
 from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import List, Tuple
@@ -20,17 +21,17 @@ from typing import List, Tuple
 # PAYE = rate * taxable_income - deduction  (progressive "quick" formula).
 # upper_bound None means "and above".
 DEFAULT_PAYE_BANDS: List[Tuple[float, float, float, float]] = [
-    (0.0,       2000.0,  0.00,    0.0),
-    (2000.0,    4000.0,  0.15,  300.0),
-    (4000.0,    7000.0,  0.20,  500.0),
-    (7000.0,   10000.0,  0.25,  850.0),
-    (10000.0,  14000.0,  0.30, 1350.0),
-    (14000.0,     None,  0.35, 2050.0),
+    (0.0, 2000.0, 0.00, 0.0),
+    (2000.0, 4000.0, 0.15, 300.0),
+    (4000.0, 7000.0, 0.20, 500.0),
+    (7000.0, 10000.0, 0.25, 850.0),
+    (10000.0, 14000.0, 0.30, 1350.0),
+    (14000.0, None, 0.35, 2050.0),
 ]
 
-DEFAULT_PENSION_EMPLOYEE_RATE = 0.07   # 7% employee
-DEFAULT_PENSION_EMPLOYER_RATE = 0.11   # 11% employer
-DEFAULT_PENSION_CAP = None             # optional monthly insurable-earning cap (ETB); None = uncapped
+DEFAULT_PENSION_EMPLOYEE_RATE = 0.07  # 7% employee
+DEFAULT_PENSION_EMPLOYER_RATE = 0.11  # 11% employer
+DEFAULT_PENSION_CAP = None  # optional monthly insurable-earning cap (ETB); None = uncapped
 
 
 def _round2(value: float) -> float:
@@ -70,9 +71,9 @@ def compute_pension(
 @dataclass
 class PayrollInput:
     basic_salary: float
-    taxable_allowances: float = 0.0      # allowances subject to PAYE
+    taxable_allowances: float = 0.0  # allowances subject to PAYE
     non_taxable_allowances: float = 0.0  # exempt allowances (e.g. transport within limit)
-    other_deductions: float = 0.0        # loans, etc. (post-tax)
+    other_deductions: float = 0.0  # loans, etc. (post-tax)
     is_citizen: bool = True
 
 

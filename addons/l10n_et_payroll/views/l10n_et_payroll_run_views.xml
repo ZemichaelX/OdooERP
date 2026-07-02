@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_l10n_et_payroll_run_list" model="ir.ui.view">
+        <field name="name">l10n.et.payroll.run.list</field>
+        <field name="model">l10n.et.payroll.run</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="name"/>
+                <field name="date_from"/>
+                <field name="date_to"/>
+                <field name="payslip_count"/>
+                <field name="total_gross" sum="Total"/>
+                <field name="total_net" sum="Total"/>
+                <field name="state" widget="badge"
+                       decoration-success="state == 'done'"/>
+                <field name="company_id" groups="base.group_multi_company"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_l10n_et_payroll_run_form" model="ir.ui.view">
+        <field name="name">l10n.et.payroll.run.form</field>
+        <field name="model">l10n.et.payroll.run</field>
+        <field name="arch" type="xml">
+            <form>
+                <header>
+                    <button name="action_generate_payslips" type="object"
+                            string="Generate Payslips" class="btn-primary"
+                            invisible="state != 'draft'"/>
+                    <button name="action_confirm" type="object"
+                            string="Confirm &amp; Post" class="btn-primary"
+                            invisible="state != 'draft'"
+                            groups="hr.group_hr_manager"/>
+                    <button name="action_export_bank_file" type="object"
+                            string="Export Bank File"
+                            invisible="state != 'done'"/>
+                    <button name="action_print_paye_declaration" type="object"
+                            string="PAYE Declaration"
+                            invisible="state != 'done'"/>
+                    <button name="action_print_pension_schedule" type="object"
+                            string="Pension Schedule"
+                            invisible="state != 'done'"/>
+                    <button name="action_reset_to_draft" type="object"
+                            string="Reset to Draft"
+                            invisible="state != 'done'"
+                            groups="hr.group_hr_manager"/>
+                    <field name="state" widget="statusbar"/>
+                </header>
+                <sheet>
+                    <div class="oe_title"><h1><field name="name"/></h1></div>
+                    <group>
+                        <group>
+                            <field name="date_from" readonly="state != 'draft'"/>
+                            <field name="date_to" readonly="state != 'draft'"/>
+                            <field name="company_id"
+                                   groups="base.group_multi_company"/>
+                        </group>
+                        <group>
+                            <field name="move_id"/>
+                            <field name="total_gross"/>
+                            <field name="total_paye"/>
+                            <field name="total_net"/>
+                            <field name="bank_export_file"
+                                   filename="bank_export_filename"
+                                   invisible="not bank_export_file"/>
+                            <field name="bank_export_filename" invisible="1"/>
+                        </group>
+                    </group>
+                    <group string="Employees">
+                        <field name="employee_ids" nolabel="1"
+                               widget="many2many_tags"
+                               readonly="state != 'draft'"/>
+                    </group>
+                    <notebook>
+                        <page string="Payslips" name="payslips">
+                            <field name="payslip_ids" readonly="1">
+                                <list>
+                                    <field name="employee_id"/>
+                                    <field name="basic_salary"/>
+                                    <field name="gross"/>
+                                    <field name="paye"/>
+                                    <field name="pension_employee"/>
+                                    <field name="pension_employer"/>
+                                    <field name="other_deductions"/>
+                                    <field name="net_pay"/>
+                                </list>
+                            </field>
+                        </page>
+                    </notebook>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_l10n_et_payroll_run" model="ir.actions.act_window">
+        <field name="name">Payroll Runs</field>
+        <field name="res_model">l10n.et.payroll.run</field>
+        <field name="view_mode">list,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Run the monthly Ethiopian payroll.
+            </p><p>
+                Generate payslips from employee wages, add overtime/bonus/deduction
+                lines, then confirm to post the payroll journal entry.
+            </p>
+        </field>
+    </record>
+</odoo>

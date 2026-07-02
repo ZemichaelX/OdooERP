@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Multi-company isolation: payroll never leaks across companies
+         (CLAUDE.md rule #3). -->
+    <record id="l10n_et_payroll_run_company_rule" model="ir.rule">
+        <field name="name">Ethiopian Payroll Run: multi-company</field>
+        <field name="model_id" ref="model_l10n_et_payroll_run"/>
+        <field name="domain_force">[('company_id', 'in', company_ids)]</field>
+    </record>
+
+    <record id="l10n_et_payslip_company_rule" model="ir.rule">
+        <field name="name">Ethiopian Payslip: multi-company</field>
+        <field name="model_id" ref="model_l10n_et_payslip"/>
+        <field name="domain_force">[('company_id', 'in', company_ids)]</field>
+    </record>
+
+    <record id="l10n_et_payslip_input_company_rule" model="ir.rule">
+        <field name="name">Ethiopian Payslip Input: multi-company</field>
+        <field name="model_id" ref="model_l10n_et_payslip_input"/>
+        <field name="domain_force">[('company_id', 'in', company_ids)]</field>
+    </record>
+</odoo>

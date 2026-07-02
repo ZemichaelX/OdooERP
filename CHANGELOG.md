@@ -4,6 +4,26 @@ All notable changes to SapianERP. Epics per `docs/plan-2026/10-claude-code-roadm
 
 ## [Unreleased]
 
+### Epic A — `l10n_et_payroll` payroll workflow completion ✅ (2026-07-02)
+- Monthly payroll runs on core `hr` (Odoo 19 has no hr_contract/hr_payroll:
+  own light models; wages from `hr.version`): payslip generation, manual input
+  lines (taxable/exempt earnings, post-tax deductions), freeze-on-confirm.
+- Aggregated payroll journal posting to an auto-created `PAY` journal with
+  per-company account config auto-resolved from the Ethiopian chart (golden:
+  10,000 basic → expenses 11,100; payables 1,650 PAYE + 1,800 pension + 7,650
+  net; balanced). Idempotent confirm/reset with chatter audit trail.
+- Employee statutory identifiers: TIN (validated via the l10n_et_base reference
+  calculator) + POESSA pension ID; statutory reports warn on missing ones.
+- Generic bank salary transfer CSV (name/bank/account/net + totals row).
+- QWeb reports (EN, `web.external_layout`): payslip PDF, PAYE monthly
+  declaration (TIN per row), pension remittance schedule (POESSA ID per row).
+- Fixed en route: pension config now effective-date filtered in the compute
+  helper (was latest-record); Odoo 19 `_sql_constraints` → `models.Constraint`
+  (payroll + sapian_core); sapian_core deprecated `name_get` removed; manifests
+  cleaned. 21 integration tests; demo payroll (3 employees, one missing pension
+  ID for the warning path) on the ET demo company; install/uninstall/reinstall
+  verified.
+
 ### Epic 3 — `l10n_et_base` Ethiopian accounting localization ✅ (2026-07-02)
 - Reference calculators (`addons/l10n_et_base/reference/et_tax_calc.py`, pure Python,
   no Odoo): WHT applicability + amount (3% goods > 20k / services > 10k, punitive 30%,

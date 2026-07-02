@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <menuitem id="menu_l10n_et_payroll_root"
+              name="Ethiopian Payroll"
+              parent="hr.menu_hr_root"
+              sequence="60"
+              groups="hr.group_hr_user"/>
+    <menuitem id="menu_l10n_et_payroll_run"
+              action="action_l10n_et_payroll_run"
+              parent="menu_l10n_et_payroll_root"
+              sequence="10"/>
+</odoo>

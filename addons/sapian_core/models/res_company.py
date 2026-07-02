@@ -3,6 +3,7 @@
 
 Kept intentionally small in the starter scaffold. This is where Ethiopian defaults and
 branding hooks attach (see docs/06_CUSTOMIZATION_GUIDE.md, Layer 2)."""
+
 from odoo import fields, models
 
 

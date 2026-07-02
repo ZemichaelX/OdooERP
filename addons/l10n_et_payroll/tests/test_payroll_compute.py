@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """Odoo-level test: the compute helper reads seeded bands/pension and matches goldens."""
+
 from odoo.tests import TransactionCase, tagged
 
 

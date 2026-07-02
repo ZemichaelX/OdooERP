@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """Effective-dated pension configuration (rates + optional insurable cap)."""
+
 from odoo import fields, models
 
 
@@ -9,8 +10,8 @@ class L10nEtPensionConfig(models.Model):
     _order = "effective_from desc"
 
     name = fields.Char(default="Pension Configuration")
-    employee_rate = fields.Float(string="Employee Rate", default=0.07)
-    employer_rate = fields.Float(string="Employer Rate", default=0.11)
+    employee_rate = fields.Float(default=0.07)
+    employer_rate = fields.Float(default=0.11)
     insurable_cap = fields.Float(
         string="Monthly Insurable Cap",
         default=0.0,

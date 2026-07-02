@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """Effective-dated PAYE bands. Rates are configuration data, not code (CLAUDE.md rule #4)."""
+
 from odoo import fields, models, api
 
 
@@ -15,7 +16,7 @@ class L10nEtPayeBand(models.Model):
     )
     is_top_band = fields.Boolean(string="Top Band (and above)", default=False)
     rate = fields.Float(string="Rate (fraction)", required=True, help="e.g. 0.15 for 15%.")
-    deduction = fields.Float(string="Deduction", required=True, default=0.0)
+    deduction = fields.Float(required=True, default=0.0)
     effective_from = fields.Date(required=True, default=fields.Date.context_today)
     effective_to = fields.Date()
     company_id = fields.Many2one(
@@ -36,7 +37,9 @@ class L10nEtPayeBand(models.Model):
         domain = [
             ("company_id", "=", company.id),
             ("effective_from", "<=", on_date),
-            "|", ("effective_to", "=", False), ("effective_to", ">=", on_date),
+            "|",
+            ("effective_to", "=", False),
+            ("effective_to", ">=", on_date),
         ]
         bands = self.search(domain, order="lower_bound asc")
         return [

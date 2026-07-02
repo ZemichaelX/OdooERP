@@ -1,0 +1,156 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- PAYE monthly declaration: one row per employee with TIN — MoR rejects
+         filings without identifiers, hence the warning banner. -->
+    <template id="report_paye_declaration">
+        <t t-call="web.html_container">
+            <t t-foreach="docs" t-as="o">
+                <t t-call="web.external_layout">
+                    <div class="page">
+                        <h2>PAYE Monthly Declaration — <span t-field="o.name"/></h2>
+                        <div class="row mt-3">
+                            <div class="col-6">
+                                <strong>Employer:</strong> <span t-field="o.company_id.name"/><br/>
+                                TIN: <span t-out="o.company_id.partner_id.l10n_et_tin or '—'"/>
+                            </div>
+                            <div class="col-6">
+                                <strong>Period:</strong>
+                                <span t-field="o.date_from"/> – <span t-field="o.date_to"/>
+                            </div>
+                        </div>
+
+                        <t t-set="warnings" t-value="o._l10n_et_identifier_warnings()"/>
+                        <div t-if="warnings" class="alert alert-warning mt-3" role="alert">
+                            <strong>Fix before filing:</strong>
+                            <ul>
+                                <li t-foreach="warnings" t-as="warning">
+                                    <span t-out="warning"/>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <table class="table table-sm mt-3">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>Employee</th>
+                                    <th>Employee TIN</th>
+                                    <th class="text-end">Taxable Income</th>
+                                    <th class="text-end">PAYE</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr t-foreach="o.payslip_ids.sorted(lambda s: s.employee_id.name or '')"
+                                    t-as="slip">
+                                    <td><span t-out="slip_index + 1"/></td>
+                                    <td><span t-field="slip.employee_id.name"/></td>
+                                    <td>
+                                        <span t-out="slip.employee_id.sudo().l10n_et_tin or ''"/>
+                                        <strong t-if="not slip.employee_id.sudo().l10n_et_tin"
+                                                class="text-danger">MISSING</strong>
+                                    </td>
+                                    <td class="text-end"><span t-field="slip.taxable_income"/></td>
+                                    <td class="text-end"><span t-field="slip.paye"/></td>
+                                </tr>
+                            </tbody>
+                            <tfoot>
+                                <tr class="fw-bold">
+                                    <td colspan="4" class="text-end">Total PAYE payable</td>
+                                    <td class="text-end"><span t-field="o.total_paye"/></td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                        <p class="text-muted">
+                            Remit to the Ministry of Revenue within 30 days of
+                            month end. Figures per the PAYE bands effective on
+                            <span t-field="o.date_to"/>.
+                        </p>
+                    </div>
+                </t>
+            </t>
+        </t>
+    </template>
+
+    <!-- Pension remittance schedule: per employee basic, EE 7%, ER 11%, POESSA ID. -->
+    <template id="report_pension_schedule">
+        <t t-call="web.html_container">
+            <t t-foreach="docs" t-as="o">
+                <t t-call="web.external_layout">
+                    <div class="page">
+                        <h2>Pension Remittance Schedule — <span t-field="o.name"/></h2>
+                        <div class="row mt-3">
+                            <div class="col-6">
+                                <strong>Employer:</strong> <span t-field="o.company_id.name"/><br/>
+                                TIN: <span t-out="o.company_id.partner_id.l10n_et_tin or '—'"/>
+                            </div>
+                            <div class="col-6">
+                                <strong>Period:</strong>
+                                <span t-field="o.date_from"/> – <span t-field="o.date_to"/>
+                            </div>
+                        </div>
+
+                        <t t-set="warnings" t-value="o._l10n_et_identifier_warnings()"/>
+                        <div t-if="warnings" class="alert alert-warning mt-3" role="alert">
+                            <strong>Fix before filing:</strong>
+                            <ul>
+                                <li t-foreach="warnings" t-as="warning">
+                                    <span t-out="warning"/>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <t t-set="pension_slips"
+                           t-value="o.payslip_ids.filtered('is_citizen').sorted(lambda s: s.employee_id.name or '')"/>
+                        <table class="table table-sm mt-3">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>Employee</th>
+                                    <th>Pension ID (POESSA)</th>
+                                    <th class="text-end">Basic Salary</th>
+                                    <th class="text-end">Employee 7%</th>
+                                    <th class="text-end">Employer 11%</th>
+                                    <th class="text-end">Total 18%</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr t-foreach="pension_slips" t-as="slip">
+                                    <td><span t-out="slip_index + 1"/></td>
+                                    <td><span t-field="slip.employee_id.name"/></td>
+                                    <td>
+                                        <span t-out="slip.employee_id.sudo().l10n_et_pension_id or ''"/>
+                                        <strong t-if="not slip.employee_id.sudo().l10n_et_pension_id"
+                                                class="text-danger">MISSING</strong>
+                                    </td>
+                                    <td class="text-end"><span t-field="slip.basic_salary"/></td>
+                                    <td class="text-end"><span t-field="slip.pension_employee"/></td>
+                                    <td class="text-end"><span t-field="slip.pension_employer"/></td>
+                                    <td class="text-end">
+                                        <span t-out="slip.pension_employee + slip.pension_employer"
+                                              t-options="{'widget': 'monetary', 'display_currency': o.currency_id}"/>
+                                    </td>
+                                </tr>
+                            </tbody>
+                            <tfoot>
+                                <tr class="fw-bold">
+                                    <td colspan="4" class="text-end">Totals</td>
+                                    <td class="text-end"><span t-field="o.total_pension_employee"/></td>
+                                    <td class="text-end"><span t-field="o.total_pension_employer"/></td>
+                                    <td class="text-end">
+                                        <span t-out="o.total_pension_employee + o.total_pension_employer"
+                                              t-options="{'widget': 'monetary', 'display_currency': o.currency_id}"/>
+                                    </td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                        <p class="text-muted">
+                            Remit to POESSA within 30 days of month end
+                            (Proc 1268/2022: employee 7% / employer 11% of basic
+                            salary, Ethiopian citizens).
+                        </p>
+                    </div>
+                </t>
+            </t>
+        </t>
+    </template>
+</odoo>
