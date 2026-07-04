@@ -45,6 +45,7 @@ class SapianDemoTrader(models.AbstractModel):
         existing = self.env["res.company"].search([("name", "=", company_name)], limit=1)
         if existing:
             return existing
+        self._archive_core_demo_companies()
         company = self._onboard_company(company_name)
         # stock only auto-creates warehouses for new companies in TEST mode
         # (stock/models/res_company.py); at demo-load time we must create it
@@ -63,6 +64,21 @@ class SapianDemoTrader(models.AbstractModel):
         demo._run_payroll(employees)
         demo._create_report_periods()
         return company
+
+    @api.model
+    def _archive_core_demo_companies(self):
+        """Archive the extra Odoo core demo companies so the company switcher
+        of a demo DB only shows real companies (the main company is kept — it
+        is the login company and gets renamed via the wizard in real use)."""
+        main_company = self.env.ref("base.main_company")
+        clutter = self.env["res.company"].search(
+            [
+                ("name", "in", ["My US Company", "My Company (Chicago)"]),
+                ("id", "!=", main_company.id),
+            ]
+        )
+        if clutter:
+            clutter.write({"active": False})
 
     @api.model
     def _onboard_company(self, company_name):

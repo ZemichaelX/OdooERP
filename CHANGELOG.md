@@ -4,6 +4,32 @@ All notable changes to SapianERP. Epics per `docs/plan-2026/10-claude-code-roadm
 
 ## [Unreleased]
 
+### Bug fix — onboarding wizard web path ✅ (2026-07-04)
+Found by manual browser testing (container tests never exercised web dispatch);
+reproduced and verified over XML-RPC against a live server.
+- Root cause #1: applying to a company with existing accounting crashed on the
+  ETB currency write ("cannot change the currency … journal items exist") and
+  rolled the whole onboarding back → "lost" name/TIN/logo/color. Currency and
+  chart-'et' loading are now guarded (skip + warning on the company partner's
+  chatter); chart 'et' is only loaded on companies WITHOUT a chart.
+- Root cause #2: the wizard dialog stayed the web client's restorable URL
+  action → reopened on refresh/company switch, blank screen on close. Apply and
+  Cancel now both redirect to the apps home (`/odoo`), which also reloads the
+  new company identity (name/logo/color) immediately.
+- Post-install writes are committed explicitly after the mid-install registry
+  swap (module installation already committed once; a later failure can no
+  longer take the post-install writes down).
+- `res.company.sapian_onboarding_done` completion flag; the onboarding menu is
+  now a router: wizard while not onboarded, module catalog afterwards (admin-
+  only menu). Reopening prefills all values from the company — re-applying can
+  never silently erase branding.
+- Logo validated at the wizard with Odoo's own image pipeline (exactly what
+  `res.company.logo` accepts) — bad files fail early with a clear message.
+- Demo cleanliness: provisioning archives the core demo companies ("My US
+  Company", "My Company (Chicago)"); the switcher shows only real companies.
+- 4 new HttpCase browser-path tests (apply persistence + redirect, prefill,
+  cancel, menu router); full suite now 90 integration + 67 fast.
+
 ### Epic C — onboarding wizard + demo trader tenant ✅ (2026-07-04) — BUILD PHASE COMPLETE
 - `sapian_core` v2: `sapian.onboarding.wizard` — company profile (name, TIN,
   address, fiscal year calendar/Ethiopian, ETB), light branding (logo + one

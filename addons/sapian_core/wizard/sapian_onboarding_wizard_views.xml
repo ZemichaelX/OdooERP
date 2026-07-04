@@ -36,7 +36,9 @@
                 <footer>
                     <button name="action_apply" type="object"
                             string="Apply &amp; Install" class="btn-primary"/>
-                    <button string="Cancel" special="cancel"/>
+                    <!-- Object button, not special=cancel: closing must land on
+                         the apps home, never on a blank background. -->
+                    <button name="action_cancel" type="object" string="Cancel"/>
                 </footer>
             </form>
         </field>
@@ -49,10 +51,19 @@
         <field name="target">new</field>
     </record>
 
+    <!-- Router: wizard only while the active company is not onboarded; the
+         module catalog afterwards. Admin-only via the menu group. -->
+    <record id="action_server_open_onboarding" model="ir.actions.server">
+        <field name="name">Open Onboarding</field>
+        <field name="model_id" ref="model_sapian_onboarding_wizard"/>
+        <field name="state">code</field>
+        <field name="code">action = env["sapian.onboarding.wizard"].action_open_onboarding()</field>
+    </record>
+
     <menuitem id="menu_sapian_onboarding"
               name="Onboarding"
               parent="menu_sapian_config"
-              action="action_sapian_onboarding_wizard"
+              action="action_server_open_onboarding"
               sequence="5"
               groups="base.group_system"/>
 </odoo>

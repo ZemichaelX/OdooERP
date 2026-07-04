@@ -23,6 +23,12 @@ Install with demo data enabled; demo/sales use only.
 All dates pinned inside July 2026 → single clean period per statutory report,
 wall-clock independent.
 
+## Where the demo lives
+Local scratch databases carrying the Selam tenant: **`scratch_final`** (primary,
+used for manual UI testing) and `scratch_epicC3` / `scratch_bugfix` (regression
+copies). Provisioning archives the Odoo core demo companies ("My US Company",
+"My Company (Chicago)") so the company switcher shows only real companies.
+
 ## Verification
 `tests/test_demo_trader_e2e.py` re-runs the exact provisioning code on a test
 company and asserts every hand-computed total above plus report renders and

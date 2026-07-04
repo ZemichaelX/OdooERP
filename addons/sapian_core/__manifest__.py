@@ -1,6 +1,6 @@
 {
     "name": "SapianERP Core",
-    "version": "19.0.2.0.0",
+    "version": "19.0.2.1.0",
     "summary": "Product base: company setup, Ethiopian defaults, a module catalog "
     "with on/off toggles and the onboarding wizard (company profile, module picks, "
     "light branding, Ethiopian defaults). The dependency every other "

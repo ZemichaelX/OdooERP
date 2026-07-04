@@ -20,3 +20,10 @@ class ResCompany(models.Model):
         string="Default Interface Language",
         default="en_US",
     )
+    sapian_onboarding_done = fields.Boolean(
+        string="Onboarding Completed",
+        default=False,
+        help="Set when the SapianERP onboarding wizard completes successfully for "
+        "this company; the onboarding menu then routes to the module catalog "
+        "instead of reopening the wizard.",
+    )

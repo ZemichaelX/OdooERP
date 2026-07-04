@@ -111,6 +111,10 @@ severance, Amharic payslips.
 - VAT on imported services is modeled as ordinary input VAT in demo data; real treatment is
   likely reverse-charge — confirm with accountant before first client with foreign service
   purchases. No code change now.
+- Selam demo tenant lives on local DBs `scratch_final` (primary, manually UI-tested) and
+  `scratch_bugfix`/`scratch_epicC3` (regression copies). Onboarding wizard web-path bugs
+  fixed 2026-07-04 (see CHANGELOG): container tests don't exercise web dispatch — for
+  wizard-like flows, verify over HttpCase AND live XML-RPC before calling it done.
 
 ## Tone with the user
 
