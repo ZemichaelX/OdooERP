@@ -4,6 +4,30 @@ All notable changes to SapianERP. Epics per `docs/plan-2026/10-claude-code-roadm
 
 ## [Unreleased]
 
+### Epic C — onboarding wizard + demo trader tenant ✅ (2026-07-04) — BUILD PHASE COMPLETE
+- `sapian_core` v2: `sapian.onboarding.wizard` — company profile (name, TIN,
+  address, fiscal year calendar/Ethiopian, ETB), light branding (logo + one
+  primary color; external-layout reports and login pick them up natively),
+  module picks from a self-seeding standard catalog (7 sellable entries),
+  installs the picked modules and applies Ethiopian defaults via the existing
+  loaders. Proven unattended on a fresh sapian_core-only DB; idempotent re-run.
+  Registry-replacement mid-install handled explicitly (capture → install →
+  fresh env).
+- `sapian_demo_trader` (new, demo-only): "Selam General Trading PLC" provisioned
+  THROUGH the wizard, one July-2026 month of transactions via the real flows —
+  quotation → delivery → 15% VAT invoices (56,000 base / 8,400 VAT); PO →
+  receipt → bill with 3% WHT (52,000 → 1,560); punitive 30% no-TIN bill
+  (4,500, red MISSING row) and 15% foreign digital bill (1,200, "N/A (foreign)");
+  posted payroll (23,800 gross / 3,900 PAYE / 18,374 net, one employee missing
+  a POESSA ID for the banner) + bank file; July VAT declaration (net −2,850
+  credit) and WHT summary (7,260) pre-created, all GL tie-outs green.
+- 14 new integration tests: the golden E2E re-runs the exact provisioning code
+  and pins every hand-computed number. Fixed en route: stock only auto-creates
+  warehouses for new companies in test mode — provisioning creates it
+  explicitly.
+- **The sellable Payroll+HR wedge and the Essential/Business ERP now exist,
+  demo-able end to end. Next: sales, not code.**
+
 ### Epic B — `l10n_et_reports` statutory reports slice ✅ (2026-07-04)
 - New addon (depends `l10n_et_base`; core l10n_et tax codes + WHT kind markers
   reused, nothing duplicated): monthly VAT declaration (output 15%/zero-rated/

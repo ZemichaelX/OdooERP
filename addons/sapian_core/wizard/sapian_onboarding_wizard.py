@@ -172,9 +172,7 @@ class SapianOnboardingWizard(models.TransientModel):
         """
         company = env["res.company"].browse(company_id)
         if "account.chart.template" in env and company.chart_template != "et":
-            env["account.chart.template"].try_loading(
-                "et", company, install_demo=False
-            )
+            env["account.chart.template"].try_loading("et", company, install_demo=False)
         if "fiscalyear_last_month" in company._fields:
             company.write(
                 {

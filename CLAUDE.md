@@ -72,10 +72,18 @@ invoice reports; 33 Odoo tests + 45 fast goldens), Epic A payroll workflow
 (l10n_et_payroll v2: batch runs on hr.version wages — no hr_contract in Odoo 19;
 input lines; aggregated PAY-journal posting; bank CSV; payslip PDF; PAYE
 declaration + pension remittance with missing-TIN/POESSA-ID warnings; employee
-TIN + pension ID fields; 21 Odoo tests), and Epic B statutory reports
+TIN + pension ID fields; 21 Odoo tests), Epic B statutory reports
 (l10n_et_reports: monthly VAT declaration + WHT summary, live from posted moves,
 GL tie-out with visible MISMATCH warnings, PDF + CSV, MISSING-TIN markers;
-18 Odoo tests; verify layouts vs current MoR forms before filing). NEXT: Epic C.
+18 Odoo tests; verify layouts vs current MoR forms before filing), and Epic C
+onboarding + demo tenant (sapian_core wizard: profile/TIN/fiscal year/ETB/logo/
+primary color/module picks, unattended fresh-DB proof; sapian_demo_trader:
+"Selam General Trading PLC" provisioned via the wizard with a golden-tested
+July-2026 month exercising every compliance path; 14 Odoo tests).
+
+BUILD PHASE COMPLETE — next: sales (demo the trader tenant, proposal from the
+DAT template in docs/plan-2026/01). Epics A–C + Epic 3 are the sellable product;
+everything in the DEFERRED list stays unbuilt until a client signs.
 
 REVISED ORDER (July 2026, token-conscious — supersedes the epic ordering in
 docs/10-claude-code-roadmap.md and 01_CLAUDE_CODE_BUILD_SPEC §8 for now; those

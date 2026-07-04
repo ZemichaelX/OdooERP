@@ -26,7 +26,8 @@ working rules. Match the discipline described here — it is why the project has
 
 ## Repo state (all verified green as of handoff)
 
-Commits: `74f7910` baseline (Epics 0–2) → `06301cc` Epic 3 → `697595b` Epic A → `e0ba23f` Epic B.
+Commits: `74f7910` baseline (Epics 0–2) → `06301cc` Epic 3 → `697595b` Epic A → `e0ba23f` Epic B
+→ Epic C (onboarding wizard + sapian_demo_trader; see CHANGELOG). **BUILD PHASE COMPLETE.**
 
 Built and container-verified on real Odoo 19 scratch/demo DBs:
 - **sapian_core** — module catalog + company Ethiopian fields (TIN etc.), branding hooks.
@@ -76,12 +77,19 @@ no-TIN → 4,500 · 8,000 foreign digital → 1,200 (no threshold) · 10,000 sal
    posted moves, GL tie-out with visible MISMATCH warnings, PDF + CSV, MISSING-TIN markers,
    foreign-provider TIN note, 18 tests, golden-verified vs Epic 3 demo docs (output 1,500 /
    input 10,950 / net −9,450 credit; WHT 7,200 = 1,500+4,500+1,200).
-2. **Epic C — thin onboarding + demo tenant** (next build session): minimal company wizard (TIN,
-   fiscal year, ETB, module picks from sapian_core catalog), light branding only (logo + primary
-   color), one demo tenant with stock/sale/purchase/account/hr + our modules, realistic Ethiopian
-   demo data.
-3. After C: STOP building. The sellable Payroll+HR wedge and Essential/Business core exist. Sales
-   motion next (demo, proposal from the DAT template in docs/plan-2026/01).
+2. ~~Epic C — thin onboarding + demo tenant~~ **DONE**: `sapian.onboarding.wizard` in sapian_core
+   (profile/TIN/fiscal year/ETB/logo/primary color/module picks; unattended fresh-DB proof;
+   NOTE: module install replaces the registry mid-method — the wizard captures values first,
+   installs, finishes on a fresh env) + `sapian_demo_trader` ("Selam General Trading PLC",
+   provisioned THROUGH the wizard; July-2026 month exercising every compliance path: 15% VAT
+   56,000/8,400, WHT 1,560+4,500+1,200=7,260 with MISSING + N/A(foreign) rows, payroll
+   23,800/3,900/18,374 with missing-POESSA banner; all tie-outs green; golden E2E tests re-run
+   the exact provisioning code). Gotcha for future work: stock auto-creates warehouses for new
+   companies ONLY in test mode — provision explicitly.
+3. **BUILD PHASE COMPLETE — STOP building.** The sellable Payroll+HR wedge and Essential/Business
+   core exist and are demo-able (install `sapian_demo_trader` with demo data). Sales motion next
+   (demo the trader tenant, proposal from the DAT template in docs/plan-2026/01). Deferred list
+   unchanged; build resumes only when a client signs.
 
 **Deferred — do NOT build even though specs exist:** verticals (pharma/trading/retail), payments/SMS
 (Telebirr/Chapa), e-invoice ITAS, Ethiopian calendar, full white-label/debrand, BI, biometrics,

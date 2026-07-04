@@ -1,9 +1,10 @@
 {
     "name": "SapianERP Core",
-    "version": "19.0.1.0.0",
-    "summary": "Product base: company setup, Ethiopian defaults, and a module catalog "
-    "with on/off toggles. The dependency every other sapian_*/l10n_et_* product "
-    "module builds on. See README.md.",
+    "version": "19.0.2.0.0",
+    "summary": "Product base: company setup, Ethiopian defaults, a module catalog "
+    "with on/off toggles and the onboarding wizard (company profile, module picks, "
+    "light branding, Ethiopian defaults). The dependency every other "
+    "sapian_*/l10n_et_* product module builds on. See README.md.",
     "author": "Sapian Technologies PLC",
     "website": "https://sapiantech.com",
     "category": "Localization/Ethiopia",
@@ -12,6 +13,7 @@
     "data": [
         "security/ir.model.access.csv",
         "views/sapian_module_catalog_views.xml",
+        "wizard/sapian_onboarding_wizard_views.xml",
     ],
     "application": True,
 }

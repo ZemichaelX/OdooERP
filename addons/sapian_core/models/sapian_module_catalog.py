@@ -81,9 +81,7 @@ class SapianModuleCatalog(models.Model):
         Called by the onboarding wizard so a fresh company immediately has the
         sellable module set to pick from; existing entries are never touched.
         """
-        existing = set(
-            self.search([("company_id", "=", company.id)]).mapped("technical_name")
-        )
+        existing = set(self.search([("company_id", "=", company.id)]).mapped("technical_name"))
         for sequence, (name, technical_name, category, tier) in enumerate(
             self.STANDARD_CATALOG, start=10
         ):
