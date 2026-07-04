@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  lint-and-fast-tests:
+    name: Lint + reference golden tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install tooling
+        run: pip install --quiet ruff black pylint pylint-odoo pytest python-dateutil
+
+      - name: Ruff
+        run: ruff check addons tests_fast
+
+      - name: Black
+        run: black --check addons
+
+      - name: pylint-odoo
+        run: pylint addons
+
+      - name: Reference calculator golden tests (no Odoo needed)
+        run: pytest tests_fast/ -q
+
+      - name: Validate XML, CSV and manifests
+        run: |
+          python - <<'EOF'
+          import ast
+          import csv
+          import glob
+          import xml.etree.ElementTree as ET
+
+          for path in glob.glob("addons/**/*.xml", recursive=True):
+              ET.parse(path)
+          for path in glob.glob("addons/**/*.csv", recursive=True):
+              with open(path, newline="", encoding="utf-8") as handle:
+                  widths = {len(row) for row in csv.reader(handle)}
+                  assert len(widths) == 1, f"ragged CSV: {path}"
+          for path in glob.glob("addons/*/__manifest__.py"):
+              with open(path, encoding="utf-8") as handle:
+                  ast.literal_eval(handle.read())
+          print("XML/CSV/manifests OK")
+          EOF
+
+  # The Odoo integration suites (90 tests) need a full Odoo 19 + Postgres
+  # stack and run locally per CLAUDE.md:
+  #   docker compose -f docker/docker-compose.yml run --rm odoo \
+  #     odoo -d scratch -i sapian_demo_trader --with-demo --test-enable \
+  #     --test-tags /sapian_core,/l10n_et_base,/l10n_et_payroll,/l10n_et_reports,/sapian_demo_trader \
+  #     --stop-after-init

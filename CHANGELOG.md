@@ -4,6 +4,30 @@ All notable changes to SapianERP. Epics per `docs/plan-2026/10-claude-code-roadm
 
 ## [Unreleased]
 
+### Cleanup — demo polish, catalog truth, CI, samples ✅ (2026-07-04)
+- Demo login: provisioning archives ALL Odoo placeholder companies (incl. the
+  original main company) and points admin (and every stranded user) at the real
+  companies — a fresh login on the demo DB lands in Selam with a clean company
+  switcher. Wizard shows a prominent "You are onboarding: <company>" banner
+  (users had onboarded a placeholder by accident).
+- Module catalog: Enabled is now explicitly a STATUS mirror of the installed
+  modules — re-synced by a data <function> on every sapian_core upgrade and on
+  demand via a list-header button; the misleading enable/disable toggle is
+  gone (module installation happens via the onboarding wizard; managed
+  per-company uninstall stays deferred). Sync counts 'to upgrade'/'to install'
+  as installed — the upgrade-graph race was exactly the reported drift. List
+  defaults to the current company; search/group-by added.
+- CI: GitHub Actions workflow (lint: ruff/black/pylint-odoo; fast reference
+  goldens; XML/CSV/manifest validation). The Odoo integration suite stays
+  local per CLAUDE.md (documented in the workflow).
+- samples/: seven accountant-review PDFs rendered from the live Selam tenant
+  (payslip, PAYE declaration, pension schedule with the MISSING-POESSA banner,
+  customer VAT invoice, WHT certificate, VAT declaration, WHT summary). Docker
+  image now bundles the Abyssinica SIL font so Amharic renders in PDFs
+  (bilingual names printed as boxes before).
+- Housekeeping: disposable scratch DBs dropped; `scratch_final` documented as
+  THE demo DB (README: login flow, rebuild command).
+
 ### Bug fix — onboarding wizard web path ✅ (2026-07-04)
 Found by manual browser testing (container tests never exercised web dispatch);
 reproduced and verified over XML-RPC against a live server.

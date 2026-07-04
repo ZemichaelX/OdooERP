@@ -4,13 +4,19 @@
         <field name="name">sapian.module.catalog.list</field>
         <field name="model">sapian.module.catalog</field>
         <field name="arch" type="xml">
-            <list string="Module Catalog" editable="bottom">
+            <list string="Module Catalog">
+                <header>
+                    <button name="action_sync_enabled" type="object"
+                            string="Sync with Installed Modules"
+                            display="always"
+                            groups="base.group_system"/>
+                </header>
                 <field name="sequence" widget="handle"/>
                 <field name="name"/>
                 <field name="technical_name"/>
                 <field name="category"/>
                 <field name="tier"/>
-                <field name="enabled" widget="boolean_toggle"/>
+                <field name="enabled" readonly="1"/>
                 <field name="company_id" groups="base.group_multi_company"/>
             </list>
         </field>
@@ -21,10 +27,6 @@
         <field name="model">sapian.module.catalog</field>
         <field name="arch" type="xml">
             <form string="Module Catalog Entry">
-                <header>
-                    <button name="action_toggle_enabled" type="object"
-                            string="Enable / Disable" class="btn-primary"/>
-                </header>
                 <sheet>
                     <group>
                         <group>
@@ -34,7 +36,7 @@
                             <field name="tier"/>
                         </group>
                         <group>
-                            <field name="enabled"/>
+                            <field name="enabled" readonly="1"/>
                             <field name="sequence"/>
                             <field name="company_id" groups="base.group_multi_company"/>
                         </group>
@@ -47,12 +49,37 @@
         </field>
     </record>
 
+    <record id="view_sapian_module_catalog_search" model="ir.ui.view">
+        <field name="name">sapian.module.catalog.search</field>
+        <field name="model">sapian.module.catalog</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="name"/>
+                <field name="technical_name"/>
+                <filter name="current_company" string="Current Company"
+                        domain="[('company_id', 'in', [allowed_company_ids[0]])]"/>
+                <filter name="enabled" string="Enabled"
+                        domain="[('enabled', '=', True)]"/>
+                <group>
+                    <filter name="group_company" string="Company" domain="[]"
+                            context="{'group_by': 'company_id'}"/>
+                    <filter name="group_category" string="Category" domain="[]"
+                            context="{'group_by': 'category'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
     <record id="action_sapian_module_catalog" model="ir.actions.act_window">
         <field name="name">Module Catalog</field>
         <field name="res_model">sapian.module.catalog</field>
         <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="view_sapian_module_catalog_search"/>
+        <field name="context">{"search_default_current_company": 1}</field>
         <field name="help" type="html">
             <p class="o_view_nocontent_smiling_face">Configure which product modules are enabled for this client.</p>
+            <p>Enabled mirrors the installed modules (re-synced on upgrade);
+               install additional modules through the Onboarding wizard.</p>
         </field>
     </record>
 

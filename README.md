@@ -1,29 +1,47 @@
 # SapianERP
 
-A configurable, Ethiopian-localized ERP product built on **Odoo 19 Community**, delivered
-per-client via Docker (with a path to multi-tenant SaaS). See the full master planning
-package in `docs/` for the vision, module specs, architecture, market playbook, and
-customization guide.
+A configurable, Ethiopian-localized ERP product built on **Odoo 19 Community**,
+delivered per-client via Docker (with a path to multi-tenant SaaS). Full master
+planning package in `docs/` (vision, module specs, architecture, market
+playbook, customization guide). Operating rules: `CLAUDE.md`.
 
-## Status
-Starter scaffold. Implemented:
-- `addons/sapian_core` — company setup + module catalog/toggle (product base).
-- `addons/l10n_et_payroll` — Ethiopian PAYE + pension engine (configurable, effective-dated,
-  with a tested pure-Python reference calculator).
+## Status — BUILD PHASE COMPLETE (next: sales)
+- `addons/sapian_core` — product base: onboarding wizard (company profile, TIN,
+  fiscal year, ETB, logo + primary color, module picks), module catalog.
+- `addons/l10n_et_base` — Ethiopian accounting: extends core chart 'et'; 15%
+  VAT + fiscal positions; WHT automation (3% goods/services thresholds, 30%
+  punitive, 15% foreign digital, effective-dated config); cash cap; partner
+  TIN/licence compliance; ET invoice + WHT certificate PDFs.
+- `addons/l10n_et_payroll` — PAYE (Proc 1395/2025) + pension (Proc 1268/2022)
+  engine; monthly batch runs, journal posting, bank CSV, payslip PDF, PAYE
+  declaration + pension remittance schedule.
+- `addons/l10n_et_reports` — monthly VAT declaration + WHT summary, live from
+  posted moves with GL tie-out warnings, PDF + CSV.
+- `addons/sapian_demo_trader` — the sales-demo tenant (see below).
+- Accountant-review PDF samples in `samples/` (rendered from the demo tenant).
 
 ## Quick start
 1. `cp .env.example .env` and set a `DB_PASSWORD`.
 2. `docker compose -f docker/docker-compose.yml up -d`
-3. Open http://localhost:8069, create the `sapianerp` database, install the modules.
+3. Open http://localhost:8069.
+
+## The demo (sales demo + local testing)
+The demo tenant lives in the local database **`scratch_final`**:
+- Log in with `admin` / `admin` → you land directly in
+  **Selam General Trading PLC** (Ethiopian chart, ETB, July-2026 data with
+  every compliance feature firing; company switcher shows only real companies).
+- To rebuild it from scratch on any database:
+  `docker compose -f docker/docker-compose.yml run --rm odoo odoo -d <db> -i sapian_demo_trader --with-demo --stop-after-init`
 
 ## Tests
-Fast payroll math (no Odoo): `pip install pytest && pytest addons/l10n_et_payroll/reference/`
-
-## Layout
-See `CLAUDE.md`.
+- Fast reference goldens (no Odoo): `pytest tests_fast/`
+- Full integration (Odoo 19 + Postgres, ~90 tests):
+  `docker compose -f docker/docker-compose.yml run --rm odoo odoo -d scratch -i sapian_demo_trader --with-demo --test-enable --test-tags /sapian_core,/l10n_et_base,/l10n_et_payroll,/l10n_et_reports,/sapian_demo_trader --stop-after-init`
+- CI (GitHub Actions): lint (ruff/black/pylint-odoo), fast goldens and XML/CSV/
+  manifest validation on every push; the integration suite runs locally.
 
 ## Important
-Tax/PAYE/pension seed values reflect Ethiopia's 2024/25 reform (tax-free ≤ ETB 2,000,
-top 35% above ETB 14,000; pension 7% employee / 11% employer). **Re-verify against the
-Ministry of Revenue before any payroll go-live** — the values are configuration data with
-effective dates and are meant to be updated without code changes.
+All tax/PAYE/pension/WHT figures are **effective-dated configuration data**
+(never code) seeded from the July-2026 rules. **Re-verify every rate against
+the Ministry of Revenue before any go-live** — updates are config changes, not
+releases.

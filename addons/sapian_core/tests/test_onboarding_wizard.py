@@ -31,9 +31,10 @@ class TestOnboardingWizard(TransactionCase):
         values.update(overrides)
         return self.env["sapian.onboarding.wizard"].with_company(self.company).create(values)
 
-    def test_default_get_seeds_catalog_and_preselects_core(self):
+    def test_default_get_seeds_catalog_and_preselects(self):
         """Opening the wizard seeds the standard catalog for the company and
-        preselects the core tier."""
+        preselects the enabled (= installed) entries, falling back to the core
+        tier when nothing is enabled yet."""
         wizard = (
             self.env["sapian.onboarding.wizard"]
             .with_company(self.company)
@@ -43,14 +44,33 @@ class TestOnboardingWizard(TransactionCase):
             [("company_id", "=", self.company.id)]
         )
         self.assertEqual(len(entries), 7, "standard catalog not seeded")
-        core = entries.filtered(lambda e: e.tier == "core")
-        self.assertEqual(set(wizard.module_catalog_ids.ids), set(core.ids))
+        expected = entries.filtered("enabled") or entries.filtered(lambda e: e.tier == "core")
+        self.assertEqual(set(wizard.module_catalog_ids.ids), set(expected.ids))
 
     def test_catalog_seeding_is_idempotent(self):
         catalog = self.env["sapian.module.catalog"]
         catalog._ensure_default_catalog(self.company)
         catalog._ensure_default_catalog(self.company)
         self.assertEqual(catalog.search_count([("company_id", "=", self.company.id)]), 7)
+
+    def test_catalog_enabled_mirrors_installed_state(self):
+        """Enabled is a status mirror: seeding and the upgrade-time sync both
+        align it with the actually installed modules."""
+        catalog = self.env["sapian.module.catalog"]
+        entries = catalog._ensure_default_catalog(self.company)
+        installed = set(
+            self.env["ir.module.module"]
+            .sudo()
+            .search([("state", "=", "installed")])
+            .mapped("name")
+        )
+        for entry in entries:
+            self.assertEqual(entry.enabled, entry.technical_name in installed)
+        # Drift then sync: the flag snaps back to reality.
+        drifted = entries[0]
+        drifted.enabled = not drifted.enabled
+        catalog._sync_enabled_from_installed()
+        self.assertEqual(drifted.enabled, drifted.technical_name in installed)
 
     def test_profile_and_branding_applied(self):
         """Company name/address/country, ETB currency and brand color land on

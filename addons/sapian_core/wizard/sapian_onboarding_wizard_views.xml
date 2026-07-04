@@ -6,10 +6,16 @@
         <field name="arch" type="xml">
             <form string="SapianERP Onboarding">
                 <sheet>
+                    <!-- Always visible, multi-company or not: users have
+                         onboarded the wrong (placeholder) company because the
+                         wizard silently targeted the active one. -->
+                    <div class="alert alert-info" role="status">
+                        <strong>You are onboarding:</strong>
+                        <field name="company_id" class="oe_inline" options="{'no_create': True}"/>
+                        — every setting below applies to this company.
+                    </div>
                     <group>
                         <group string="Company Profile">
-                            <field name="company_id"
-                                   groups="base.group_multi_company"/>
                             <field name="company_name"/>
                             <field name="tin"/>
                             <field name="street"/>

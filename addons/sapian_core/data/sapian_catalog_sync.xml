@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Runs on every install AND upgrade of sapian_core: the catalog Enabled
+         flags re-sync from the actually installed modules, so they can never
+         drift from the Apps state across upgrades. -->
+    <function model="sapian.module.catalog" name="_sync_enabled_from_installed"/>
+</odoo>

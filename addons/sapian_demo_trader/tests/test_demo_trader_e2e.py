@@ -185,6 +185,37 @@ class TestDemoTraderE2E(TransactionCase):
         self.assertIn("Fix before filing", html)
         self.assertIn("Chaltu", html)
 
+    def test_configure_demo_login(self):
+        """Admin defaults to the real company; placeholder companies (incl. the
+        original main company) leave the switcher; users are moved off them."""
+        placeholders_before = self.env["res.company"].search(
+            [
+                (
+                    "name",
+                    "in",
+                    [
+                        "My US Company",
+                        "My Company (Chicago)",
+                        "My Company (San Francisco)",
+                        "YourCompany",
+                    ],
+                ),
+            ]
+        )
+        self.env["sapian.demo.trader"]._configure_demo_login(self.company)
+        admin = self.env.ref("base.user_admin")
+        self.assertEqual(admin.company_id, self.company)
+        self.assertIn(self.company, admin.company_ids)
+        for placeholder in placeholders_before:
+            self.assertFalse(placeholder.active, placeholder.name)
+            self.assertNotIn(placeholder, admin.company_ids)
+        users = (
+            self.env["res.users"]
+            .with_context(active_test=False)
+            .search([("company_id", "in", placeholders_before.ids)])
+        )
+        self.assertFalse(users, "users still default to a placeholder company")
+
     def test_demo_provision_idempotent(self):
         """Provisioning again with the same name is a no-op."""
         again = self.env["sapian.demo.trader"]._provision_demo_tenant(

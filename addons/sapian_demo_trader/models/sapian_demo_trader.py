@@ -28,6 +28,15 @@ DEMO_COMPANY_NAME = "Selam General Trading PLC"
 PERIOD_FROM = "2026-07-01"
 PERIOD_TO = "2026-07-31"
 
+# Odoo default/demo placeholder companies: a demo DB's company switcher must
+# only show real companies, and a fresh login must land in the real one.
+PLACEHOLDER_COMPANY_NAMES = [
+    "My US Company",
+    "My Company (Chicago)",
+    "My Company (San Francisco)",
+    "YourCompany",
+]
+
 
 class SapianDemoTrader(models.AbstractModel):
     _name = "sapian.demo.trader"
@@ -44,8 +53,11 @@ class SapianDemoTrader(models.AbstractModel):
         """
         existing = self.env["res.company"].search([("name", "=", company_name)], limit=1)
         if existing:
+            if company_name == DEMO_COMPANY_NAME:
+                # Re-running on an already-provisioned DB (module upgrade)
+                # still applies the login cleanup — older demo DBs predate it.
+                self._configure_demo_login(existing)
             return existing
-        self._archive_core_demo_companies()
         company = self._onboard_company(company_name)
         # stock only auto-creates warehouses for new companies in TEST mode
         # (stock/models/res_company.py); at demo-load time we must create it
@@ -63,22 +75,58 @@ class SapianDemoTrader(models.AbstractModel):
         demo._create_direct_bills(partners, products)
         demo._run_payroll(employees)
         demo._create_report_periods()
+        if company_name == DEMO_COMPANY_NAME:
+            self._configure_demo_login(company)
         return company
 
     @api.model
-    def _archive_core_demo_companies(self):
-        """Archive the extra Odoo core demo companies so the company switcher
-        of a demo DB only shows real companies (the main company is kept — it
-        is the login company and gets renamed via the wizard in real use)."""
-        main_company = self.env.ref("base.main_company")
-        clutter = self.env["res.company"].search(
+    def _configure_demo_login(self, company):
+        """A fresh admin login lands in the real demo company, never in an
+        Odoo placeholder: admin defaults to ``company`` (allowed: the real
+        companies only), every user is moved off the placeholders, and ALL
+        placeholder companies — including the original main company — are
+        archived. Idempotent."""
+        # The demo company went through the wizard by construction; demo DBs
+        # provisioned before the completion flag existed must not reopen it.
+        company.sapian_onboarding_done = True
+        et_demo = self.env.ref("base.demo_company_et", raise_if_not_found=False)
+        real_companies = company | (et_demo or self.env["res.company"])
+        placeholders = self.env["res.company"].search(
             [
-                ("name", "in", ["My US Company", "My Company (Chicago)"]),
-                ("id", "!=", main_company.id),
+                ("name", "in", PLACEHOLDER_COMPANY_NAMES),
+                ("id", "not in", real_companies.ids),
             ]
         )
-        if clutter:
-            clutter.write({"active": False})
+        # sudo: user/company administration during demo provisioning.
+        users = (
+            self.env["res.users"]
+            .sudo()
+            .with_context(active_test=False)
+            .search([("company_ids", "in", placeholders.ids)])
+        )
+        admin = self.env.ref("base.user_admin", raise_if_not_found=False)
+        for user in users:
+            kept = real_companies if user == admin else user.company_ids - placeholders
+            if not kept:
+                kept = company
+            # The new default must be one of the user's OWN kept companies —
+            # anything else violates the company_id-in-company_ids constraint.
+            new_default = user.company_id if user.company_id not in placeholders else kept[0]
+            user.write(
+                {
+                    "company_ids": [Command.set(kept.ids)],
+                    "company_id": new_default.id,
+                }
+            )
+        if admin:
+            admin.sudo().write(
+                {
+                    "company_ids": [Command.set(real_companies.ids)],
+                    "company_id": company.id,
+                }
+            )
+        if placeholders:
+            placeholders.sudo().write({"active": False})
 
     @api.model
     def _onboard_company(self, company_name):
