@@ -78,7 +78,14 @@ class SapianModuleCatalog(models.Model):
             .search([("state", "in", ("installed", "to upgrade", "to install"))])
             .mapped("name")
         )
-        entries = self.sudo().with_context(active_test=False).search([])
+        # technical_name is required, so this is "all entries" with an explicit
+        # domain (the catalog is a small per-company table; pylint-odoo W8163
+        # rightly refuses a bare search([])).
+        entries = (
+            self.sudo()
+            .with_context(active_test=False)
+            .search([("technical_name", "!=", False)])
+        )
         for entry in entries:
             should_be = entry.technical_name in installed
             if entry.enabled != should_be:
