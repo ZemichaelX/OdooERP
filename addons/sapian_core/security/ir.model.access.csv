@@ -1,3 +1,4 @@
 id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
 access_sapian_module_catalog_user,sapian.module.catalog.user,model_sapian_module_catalog,base.group_user,1,0,0,0
 access_sapian_module_catalog_admin,sapian.module.catalog.admin,model_sapian_module_catalog,base.group_system,1,1,1,1
+access_sapian_onboarding_wizard_admin,sapian.onboarding.wizard.admin,model_sapian_onboarding_wizard,base.group_system,1,1,1,1

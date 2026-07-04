@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_sapian_onboarding_wizard_form" model="ir.ui.view">
+        <field name="name">sapian.onboarding.wizard.form</field>
+        <field name="model">sapian.onboarding.wizard</field>
+        <field name="arch" type="xml">
+            <form string="SapianERP Onboarding">
+                <sheet>
+                    <group>
+                        <group string="Company Profile">
+                            <field name="company_id"
+                                   groups="base.group_multi_company"/>
+                            <field name="company_name"/>
+                            <field name="tin"/>
+                            <field name="street"/>
+                            <field name="city"/>
+                            <field name="fiscal_year"/>
+                        </group>
+                        <group string="Branding (light)">
+                            <field name="logo" widget="image"
+                                   class="oe_avatar"/>
+                            <field name="primary_color" widget="color"/>
+                        </group>
+                    </group>
+                    <group string="Modules">
+                        <field name="module_catalog_ids" nolabel="1">
+                            <list>
+                                <field name="name"/>
+                                <field name="technical_name"/>
+                                <field name="category"/>
+                                <field name="tier"/>
+                            </list>
+                        </field>
+                    </group>
+                </sheet>
+                <footer>
+                    <button name="action_apply" type="object"
+                            string="Apply &amp; Install" class="btn-primary"/>
+                    <button string="Cancel" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_sapian_onboarding_wizard" model="ir.actions.act_window">
+        <field name="name">Onboarding</field>
+        <field name="res_model">sapian.onboarding.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+
+    <menuitem id="menu_sapian_onboarding"
+              name="Onboarding"
+              parent="menu_sapian_config"
+              action="action_sapian_onboarding_wizard"
+              sequence="5"
+              groups="base.group_system"/>
+</odoo>

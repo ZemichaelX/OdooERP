@@ -7,7 +7,7 @@ Actual installation of the underlying Odoo module is triggered by the onboarding
 this model records the client's intended configuration and per-module settings.
 """
 
-from odoo import fields, models
+from odoo import api, fields, models
 
 
 class SapianModuleCatalog(models.Model):
@@ -61,3 +61,41 @@ class SapianModuleCatalog(models.Model):
         for entry in self:
             entry.enabled = not entry.enabled
         return True
+
+    # The standard sellable set (docs/plan-2026/05): seeded per company on demand
+    # so the onboarding wizard always has entries to offer.
+    STANDARD_CATALOG = [
+        ("Inventory", "stock", "supply_chain", "core"),
+        ("Sales", "sale_management", "sales", "core"),
+        ("Purchase", "purchase", "supply_chain", "core"),
+        ("Employees", "hr", "hr", "core"),
+        ("Ethiopian Accounting", "l10n_et_base", "finance", "core"),
+        ("Ethiopian Payroll", "l10n_et_payroll", "hr", "common"),
+        ("Ethiopian Statutory Reports", "l10n_et_reports", "finance", "common"),
+    ]
+
+    @api.model
+    def _ensure_default_catalog(self, company):
+        """Seed the standard catalog entries for ``company`` (idempotent).
+
+        Called by the onboarding wizard so a fresh company immediately has the
+        sellable module set to pick from; existing entries are never touched.
+        """
+        existing = set(
+            self.search([("company_id", "=", company.id)]).mapped("technical_name")
+        )
+        for sequence, (name, technical_name, category, tier) in enumerate(
+            self.STANDARD_CATALOG, start=10
+        ):
+            if technical_name not in existing:
+                self.create(
+                    {
+                        "name": name,
+                        "technical_name": technical_name,
+                        "category": category,
+                        "tier": tier,
+                        "sequence": sequence,
+                        "company_id": company.id,
+                    }
+                )
+        return self.search([("company_id", "=", company.id)])
