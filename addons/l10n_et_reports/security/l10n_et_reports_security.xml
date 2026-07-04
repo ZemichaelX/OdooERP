@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Multi-company isolation (CLAUDE.md rule #3). -->
+    <record id="l10n_et_vat_declaration_company_rule" model="ir.rule">
+        <field name="name">Ethiopian VAT Declaration: multi-company</field>
+        <field name="model_id" ref="model_l10n_et_vat_declaration"/>
+        <field name="domain_force">[('company_id', 'in', company_ids)]</field>
+    </record>
+
+    <record id="l10n_et_wht_summary_company_rule" model="ir.rule">
+        <field name="name">Ethiopian WHT Summary: multi-company</field>
+        <field name="model_id" ref="model_l10n_et_wht_summary"/>
+        <field name="domain_force">[('company_id', 'in', company_ids)]</field>
+    </record>
+</odoo>

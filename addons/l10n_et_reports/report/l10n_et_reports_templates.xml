@@ -1,0 +1,222 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Monthly VAT declaration (branded via web.external_layout). Section-level
+         MoR alignment; verify the exact official form layout before filing. -->
+    <template id="report_vat_declaration">
+        <t t-call="web.html_container">
+            <t t-foreach="docs" t-as="o">
+                <t t-call="web.external_layout">
+                    <div class="page">
+                        <t t-set="data" t-value="o._get_report_data()"/>
+                        <h2><span t-field="o.name"/></h2>
+                        <div class="row mt-3">
+                            <div class="col-6">
+                                <strong>Taxpayer:</strong> <span t-field="o.company_id.name"/><br/>
+                                TIN: <span t-out="o.company_id.partner_id.l10n_et_tin or '—'"/>
+                            </div>
+                            <div class="col-6">
+                                <strong>Period:</strong>
+                                <span t-field="o.date_from"/> – <span t-field="o.date_to"/>
+                                (monthly, Proc 1341/2024)
+                            </div>
+                        </div>
+
+                        <div t-if="not data['tie_out_ok']" class="alert alert-warning mt-3" role="alert">
+                            <strong>Fix before filing — report does not tie to the general ledger:</strong>
+                            <ul>
+                                <li t-foreach="[tie for tie in data['tie_out'] if not tie['ok']]" t-as="tie">
+                                    <span t-out="tie['label']"/> (accounts <span t-out="tie['accounts']"/>):
+                                    report <span t-out="'%.2f' % tie['report_total']"/> vs
+                                    GL <span t-out="'%.2f' % tie['gl_total']"/> —
+                                    difference <span t-out="'%.2f' % tie['difference']"/>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <h5 class="mt-4">Output VAT (sales)</h5>
+                        <table class="table table-sm">
+                            <thead>
+                                <tr><th>Row</th><th class="text-end">Taxable Base</th><th class="text-end">VAT</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr t-foreach="data['output_rows']" t-as="row">
+                                    <td><span t-out="row['label']"/></td>
+                                    <td class="text-end"><span t-out="'%.2f' % row['base']"/></td>
+                                    <td class="text-end"><span t-out="'%.2f' % row['amount']"/></td>
+                                </tr>
+                                <tr class="fw-bold">
+                                    <td>Total output VAT</td>
+                                    <td class="text-end"><span t-out="'%.2f' % data['output_total_base']"/></td>
+                                    <td class="text-end"><span t-out="'%.2f' % data['output_total_tax']"/></td>
+                                </tr>
+                            </tbody>
+                        </table>
+
+                        <h5 class="mt-3">Input VAT (purchases)</h5>
+                        <table class="table table-sm">
+                            <thead>
+                                <tr><th>Row</th><th class="text-end">Taxable Base</th><th class="text-end">VAT</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr t-foreach="data['input_rows']" t-as="row">
+                                    <td><span t-out="row['label']"/></td>
+                                    <td class="text-end"><span t-out="'%.2f' % row['base']"/></td>
+                                    <td class="text-end"><span t-out="'%.2f' % row['amount']"/></td>
+                                </tr>
+                                <tr class="fw-bold">
+                                    <td>Total input VAT (creditable)</td>
+                                    <td class="text-end"><span t-out="'%.2f' % data['input_total_base']"/></td>
+                                    <td class="text-end"><span t-out="'%.2f' % data['input_total_tax']"/></td>
+                                </tr>
+                            </tbody>
+                        </table>
+
+                        <div class="row justify-content-end mt-3">
+                            <div class="col-6">
+                                <table class="table table-sm">
+                                    <tr class="fw-bold border-top">
+                                        <td>
+                                            <span t-if="data['is_payable']">NET VAT PAYABLE to MoR</span>
+                                            <span t-else="">NET VAT CREDIT carried forward</span>
+                                        </td>
+                                        <td class="text-end">
+                                            <span t-out="'%.2f' % abs(data['net_vat'])"/>
+                                        </td>
+                                    </tr>
+                                </table>
+                            </div>
+                        </div>
+
+                        <h6 class="mt-4">Reconciliation to general ledger</h6>
+                        <table class="table table-sm">
+                            <thead>
+                                <tr><th>Check</th><th>Accounts</th><th class="text-end">Report</th><th class="text-end">GL</th><th class="text-center">Status</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr t-foreach="data['tie_out']" t-as="tie">
+                                    <td><span t-out="tie['label']"/></td>
+                                    <td><span t-out="tie['accounts']"/></td>
+                                    <td class="text-end"><span t-out="'%.2f' % tie['report_total']"/></td>
+                                    <td class="text-end"><span t-out="'%.2f' % tie['gl_total']"/></td>
+                                    <td class="text-center">
+                                        <span t-if="tie['ok']" class="text-success">OK</span>
+                                        <strong t-else="" class="text-danger">MISMATCH</strong>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        <p class="text-muted">
+                            Computed from posted journal items via the Ethiopian tax
+                            codes. Verify the row layout against the current MoR VAT
+                            return form before filing.
+                        </p>
+                    </div>
+                </t>
+            </t>
+        </t>
+    </template>
+
+    <!-- WHT summary: per-bill rows, MISSING markers, remittance deadline note. -->
+    <template id="report_wht_summary">
+        <t t-call="web.html_container">
+            <t t-foreach="docs" t-as="o">
+                <t t-call="web.external_layout">
+                    <div class="page">
+                        <t t-set="data" t-value="o._get_report_data()"/>
+                        <h2><span t-field="o.name"/></h2>
+                        <div class="row mt-3">
+                            <div class="col-6">
+                                <strong>Withholding Agent:</strong> <span t-field="o.company_id.name"/><br/>
+                                TIN: <span t-out="o.company_id.partner_id.l10n_et_tin or '—'"/>
+                            </div>
+                            <div class="col-6">
+                                <strong>Period:</strong>
+                                <span t-field="o.date_from"/> – <span t-field="o.date_to"/><br/>
+                                <strong>Remit withheld amounts to MoR within 30 days of month end.</strong>
+                            </div>
+                        </div>
+
+                        <div t-if="data['warnings'] or not data['tie_out_ok']"
+                             class="alert alert-warning mt-3" role="alert">
+                            <strong>Fix before filing:</strong>
+                            <ul>
+                                <li t-foreach="data['warnings']" t-as="warning">
+                                    <span t-out="warning"/>
+                                </li>
+                                <li t-foreach="[tie for tie in data['tie_out'] if not tie['ok']]" t-as="tie">
+                                    <span t-out="tie['label']"/>: report
+                                    <span t-out="'%.2f' % tie['report_total']"/> vs GL
+                                    <span t-out="'%.2f' % tie['gl_total']"/> — difference
+                                    <span t-out="'%.2f' % tie['difference']"/>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <table class="table table-sm mt-3">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Reference</th>
+                                    <th>Supplier</th>
+                                    <th>TIN</th>
+                                    <th class="text-end">Rate</th>
+                                    <th class="text-end">Base</th>
+                                    <th class="text-end">WHT</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr t-foreach="data['rows']" t-as="row">
+                                    <td><span t-out="row['date']"/></td>
+                                    <td><span t-out="row['move'].name"/></td>
+                                    <td><span t-out="row['supplier']"/></td>
+                                    <td>
+                                        <span t-if="row['tin']" t-out="row['tin']"/>
+                                        <span t-elif="row['kind'] == 'foreign_digital'"
+                                              class="text-muted">N/A (foreign)</span>
+                                        <strong t-else="" class="text-danger">MISSING</strong>
+                                    </td>
+                                    <td class="text-end"><span t-out="'%.0f' % row['rate']"/>%</td>
+                                    <td class="text-end"><span t-out="'%.2f' % row['base']"/></td>
+                                    <td class="text-end"><span t-out="'%.2f' % row['amount']"/></td>
+                                </tr>
+                            </tbody>
+                            <tfoot>
+                                <tr t-foreach="data['totals_by_rate'].items()" t-as="rate_total">
+                                    <td colspan="5" class="text-end">
+                                        Total at <span t-out="'%.0f' % rate_total[0]"/>%
+                                    </td>
+                                    <td/>
+                                    <td class="text-end"><span t-out="'%.2f' % rate_total[1]"/></td>
+                                </tr>
+                                <tr class="fw-bold">
+                                    <td colspan="5" class="text-end">GRAND TOTAL withheld</td>
+                                    <td/>
+                                    <td class="text-end"><span t-out="'%.2f' % data['grand_total']"/></td>
+                                </tr>
+                            </tfoot>
+                        </table>
+
+                        <h6 class="mt-4">Reconciliation to general ledger</h6>
+                        <table class="table table-sm">
+                            <tbody>
+                                <tr t-foreach="data['tie_out']" t-as="tie">
+                                    <td><span t-out="tie['label']"/> (accounts <span t-out="tie['accounts']"/>)</td>
+                                    <td class="text-end"><span t-out="'%.2f' % tie['report_total']"/></td>
+                                    <td class="text-end"><span t-out="'%.2f' % tie['gl_total']"/></td>
+                                    <td class="text-center">
+                                        <span t-if="tie['ok']" class="text-success">OK</span>
+                                        <strong t-else="" class="text-danger">MISMATCH</strong>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        <p class="text-muted">
+                            Foreign providers: no local TIN required. Verify the
+                            schedule layout against the current MoR form before filing.
+                        </p>
+                    </div>
+                </t>
+            </t>
+        </t>
+    </template>
+</odoo>

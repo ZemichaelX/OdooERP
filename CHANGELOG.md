@@ -4,6 +4,26 @@ All notable changes to SapianERP. Epics per `docs/plan-2026/10-claude-code-roadm
 
 ## [Unreleased]
 
+### Epic B — `l10n_et_reports` statutory reports slice ✅ (2026-07-04)
+- New addon (depends `l10n_et_base`; core l10n_et tax codes + WHT kind markers
+  reused, nothing duplicated): monthly VAT declaration (output 15%/zero-rated/
+  exempt, input VAT, net payable or credit carried forward) and WHT summary
+  (per-bill rows with supplier TIN, totals by rate, grand total).
+- Reports are LIVE period windows over posted journal items (reprint after a
+  correction → current numbers; refunds net out). Both carry GL tie-out rows
+  against the accounts the taxes post to (300700/221200/300600); a manual
+  posting that bypasses the tax engine renders a visible MISMATCH warning —
+  tested with a rogue-entry regression test.
+- Branded PDFs via web.external_layout + CSV exports for both; MISSING-TIN
+  markers and fix-before-filing banners (Epic A pattern); 30-day remittance
+  note; foreign digital providers excluded from the missing-TIN warning with
+  an on-report note ("foreign providers: no local TIN required").
+- Golden-verified against the Epic 3 demo docs: output 1,500 / input 10,950 /
+  net −9,450 credit; WHT {3%: 1,500, 30%: 4,500, 15%: 1,200} = 7,200, all
+  tie-outs green. 18 integration tests; install/uninstall/reinstall verified.
+- Layout caveat: computations exact; verify row layout against the current MoR
+  forms before filing (README).
+
 ### Epic A — `l10n_et_payroll` payroll workflow completion ✅ (2026-07-02)
 - Monthly payroll runs on core `hr` (Odoo 19 has no hr_contract/hr_payroll:
   own light models; wages from `hr.version`): payslip generation, manual input
