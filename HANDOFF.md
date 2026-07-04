@@ -26,7 +26,7 @@ working rules. Match the discipline described here — it is why the project has
 
 ## Repo state (all verified green as of handoff)
 
-Commits: `74f7910` baseline (Epics 0–2) → `06301cc` Epic 3 → `697595b` Epic A.
+Commits: `74f7910` baseline (Epics 0–2) → `06301cc` Epic 3 → `697595b` Epic A → `e0ba23f` Epic B.
 
 Built and container-verified on real Odoo 19 scratch/demo DBs:
 - **sapian_core** — module catalog + company Ethiopian fields (TIN etc.), branding hooks.
@@ -72,16 +72,14 @@ no-TIN → 4,500 · 8,000 foreign digital → 1,200 (no threshold) · 10,000 sal
 
 ## Immediate next steps
 
-1. **Epic B — l10n_et_reports** (next build session). Kickoff prompt the user already has (re-issue
-   if lost): thin slice = monthly VAT declaration (output/input/net, PDF+CSV, MoR-form-aligned rows,
-   flag layout "verify vs current MoR form") + WHT summary per period (supplier/TIN/base/rate/amount,
-   totals by rate, MISSING-TIN markers) + **GL tie-out line on both reports** (report total vs VAT/WHT
-   payable balance; mismatch renders a visible warning). Verify against Epic 3 demo docs: input VAT
-   7,500, output 1,500, WHT 1,500+4,500+1,200. Depend on l10n_et_base; checkpoint after computation
-   engine, before layouts.
-2. **Epic C — thin onboarding + demo tenant**: minimal company wizard (TIN, fiscal year, ETB, module
-   picks from sapian_core catalog), light branding only (logo + primary color), one demo tenant with
-   stock/sale/purchase/account/hr + our modules, realistic Ethiopian demo data.
+1. ~~Epic B — l10n_et_reports~~ **DONE (`e0ba23f`)**: VAT declaration + WHT summary, live from
+   posted moves, GL tie-out with visible MISMATCH warnings, PDF + CSV, MISSING-TIN markers,
+   foreign-provider TIN note, 18 tests, golden-verified vs Epic 3 demo docs (output 1,500 /
+   input 10,950 / net −9,450 credit; WHT 7,200 = 1,500+4,500+1,200).
+2. **Epic C — thin onboarding + demo tenant** (next build session): minimal company wizard (TIN,
+   fiscal year, ETB, module picks from sapian_core catalog), light branding only (logo + primary
+   color), one demo tenant with stock/sale/purchase/account/hr + our modules, realistic Ethiopian
+   demo data.
 3. After C: STOP building. The sellable Payroll+HR wedge and Essential/Business core exist. Sales
    motion next (demo, proposal from the DAT template in docs/plan-2026/01).
 
