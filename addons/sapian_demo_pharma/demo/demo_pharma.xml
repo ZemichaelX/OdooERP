@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- The whole pharma tenant is provisioned in python (guarded + idempotent):
+         batches at all three expiry stages, the digest already fired, one import
+         dossier and the B-123 recall-ready delivery history. -->
+    <function model="sapian.demo.pharma" name="_provision_demo_pharma"/>
+</odoo>
