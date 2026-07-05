@@ -33,7 +33,6 @@ class PharmaImportDossier(models.Model):
     )
     supplier_id = fields.Many2one(
         "res.partner",
-        string="Supplier",
         required=True,
         tracking=True,
         help="The foreign manufacturer or trading house shipping this file.",
