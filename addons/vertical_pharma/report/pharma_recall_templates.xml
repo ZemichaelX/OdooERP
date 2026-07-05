@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <template id="report_pharma_recall">
+        <t t-call="web.html_container">
+            <t t-foreach="docs" t-as="o">
+                <t t-call="web.external_layout">
+                    <div class="page">
+                        <h2>Batch Recall Report</h2>
+                        <t t-set="recall_lines" t-value="o._pharma_recall_lines()"/>
+                        <t t-set="dossiers" t-value="o._pharma_dossiers()"/>
+                        <div class="row mt-4">
+                            <div class="col-6">
+                                <strong>Batch</strong>
+                                <div>Lot/Batch: <span t-field="o.name"/></div>
+                                <div>Product: <span t-field="o.product_id.display_name"/></div>
+                                <div>Expiry:
+                                    <span t-out="o.expiration_date and o.expiration_date.date() or '—'"/>
+                                </div>
+                                <div t-if="o.pharma_state">Status:
+                                    <span t-out="dict(o._fields['pharma_state'].selection).get(o.pharma_state)"/>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <strong>Traceability</strong>
+                                <div t-if="dossiers">Import dossier(s):
+                                    <span t-out="', '.join(dossiers.mapped('name'))"/>
+                                </div>
+                                <div t-if="dossiers and dossiers[0].supplier_id">Supplier:
+                                    <span t-out="dossiers[0].supplier_id.display_name"/>
+                                </div>
+                                <div>Printed:
+                                    <span t-out="context_timestamp(datetime.datetime.now()).strftime('%Y-%m-%d %H:%M')"/>
+                                </div>
+                            </div>
+                        </div>
+                        <div t-if="not recall_lines" class="alert alert-success mt-4" role="alert">
+                            No customer deliveries recorded for this batch — nothing to recall.
+                        </div>
+                        <t t-else="">
+                            <p class="mt-4">
+                                Customers who received this batch — contact every one of them:
+                            </p>
+                            <table class="table table-sm mt-2">
+                                <thead>
+                                    <tr>
+                                        <th>Delivery</th>
+                                        <th>Date</th>
+                                        <th>Customer</th>
+                                        <th>Phone</th>
+                                        <th>City</th>
+                                        <th class="text-end">Quantity</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr t-foreach="recall_lines" t-as="line">
+                                        <td><span t-field="line.picking_id.name"/></td>
+                                        <td><span t-out="line.date and line.date.date()"/></td>
+                                        <td><span t-out="line.picking_id.partner_id.display_name or '—'"/></td>
+                                        <td><span t-out="line.picking_id.partner_id.phone or '—'"/></td>
+                                        <td><span t-out="line.picking_id.partner_id.city or '—'"/></td>
+                                        <td class="text-end">
+                                            <span t-out="line.quantity"/>
+                                            <span t-field="line.product_uom_id.name"/>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                                <tfoot>
+                                    <tr>
+                                        <td colspan="5" class="text-end"><strong>Total shipped</strong></td>
+                                        <td class="text-end">
+                                            <strong t-out="sum(recall_lines.mapped('quantity'))"/>
+                                        </td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </t>
+                    </div>
+                </t>
+            </t>
+        </t>
+    </template>
+</odoo>

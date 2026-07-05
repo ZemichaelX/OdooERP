@@ -6,6 +6,7 @@ Loads the pure-Python calculator by file path so it runs standalone under
 rules (3% goods > 20,000 / services > 10,000; 30% punitive when TIN/licence missing;
 15% foreign digital) and the Proc 1395/2025 daily cash cap (ETB 30,000 per party).
 """
+
 import importlib.util
 import os
 import sys as _sys
@@ -92,18 +93,14 @@ def test_wht_goods_below_threshold_no_tin_still_not_applicable():
 
 def test_wht_punitive_gating_flag_true_below_threshold_no_wht():
     """Explicit flag=True: 5,000 goods, no TIN → exempt (current Aug-2025 reading)."""
-    r = calc.compute_wht(
-        5000, kind="goods", has_tin=False, punitive_respects_thresholds=True
-    )
+    r = calc.compute_wht(5000, kind="goods", has_tin=False, punitive_respects_thresholds=True)
     assert r.applicable is False and r.amount == 0.0
 
 
 def test_wht_punitive_gating_flag_false_below_threshold_is_30pct():
     """Ungated reading (Proc 979/2016 art. 92 predecessor rule): flag=False →
     punitive 30% applies below the threshold: 5,000 goods, no TIN → 1,500."""
-    r = calc.compute_wht(
-        5000, kind="goods", has_tin=False, punitive_respects_thresholds=False
-    )
+    r = calc.compute_wht(5000, kind="goods", has_tin=False, punitive_respects_thresholds=False)
     assert (r.applicable, r.rate, r.amount) == (True, 0.30, 1500.0)
 
 
@@ -119,7 +116,10 @@ def test_wht_punitive_gating_flag_false_never_lifts_threshold_for_compliant():
     """flag=False only affects NON-compliant suppliers: 5,000 goods with TIN and
     licence stays exempt."""
     r = calc.compute_wht(
-        5000, kind="goods", has_tin=True, has_licence=True,
+        5000,
+        kind="goods",
+        has_tin=True,
+        has_licence=True,
         punitive_respects_thresholds=False,
     )
     assert r.applicable is False and r.amount == 0.0

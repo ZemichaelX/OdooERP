@@ -4,6 +4,48 @@ All notable changes to SapianERP. Epics per `docs/plan-2026/10-claude-code-roadm
 
 ## [Unreleased]
 
+### Pharma vertical, session 1 — vertical_pharma + sapian_demo_pharma ✅ (2026-07-05)
+The DAT International pitch module (docs/plan-2026/07 §8, 05; behavior per the
+client's own requirements in docs/01-proposal-extraction.md §8.1).
+- **vertical_pharma** (13 Odoo tests incl. an HttpCase web-dispatch test; 12 new
+  fast goldens → 79 total):
+  - Batch discipline: `is_pharma` flag forces lot tracking + expiry + the FEFO
+    "Pharmaceuticals" category (constraint-guarded); receipts without an
+    expiration date on a pharma batch cannot validate.
+  - Expiry engine (`reference/pharma_calc.py`): fresh → nearing expiry →
+    expired against a per-company horizon (default 90 days; golden: expiry
+    2026-09-25 alerts FROM 2026-06-27, not before; expiry date = last usable
+    day). Daily cron posts ONE digest activity per company (anchored on the
+    most urgent batch, assigned to a stock manager), each batch reported once.
+  - Expired-lot delivery policy per company: block (default, UserError with
+    batch details — verified through web RPC dispatch) or warn + audit note.
+  - GS1 DataMatrix capture on receipt lines: AIs 01/17/10/21, day-00 = month
+    end, serials parsed not persisted (v1); mis-scans warn and fill nothing.
+  - Import shipment dossiers (`IMP/...` sequence): supplier, ETA, status,
+    clearance notes + chatter docs, landed-cost fields with computed total;
+    linked to receipts, batches derived; menu under Inventory; multi-company
+    record rule + stock-group ACLs.
+  - Batch recall report (button on the lot, `web.external_layout`): every done
+    customer delivery of the batch with date, quantity and the customer's
+    PHONE + CITY (a recall means calling people); import-dossier traceability
+    printed; golden: B-123 → exactly two customers with different dates/
+    quantities, third customer excluded (received B-124 only).
+  - EFDA traceability export: deliberately a stub pending official specs.
+- **sapian_demo_pharma** (7 Odoo tests): "Tena Pharma Import PLC" — six
+  medicines (Amharic+English, realistic 730-day shelf lives so a live pitch
+  receive can't create an instantly-expired lot), batches at all three expiry
+  stages, digest PRE-FIRED (the pitch shows the alert, not a description),
+  dossier IMP/2026/0001 landed-cost golden 2,511,500 ETB, and the recall-ready
+  flow (Hiwot 120 + Kadisco 80 exhaust B-123 so Bethel's 60 FEFO-reserves
+  B-124). Installed on `scratch_final` alongside Selam.
+- Odoo 19 gotchas learned (tests now encode them): product_expiry AUTO-FILLS
+  missing expiry from `product.expiration_time`; expired quants are
+  unreservable (forcing a lot on a manual move line is the only path our
+  delivery gate must catch); receipt-created lots carry NO company_id unless
+  the product does; `res.groups.users` → `all_user_ids`; stock.warehouse has
+  no activity mixin; HttpCase needs `--workers=0` (odoo.conf ships workers=2);
+  Git Bash mangles `--test-tags /module` (use MSYS_NO_PATHCONV=1).
+
 ### Cleanup — demo polish, catalog truth, CI, samples ✅ (2026-07-04)
 - Demo login: provisioning archives ALL Odoo placeholder companies (incl. the
   original main company) and points admin (and every stranded user) at the real

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- FEFO product category: pharma-flagged products are moved here so the
+         earliest-expiry batch always leaves first. -->
+    <record id="product_category_pharma" model="product.category">
+        <field name="name">Pharmaceuticals</field>
+        <field name="removal_strategy_id" ref="product_expiry.removal_fefo"/>
+    </record>
+
+    <!-- Import dossier numbering: IMP/2026/0001 ... -->
+    <record id="seq_pharma_import_dossier" model="ir.sequence">
+        <field name="name">Pharma Import Dossier</field>
+        <field name="code">pharma.import.dossier</field>
+        <field name="prefix">IMP/%(year)s/</field>
+        <field name="padding">4</field>
+        <field name="company_id" eval="False"/>
+    </record>
+
+    <!-- Daily expiry digest (DAT proposal: alerts 3 months before expiry;
+         horizon configurable per company). -->
+    <record id="ir_cron_pharma_expiry_digest" model="ir.cron">
+        <field name="name">Pharma: daily expiry digest</field>
+        <field name="model_id" ref="stock.model_stock_lot"/>
+        <field name="state">code</field>
+        <field name="code">model._pharma_run_expiry_digest()</field>
+        <field name="interval_number">1</field>
+        <field name="interval_type">days</field>
+        <field name="active" eval="True"/>
+    </record>
+</odoo>

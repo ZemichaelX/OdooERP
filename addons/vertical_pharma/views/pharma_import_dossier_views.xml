@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_pharma_import_dossier_list" model="ir.ui.view">
+        <field name="name">pharma.import.dossier.list</field>
+        <field name="model">pharma.import.dossier</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="name"/>
+                <field name="supplier_id"/>
+                <field name="eta_date"/>
+                <field name="status" widget="badge"
+                       decoration-info="status == 'in_transit'"
+                       decoration-warning="status == 'customs'"
+                       decoration-success="status == 'received'"/>
+                <field name="amount_total" sum="Total"/>
+                <field name="currency_id" column_invisible="1"/>
+                <field name="company_id" groups="base.group_multi_company"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_pharma_import_dossier_form" model="ir.ui.view">
+        <field name="name">pharma.import.dossier.form</field>
+        <field name="model">pharma.import.dossier</field>
+        <field name="arch" type="xml">
+            <form>
+                <sheet>
+                    <div class="oe_button_box" name="button_box">
+                        <button name="action_view_lots" type="object" class="oe_stat_button"
+                                icon="fa-flask">
+                            <field name="lot_count" widget="statinfo" string="Batches"/>
+                        </button>
+                    </div>
+                    <div class="oe_title">
+                        <h1><field name="name" readonly="1"/></h1>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="supplier_id"/>
+                            <field name="eta_date"/>
+                            <field name="status" widget="badge"/>
+                        </group>
+                        <group>
+                            <field name="currency_id" invisible="1"/>
+                            <field name="amount_goods"/>
+                            <field name="amount_freight"/>
+                            <field name="amount_customs"/>
+                            <field name="amount_clearance"/>
+                            <field name="amount_total"/>
+                            <field name="company_id" groups="base.group_multi_company"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Receipts" name="receipts">
+                            <field name="picking_ids" readonly="1"/>
+                        </page>
+                        <page string="Clearance Notes" name="notes">
+                            <field name="note" placeholder="Clearance milestones — attach BL, packing list, EFDA import permit and customs declaration in the chatter."/>
+                        </page>
+                    </notebook>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_pharma_import_dossier" model="ir.actions.act_window">
+        <field name="name">Import Dossiers</field>
+        <field name="res_model">pharma.import.dossier</field>
+        <field name="view_mode">list,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">Open your first import file</p>
+            <p>One dossier per import shipment: supplier, ETA, clearance papers
+            and landed costs — linked to the receipts and every batch in them.</p>
+        </field>
+    </record>
+
+    <menuitem id="menu_pharma_import_dossier"
+              name="Import Dossiers"
+              parent="stock.menu_stock_root"
+              action="action_pharma_import_dossier"
+              sequence="7"/>
+</odoo>

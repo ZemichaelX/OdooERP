@@ -27,7 +27,8 @@ working rules. Match the discipline described here — it is why the project has
 ## Repo state (all verified green as of handoff)
 
 Commits: `74f7910` baseline (Epics 0–2) → `06301cc` Epic 3 → `697595b` Epic A → `e0ba23f` Epic B
-→ Epic C (onboarding wizard + sapian_demo_trader; see CHANGELOG). **BUILD PHASE COMPLETE.**
+→ Epic C (onboarding wizard + sapian_demo_trader) → web-path bug fixes + cleanup/CI/samples
+→ pharma vertical session 1 (see CHANGELOG). **BUILD PHASE COMPLETE except client-pitch work.**
 
 Built and container-verified on real Odoo 19 scratch/demo DBs:
 - **sapian_core** — module catalog + company Ethiopian fields (TIN etc.), branding hooks.
@@ -48,8 +49,23 @@ Built and container-verified on real Odoo 19 scratch/demo DBs:
   "fix before filing" banners. NOTE: Odoo 19 has no hr_contract — wage lives on
   `employee.current_version_id.wage` (hr.version). We use our own light models, no OCA/Enterprise.
 
-Quality state: 67/67 fast pytest goldens (`pytest tests_fast/`), 33 Odoo tests (l10n_et_base) +
-21 (payroll) green in container, ruff/black clean, whole-addons pylint-odoo 10.00/10.
+- **vertical_pharma + sapian_demo_pharma** (pharma session 1, Jul 2026 — the DAT pitch module):
+  batch discipline (is_pharma ⇒ lot+expiry+FEFO, receipt gate), expiry escalation states +
+  one-digest-per-company cron (reference/pharma_calc.py), expired-delivery block/warn,
+  GS1 DataMatrix capture (01/17/10/21, day-00 = month end), import dossiers `IMP/...` with
+  landed costs, branded batch recall report with customer PHONE + CITY, EFDA export stub.
+  Demo tenant "Tena Pharma Import PLC" on scratch_final: 730-day shelf lives, three-stage
+  batches, digest pre-fired, recall golden B-123 (Hiwot 120 + Kadisco 80; Bethel got B-124
+  only — precision by exclusion), dossier landed-cost golden 2,511,500 ETB.
+
+Quality state: 79/79 fast pytest goldens (`pytest tests_fast/`), Odoo tests green in container:
+33 (l10n_et_base) + 21 (payroll) + 18 (reports) + 14 (onboarding/demo) + 13 (vertical_pharma,
+incl. HttpCase) + 7 (sapian_demo_pharma); ruff/black clean, whole-addons pylint-odoo 10.00/10.
+Odoo 19 test-infra gotchas: HttpCase needs `--workers=0` (odoo.conf ships workers=2); Git Bash
+mangles `--test-tags /module` into a Windows path — silent no-op, exit 0 (use MSYS_NO_PATHCONV=1
+and check the test-count line); product_expiry auto-fills missing expiry from
+`product.expiration_time`, expired quants are unreservable, and receipt-created lots carry no
+company_id unless the product does.
 
 **Golden numbers (never change; tests enforce):** basic 10,000 → PAYE 1,650, pension 700/1,100,
 net 7,650 · +2,000 taxable OT → PAYE 2,250 on 12,000, pension on basic only, net 9,050 ·
@@ -86,14 +102,17 @@ no-TIN → 4,500 · 8,000 foreign digital → 1,200 (no threshold) · 10,000 sal
    23,800/3,900/18,374 with missing-POESSA banner; all tie-outs green; golden E2E tests re-run
    the exact provisioning code). Gotcha for future work: stock auto-creates warehouses for new
    companies ONLY in test mode — provision explicitly.
-3. **BUILD PHASE COMPLETE — STOP building.** The sellable Payroll+HR wedge and Essential/Business
-   core exist and are demo-able (install `sapian_demo_trader` with demo data). Sales motion next
-   (demo the trader tenant, proposal from the DAT template in docs/plan-2026/01). Deferred list
-   unchanged; build resumes only when a client signs.
+3. ~~Pharma vertical session 1~~ **DONE (2026-07-05)**: `vertical_pharma` (compliance core +
+   dossiers + recall report; EFDA export stub pending official specs) and `sapian_demo_pharma`
+   ("Tena Pharma Import PLC" on scratch_final). This module IS the DAT pitch.
+4. **STOP building — sales motion.** Demo the trader tenant AND the pharma tenant (both live on
+   `scratch_final`); proposal from the DAT template in docs/plan-2026/01. Build resumes only when
+   a client signs.
 
-**Deferred — do NOT build even though specs exist:** verticals (pharma/trading/retail), payments/SMS
-(Telebirr/Chapa), e-invoice ITAS, Ethiopian calendar, full white-label/debrand, BI, biometrics,
-severance, Amharic payslips.
+**Deferred — do NOT build even though specs exist:** pharma session 2 (medicine-request portal,
+delivery runs, partner directory, SMS, EFDA live API), other verticals (trading/retail),
+payments/SMS (Telebirr/Chapa), e-invoice ITAS, Ethiopian calendar, full white-label/debrand, BI,
+biometrics, severance, Amharic payslips.
 
 ## Open loops (track these)
 
@@ -115,6 +134,13 @@ severance, Amharic payslips.
   `scratch_bugfix`/`scratch_epicC3` (regression copies). Onboarding wizard web-path bugs
   fixed 2026-07-04 (see CHANGELOG): container tests don't exercise web dispatch — for
   wizard-like flows, verify over HttpCase AND live XML-RPC before calling it done.
+- Pharma demo tenant "Tena Pharma Import PLC" installed on `scratch_final` (and `scratch_base`).
+  Admin can company-switch into it; the expiry digest activity is pre-fired. If the tenant sits
+  unused for months, the "nearing" batch (CO-88, +45 days at provisioning) will drift into
+  "expired" — rebuild by dropping the Tena company + reinstalling sapian_demo_pharma, or accept
+  the drift (states recompute live).
+- EFDA traceability export is a stub by design; GS1 capture side is done, so the export becomes
+  an adapter once EFDA publishes transport specs — quote it as a small paid change order.
 
 ## Tone with the user
 

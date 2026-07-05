@@ -79,11 +79,22 @@ GL tie-out with visible MISMATCH warnings, PDF + CSV, MISSING-TIN markers;
 onboarding + demo tenant (sapian_core wizard: profile/TIN/fiscal year/ETB/logo/
 primary color/module picks, unattended fresh-DB proof; sapian_demo_trader:
 "Selam General Trading PLC" provisioned via the wizard with a golden-tested
-July-2026 month exercising every compliance path; 14 Odoo tests).
+July-2026 month exercising every compliance path; 14 Odoo tests), and pharma
+vertical session 1 (vertical_pharma: is_pharma batch discipline w/ mandatory
+expiry + FEFO, expiry escalation states + one-digest-per-company cron,
+expired-delivery block/warn policy, GS1 DataMatrix capture in
+reference/pharma_calc.py, import dossiers IMP/..., branded batch recall report
+with customer phone/city, EFDA export stub pending specs; 13 Odoo tests + 12
+fast goldens; sapian_demo_pharma: "Tena Pharma Import PLC" pitch tenant with
+730-day shelf lives, three-stage batches, pre-fired digest and the B-123
+recall golden incl. precision-by-exclusion; 7 Odoo tests; both installed on
+scratch_final).
 
-BUILD PHASE COMPLETE — next: sales (demo the trader tenant, proposal from the
-DAT template in docs/plan-2026/01). Epics A–C + Epic 3 are the sellable product;
-everything in the DEFERRED list stays unbuilt until a client signs.
+BUILD PHASE COMPLETE except client-pitch work — next: sales (demo the trader
+and pharma tenants, proposal from the DAT template in docs/plan-2026/01).
+Pharma session 2 (medicine-request portal, delivery runs, partner directory,
+SMS, EFDA live API) and everything in the DEFERRED list stay unbuilt until a
+client signs.
 
 REVISED ORDER (July 2026, token-conscious — supersedes the epic ordering in
 docs/10-claude-code-roadmap.md and 01_CLAUDE_CODE_BUILD_SPEC §8 for now; those
@@ -101,7 +112,9 @@ remain the task-level detail):
   (logo + primary color), one demo tenant (stock, sale, purchase, account, hr +
   our modules) with realistic Ethiopian demo data.
 - DEFERRED until a client signs (do NOT start even though specs exist):
-  verticals, payments/SMS, e-invoice, Ethiopian calendar, full theme/debrand, BI.
+  verticals other than pharma session 1 (built Jul 2026 as the DAT pitch),
+  pharma session 2, payments/SMS, e-invoice, Ethiopian calendar, full
+  theme/debrand, BI.
 Goal: a sellable standalone Payroll+HR product and a sellable Essential/Business
 ERP for a generic trader, with minimal token spend.
 
