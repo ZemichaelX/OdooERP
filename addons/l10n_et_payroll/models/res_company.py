@@ -25,12 +25,19 @@ class ResCompany(models.Model):
 
     @api.model_create_multi
     def create(self, vals_list):
-        """New companies get the statutory allowance types seeded immediately
-        (they are per-company configuration, like the WHT/cash-cap configs)."""
+        """New companies get their per-company Ethiopian payroll configuration
+        seeded immediately — statutory allowance types, PAYE bands and pension
+        config — exactly like the WHT/cash-cap configs. Every company thus owns
+        real, effective-dated rate records; payroll never falls back to code
+        constants (A1)."""
         companies = super().create(vals_list)
         allowance_types = self.env["l10n.et.allowance.type"].sudo()
+        paye_bands = self.env["l10n.et.paye.band"].sudo()
+        pension_config = self.env["l10n.et.pension.config"].sudo()
         for company in companies:
             allowance_types._l10n_et_ensure_defaults(company)
+            paye_bands._l10n_et_ensure_default(company)
+            pension_config._l10n_et_ensure_default(company)
         return companies
 
     l10n_et_payroll_journal_id = fields.Many2one(

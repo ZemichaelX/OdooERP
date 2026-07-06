@@ -6,10 +6,20 @@ warns or blocks is effective-dated configuration (l10n.et.cash.cap.config); the
 comparison itself lives in the tested reference calculator.
 """
 
+import hashlib
+
 from odoo import models
 from odoo.exceptions import ValidationError
 
 from ..reference import et_tax_calc
+
+
+def _cash_cap_lock_key(partner_id, on_date):
+    """A stable 31-bit key for the (partner, day) advisory lock (A6). SHA-256 of
+    ``partner-date`` folded into int4 range so ``pg_advisory_xact_lock`` can pair
+    it with the company id."""
+    digest = hashlib.sha256(f"{partner_id}-{on_date}".encode()).hexdigest()
+    return int(digest, 16) % (2**31)
 
 
 class AccountPayment(models.Model):
@@ -43,6 +53,19 @@ class AccountPayment(models.Model):
             if not config or config.enforcement == "off":
                 continue
             partner = payment.partner_id.commercial_partner_id
+            # Serialize concurrent posts to the SAME party on the SAME day (A6):
+            # without this, two payments posted in separate transactions each
+            # search only committed priors, neither sees the other, and both
+            # slip under the cap (a fail-open on a blocking control). A
+            # transaction-scoped advisory lock keyed on (company, party, day)
+            # forces the second transaction to wait until the first commits and
+            # its payment becomes visible. Auto-released at transaction end;
+            # re-entrant within one transaction, so same-batch siblings (handled
+            # explicitly below) never self-block.
+            self.env.cr.execute(
+                "SELECT pg_advisory_xact_lock(%s, %s)",
+                (payment.company_id.id, _cash_cap_lock_key(partner.id, payment.date)),
+            )
             prior_payments = self.env["account.payment"].search(
                 [
                     ("id", "!=", payment.id),

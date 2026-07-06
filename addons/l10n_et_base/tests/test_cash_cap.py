@@ -1,9 +1,12 @@
 # -*- coding: utf-8 -*-
 """Integration tests for the Proc 1395/2025 daily cash-payment cap check."""
 
+from datetime import date
+
 from odoo.exceptions import ValidationError
 from odoo.tests import tagged
 
+from ..models.account_payment import _cash_cap_lock_key
 from ..models.l10n_et_cash_cap_config import _SUPERSEDED_SOURCE_NOTE
 from .common import L10nEtBaseCommon
 
@@ -129,4 +132,28 @@ class TestCashCap(L10nEtBaseCommon):
         self.assertEqual(payment.state, "in_process")
         self.assertFalse(
             any("cash cap" in str(message.body) for message in payment.message_ids)
+        )
+
+    def test_cash_cap_takes_advisory_lock(self):
+        """A6: the check serializes concurrent same-party/day posts with a
+        transaction advisory lock keyed on (company, party, day). A cross-session
+        race can't be reproduced inside one test transaction, so we assert the
+        lock is actually held after a checked cash payment posts."""
+        self._create_cash_payment(1000, date="2026-07-01")
+        key2 = _cash_cap_lock_key(
+            self.partner_compliant.commercial_partner_id.id, date(2026, 7, 1)
+        )
+        # pg_advisory_xact_lock(int4, int4) shows in pg_locks as
+        # classid=key1, objid=key2, objsubid=2.
+        self.env.cr.execute(
+            """
+            SELECT count(*) FROM pg_locks
+             WHERE locktype = 'advisory'
+               AND classid = %s AND objid = %s AND objsubid = 2
+            """,
+            (self.company.id, key2),
+        )
+        self.assertTrue(
+            self.env.cr.fetchone()[0],
+            "advisory lock held for (company, party, day) during the cap check",
         )

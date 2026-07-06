@@ -118,3 +118,27 @@ class TestVatDeclaration(L10nEtReportsCommon):
         self.assertEqual(data["output_total_base"], 6000.0)
         self.assertEqual(data["output_total_tax"], 900.0)
         self.assertTrue(data["tie_out_ok"])
+
+    def test_off_chart_company_reads_zero_not_raise(self):
+        """A4: a declaration for a company NOT on the Ethiopian chart reads as
+        zeros with a visible warning state instead of raising on field access."""
+        other = self.env["res.company"].create({"name": "Off Chart Co"})
+        self.env.user.write({"company_ids": [Command.link(other.id)]})
+        declaration = self.env["l10n.et.vat.declaration"].create(
+            {
+                "company_id": other.id,
+                "date_from": "2026-07-01",
+                "date_to": "2026-07-31",
+            }
+        )
+        # Reading the computed totals must NOT raise (the audit bug).
+        self.assertEqual(declaration.net_vat, 0.0)
+        self.assertEqual(declaration.output_vat_total, 0.0)
+        self.assertEqual(declaration.input_vat_total, 0.0)
+        self.assertTrue(declaration.off_chart, "warning state is set")
+        data = declaration._get_report_data()
+        self.assertTrue(data["off_chart"])
+        self.assertTrue(data["off_chart_warning"])
+        # Export must not raise either.
+        declaration.action_export_csv()
+        self.assertTrue(declaration.csv_export_file)

@@ -4,6 +4,47 @@ All notable changes to SapianERP. Epics per `docs/plan-2026/10-claude-code-roadm
 
 ## [Unreleased]
 
+### Defensive-audit fixes — A1–A10 (2026-07-06)
+Second, independent defensive audit (single-context, evidence-per-finding) over all six
+modules + docker/config/scripts/CI. All confirmed findings fixed with regression tests;
+A8 deferred to the deployment runbook. Findings table in HANDOFF.md.
+
+- **A1 (high) — per-company PAYE/pension config.** PAYE bands + pension config used to be
+  seeded (via XML `<record>`s) only for the company active at module install; every other
+  company (a group's 2nd company, the demo tenants, a SaaS tenant) silently fell back to
+  hard-coded rate constants in the compute helper. Now seeded PER COMPANY from the reference
+  calculator — install `<function>`, `res.company.create` hook, and a pre-migration that
+  detaches the legacy xmlid records so existing DBs keep them while every other company is
+  filled in. The silent `DEFAULT_PAYE_BANDS`/`0.07`/`0.11` fallback is REMOVED: a company
+  with no applicable config now raises a clear `UserError` naming the company and date.
+  Regression tests prove new companies are seeded, missing config raises, and the 10,000
+  golden (1,650/700/7,650) comes from the records (editing a band moves PAYE).
+- **A2+A5 (medium) — pharma expiry digest.** The single `pharma_alerted` boolean meant a
+  batch was digested once ever (no re-alert when it crossed nearing→expired) and shared,
+  company-less lots were de-duplicated across all companies. Replaced with a
+  `pharma.expiry.alert` model keyed (lot, company, state): re-alerts on state transition,
+  per company. Digest takes an injectable `today` for testing. Test: a batch alerted while
+  nearing gets a second digest entry when it later expires.
+- **A3 — CI runs the Odoo integration suite.** New GitHub Actions job (odoo:19.0 container +
+  postgres service) installs the demo tenants with demo data and runs the full
+  `--test-enable` suite; CI is red on any test failure.
+- **A4 (low) — VAT declaration no longer raises on read.** An off-chart company made the
+  non-stored totals compute raise `UserError`, breaking list/form views. It now returns zero
+  totals with an `off_chart` warning state surfaced as a form banner.
+- **A6 (low) — cash-cap concurrency.** The daily-cap check was a TOCTOU fail-open under
+  concurrent posts. Added a transaction advisory lock keyed on (company, party, day) so
+  concurrent posts to the same party serialize; documented in the model.
+- **A7 (low) — import-dossier least privilege.** Landed-cost financials were writable by any
+  warehouse user. Warehouse users are now read-only; write/create is limited to purchase
+  managers, full access to account managers (vertical_pharma now depends on purchase+account).
+- **A9 (low) — backup.sh** exits non-zero and removes the partial archive if the filestore
+  backup fails (no more silent "Backup written" on partial success).
+- **A10 (low) — provision_client.sh** generates a strong per-tenant `admin_passwd`, writes it
+  into the runtime `odoo.conf`, and prints it once for the vault (idempotent).
+- **A8 (low, deferred)** — `proxy_mode=True` with the dev compose publishing 8069 directly and
+  no TLS. Documented in `docker/README.md` as a go-live runbook step (nginx/TLS reverse proxy);
+  no code change.
+
 ### Pre-release hardening — accountant corrections + adversarial review ✅ (2026-07-06)
 Two phases; the exception to the no-multi-agent rule (final pre-release pass).
 
