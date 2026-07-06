@@ -29,6 +29,12 @@
                 </header>
                 <sheet>
                     <div class="oe_title"><h1><field name="name"/></h1></div>
+                    <field name="off_chart" invisible="1"/>
+                    <div class="alert alert-warning" role="alert" invisible="not off_chart">
+                        This company is not on the Ethiopian chart of accounts —
+                        no VAT tax codes resolve, so all figures are zero. Load
+                        the Ethiopian chart of accounts before filing.
+                    </div>
                     <group>
                         <group string="Period">
                             <field name="date_from"/>

@@ -10,6 +10,7 @@ import os
 import sys as _sys
 
 from odoo import api, fields, models
+from odoo.exceptions import UserError
 
 _CALC_PATH = os.path.join(os.path.dirname(__file__), "..", "reference", "et_payroll_calc.py")
 _spec = importlib.util.spec_from_file_location("et_payroll_calc", _CALC_PATH)
@@ -39,13 +40,28 @@ class L10nEtPayslipCompute(models.AbstractModel):
         October rate change must still use July's figures.
         """
         on_date = on_date or fields.Date.context_today(self)
-        bands = (
-            self.env["l10n.et.paye.band"].get_active_bands(on_date=on_date)
-            or _calc.DEFAULT_PAYE_BANDS
-        )
+        company = self.env.company
+        # No silent fallback to code constants (A1): payroll rates are
+        # effective-dated CONFIGURATION DATA (CLAUDE.md rule #4). If a company
+        # has no applicable bands/pension config, fail loudly naming the company
+        # and date — a payslip computed from hard-coded defaults would look
+        # right today yet silently ignore a future rate change.
+        bands = self.env["l10n.et.paye.band"].get_active_bands(on_date=on_date, company=company)
+        if not bands:
+            raise UserError(
+                self.env._(
+                    "No Ethiopian PAYE bands are configured for %(company)s "
+                    "effective %(date)s. Seed or add PAYE bands (Payroll › "
+                    "Configuration › PAYE Bands) before running payroll — "
+                    "rates must come from effective-dated configuration, never "
+                    "code defaults.",
+                    company=company.display_name,
+                    date=on_date,
+                )
+            )
         cfg = self.env["l10n.et.pension.config"].search(
             [
-                ("company_id", "=", self.env.company.id),
+                ("company_id", "=", company.id),
                 ("effective_from", "<=", on_date),
                 "|",
                 ("effective_to", "=", False),
@@ -54,9 +70,20 @@ class L10nEtPayslipCompute(models.AbstractModel):
             order="effective_from desc",
             limit=1,
         )
-        ee_rate = cfg.employee_rate if cfg else 0.07
-        er_rate = cfg.employer_rate if cfg else 0.11
-        cap = (cfg.insurable_cap or None) if cfg else None
+        if not cfg:
+            raise UserError(
+                self.env._(
+                    "No Ethiopian pension configuration for %(company)s "
+                    "effective %(date)s. Seed or add a pension configuration "
+                    "(Payroll › Configuration › Pension) before running "
+                    "payroll.",
+                    company=company.display_name,
+                    date=on_date,
+                )
+            )
+        ee_rate = cfg.employee_rate
+        er_rate = cfg.employer_rate
+        cap = cfg.insurable_cap or None
 
         result = _calc.compute_payroll(
             _calc.PayrollInput(

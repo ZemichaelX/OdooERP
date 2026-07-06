@@ -1,3 +1,6 @@
 id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
-access_pharma_import_dossier_user,pharma.import.dossier user,model_pharma_import_dossier,stock.group_stock_user,1,1,1,0
-access_pharma_import_dossier_manager,pharma.import.dossier manager,model_pharma_import_dossier,stock.group_stock_manager,1,1,1,1
+access_pharma_import_dossier_stock_user,pharma.import.dossier stock read-only,model_pharma_import_dossier,stock.group_stock_user,1,0,0,0
+access_pharma_import_dossier_purchase_manager,pharma.import.dossier purchase manager,model_pharma_import_dossier,purchase.group_purchase_manager,1,1,1,0
+access_pharma_import_dossier_account_manager,pharma.import.dossier account manager,model_pharma_import_dossier,account.group_account_manager,1,1,1,1
+access_pharma_expiry_alert_stock_user,pharma.expiry.alert stock read,model_pharma_expiry_alert,stock.group_stock_user,1,0,0,0
+access_pharma_expiry_alert_stock_manager,pharma.expiry.alert stock manager,model_pharma_expiry_alert,stock.group_stock_manager,1,1,1,1

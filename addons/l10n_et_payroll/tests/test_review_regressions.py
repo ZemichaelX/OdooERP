@@ -141,21 +141,19 @@ class TestPayrollReviewRegressions(AccountTestInvoicingCommon):
         self.assertFalse(run.bank_export_filename)
 
     def test_paye_band_overlap_rejected(self):
-        """R1#4: a second band generation overlapping in time AND income without
-        closing the old effective_to must be refused."""
+        """R1#4: a band overlapping the seeded generation in time AND income
+        without closing the old effective_to must be refused. Every company now
+        owns seeded bands (A1: 2,000–4,000 @15% open-ended among them), so a new
+        open-ended 2,000–4,000 band overlaps and is rejected."""
         band_model = self.env["l10n.et.paye.band"]
-        # Seed one open-ended band for this test company (the module's default
-        # bands belong to the install company, not this fixture company).
-        band_model.create(
-            {
-                "company_id": self.company.id,
-                "lower_bound": 2000.0,
-                "upper_bound": 4000.0,
-                "rate": 0.15,
-                "deduction": 300.0,
-                "effective_from": "2025-07-01",
-            }
+        seeded = band_model.search(
+            [
+                ("company_id", "=", self.company.id),
+                ("lower_bound", "=", 2000.0),
+                ("upper_bound", "=", 4000.0),
+            ]
         )
+        self.assertTrue(seeded, "the company owns seeded PAYE bands (A1)")
         with self.assertRaises(ValidationError):
             band_model.create(
                 {

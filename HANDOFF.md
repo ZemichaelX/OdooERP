@@ -152,6 +152,31 @@ pricelist assigned); invoice due date sat before the issue date (→ due date se
 explicitly); physical demo goods were not storable (→ `is_storable=True`). All three
 now asserted in `sapian_demo_trader` e2e tests.
 
+## Second defensive audit (2026-07-06) — A1–A10 findings table
+
+Independent single-context audit (evidence per finding, reproduced on scratch DBs) of
+what the adversarial pass missed: every module + docker/config/scripts/CI. All confirmed
+findings fixed this session with regression tests, except A8 (deferred to the deployment
+runbook). Fix details in CHANGELOG.
+
+| ID | Sev | Finding | Status |
+|----|-----|---------|--------|
+| A1 | high | PAYE bands + pension config seeded only for the install-time company; every other company silently used hard-coded rate constants (rule #4 violation; affected both demo tenants + multi-company clients) | **FIXED**: per-company seeding (install `<function>` + `res.company.create` hook + pre-migration for existing DBs); silent fallback removed — missing config now raises naming the company. Regression tests + scratch_final verified (Selam/Tena have real records). |
+| A2 | medium | Expiry digest fired once ever per lot — no re-alert when a batch crossed nearing→expired | **FIXED**: `pharma.expiry.alert` markers keyed (lot, company, state); re-alerts on transition. Test. |
+| A3 | medium | 133 Odoo integration tests never ran in CI (lint + fast goldens only) | **FIXED**: CI `integration-tests` job (odoo:19.0 + postgres) runs the full suite; red on any failure. |
+| A5 | low | Digest de-duplicated shared (company-less) lots across companies via one shared flag | **FIXED**: markers are per company (same model as A2). |
+| A4 | low | VAT declaration non-stored compute raised `UserError` off-chart → record unreadable | **FIXED**: returns zero totals + `off_chart` warning banner; never raises on read. Test. |
+| A6 | low | Cash-cap check TOCTOU fail-open under concurrent posts | **FIXED**: transaction advisory lock on (company, party, day). Test asserts the lock is held. |
+| A7 | low | Import-dossier landed-cost financials writable by any warehouse user | **FIXED**: stock users read-only; write/create → purchase/account managers (new deps). Test. |
+| A9 | low | `backup.sh` swallowed filestore-archive failures (`\|\| true`) → false "Backup written" | **FIXED**: aborts non-zero and removes the partial archive on failure. |
+| A10 | low | `provision_client.sh` never set a per-tenant `admin_passwd` | **FIXED**: generates a strong secret, writes it to the runtime odoo.conf, prints once. |
+| A8 | low | `proxy_mode=True` + dev compose publishes 8069 directly, no TLS | **DEFERRED**: documented in `docker/README.md` (nginx/TLS reverse proxy is a go-live runbook step). |
+
+Refuted during the audit (not reported): `account.payment` state filter (correct Odoo 19
+post-states); multi-company `ir.rule` domains (correct global-rule pattern); `docker/.env`
+(gitignored, untracked — no committed secret); sudo usage (narrow, documented, manager-gated);
+no controllers/public routes/`t-raw`/raw SQL anywhere.
+
 ## Open loops (track these)
 
 - ~~Accountant review Q5 (punitive threshold gating, either/both TIN+licence) + cash cap~~

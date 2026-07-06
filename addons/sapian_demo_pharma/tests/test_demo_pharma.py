@@ -70,7 +70,13 @@ class TestDemoPharma(TransactionCase):
         self.assertIn("CO-88", note)
         self.assertIn("OR-15", note)
         self.assertNotIn("B-123", note)
-        self.assertTrue(self._lot("CO-88").pharma_alerted)
+        self.assertTrue(
+            self._lot("CO-88").pharma_alert_ids.filtered(
+                lambda alert: alert.company_id == self.company
+                and alert.pharma_state == "nearing_expiry"
+            ),
+            "CO-88 recorded a per-company 'nearing' digest marker",
+        )
 
     def test_dossier_landed_cost_and_traceability(self):
         """IMP/... dossier golden: 1,850,000 + 210,000 + 396,500 + 55,000 =

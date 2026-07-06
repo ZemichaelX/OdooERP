@@ -51,9 +51,52 @@ jobs:
           print("XML/CSV/manifests OK")
           EOF
 
-  # The Odoo integration suites (90 tests) need a full Odoo 19 + Postgres
-  # stack and run locally per CLAUDE.md:
-  #   docker compose -f docker/docker-compose.yml run --rm odoo \
-  #     odoo -d scratch -i sapian_demo_trader --with-demo --test-enable \
-  #     --test-tags /sapian_core,/l10n_et_base,/l10n_et_payroll,/l10n_et_reports,/sapian_demo_trader \
-  #     --stop-after-init
+  integration-tests:
+    name: Odoo integration tests
+    runs-on: ubuntu-latest
+    # Run inside the same Odoo 19 image production uses, so the suite exercises
+    # the real ORM/registry/report stack (A3). A DB failure here fails CI.
+    container:
+      image: odoo:19.0
+      options: --user root
+    services:
+      db:
+        image: postgres:16
+        env:
+          POSTGRES_USER: odoo
+          POSTGRES_PASSWORD: odoo
+          POSTGRES_DB: postgres
+        options: >-
+          --health-cmd "pg_isready -U odoo"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run the Odoo integration suites (with demo data)
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/odoo-data
+          # Install the two demo tenants: they pull in every product module
+          # (sapian_core, l10n_et_base/payroll/reports, vertical_pharma) so
+          # --test-enable runs the whole suite. --workers=0 is required for the
+          # HttpCase web tests. A failing test makes odoo exit non-zero → CI red.
+          odoo \
+            --db_host=db --db_port=5432 --db_user=odoo --db_password=odoo \
+            --data-dir=/tmp/odoo-data \
+            --addons-path="${GITHUB_WORKSPACE}/addons,/usr/lib/python3/dist-packages/odoo/addons" \
+            -d ci_test \
+            -i sapian_demo_trader,sapian_demo_pharma \
+            --test-enable \
+            --test-tags '/sapian_core,/l10n_et_base,/l10n_et_payroll,/l10n_et_reports,/vertical_pharma,/sapian_demo_trader,/sapian_demo_pharma' \
+            --workers=0 --max-cron-threads=0 \
+            --stop-after-init --log-level=test 2>&1 | tee /tmp/odoo-test.log
+          # `set -o pipefail` already makes a non-zero odoo exit fail this step.
+          # Belt and braces: also fail on Odoo's own result line reporting any
+          # failed or errored test (matches "N failed" or "0 failed, N error(s)"
+          # but not the clean "0 failed, 0 error(s)").
+          if grep -qE "tests\.result: ([1-9][0-9]* failed|0 failed, [1-9][0-9]* error)" /tmp/odoo-test.log; then
+            echo "::error::Odoo integration tests reported failures"
+            exit 1
+          fi

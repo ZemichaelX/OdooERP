@@ -6,6 +6,14 @@ from datetime import date
 from odoo import api, fields, models
 from odoo.exceptions import ValidationError
 
+from .payslip_compute import _calc
+
+# First effective date of the seeded 2024/25-reform bands. A future proclamation
+# is a NEW generation of records with a later effective_from (and the old ones'
+# effective_to closed) — never an edit to these, so historical payslips are
+# reproducible.
+SEED_EFFECTIVE_FROM = date(2024, 7, 1)
+
 
 class L10nEtPayeBand(models.Model):
     _name = "l10n.et.paye.band"
@@ -93,3 +101,43 @@ class L10nEtPayeBand(models.Model):
             (b.lower_bound, None if b.is_top_band else b.upper_bound, b.rate, b.deduction)
             for b in bands
         ]
+
+    @api.model
+    def _l10n_et_ensure_default(self, company):
+        """Seed the standard PAYE bands for ``company`` if it has none.
+
+        Values come from the reference calculator (``et_payroll_calc`` — the
+        single source of truth the fast goldens test); this is the per-company
+        analogue of the WHT/cash-cap/allowance seeders, so EVERY company (not
+        just the one active at module install) gets real, effective-dated
+        configuration records instead of relying on a code fallback (A1).
+        Idempotent: a company that already has any band is left untouched, so a
+        client that tuned its bands is never overwritten.
+        """
+        has_any = (
+            self.sudo()
+            .with_context(active_test=False)
+            .search_count([("company_id", "=", company.id)])
+        )
+        if has_any:
+            return
+        vals = [
+            {
+                "company_id": company.id,
+                "lower_bound": lower,
+                "upper_bound": 0.0 if upper is None else upper,
+                "is_top_band": upper is None,
+                "rate": rate,
+                "deduction": deduction,
+                "effective_from": SEED_EFFECTIVE_FROM,
+            }
+            for lower, upper, rate, deduction in _calc.DEFAULT_PAYE_BANDS
+        ]
+        self.sudo().create(vals)
+
+    @api.model
+    def _l10n_et_seed_all_companies(self):
+        """Data-file/migration hook: seed every active company's PAYE bands."""
+        for company in self.env["res.company"].search([("active", "=", True)]):
+            self._l10n_et_ensure_default(company)
+        return True

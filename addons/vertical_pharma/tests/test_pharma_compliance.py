@@ -204,9 +204,20 @@ class TestPharmaCompliance(TransactionCase):
         self.assertEqual(picking.state, "done")
         self.assertTrue(any("EXPIRED" in str(message.body) for message in picking.message_ids))
 
+    def _marker(self, lot, state):
+        """Count this company's digest markers for ``lot`` in ``state``."""
+        return self.env["pharma.expiry.alert"].search_count(
+            [
+                ("lot_id", "=", lot.id),
+                ("company_id", "=", self.company.id),
+                ("pharma_state", "=", state),
+            ]
+        )
+
     def test_expiry_digest_one_activity_and_dedup(self):
         """The digest creates ONE activity listing nearing/expired lots with
-        stock, marks them alerted, and never reports them twice."""
+        stock, records per-company markers, and never reports the same state
+        twice."""
         self._receive("LOT-DIG-FRESH", 200)
         nearing = self._receive("LOT-DIG-NEAR", 30)
         expired = self._receive("LOT-DIG-EXP", -1)
@@ -220,15 +231,44 @@ class TestPharmaCompliance(TransactionCase):
         self.assertIn("LOT-DIG-NEAR", note)
         self.assertIn("LOT-DIG-EXP", note)
         self.assertNotIn("LOT-DIG-FRESH", note)
-        self.assertTrue(nearing.pharma_alerted)
-        self.assertTrue(expired.pharma_alerted)
+        self.assertTrue(self._marker(nearing, "nearing_expiry"))
+        self.assertTrue(self._marker(expired, "expired"))
         after_first = self.env["mail.activity"].search_count(domain)
         self.env["stock.lot"]._pharma_run_expiry_digest()
         self.assertEqual(
             self.env["mail.activity"].search_count(domain),
             after_first,
-            "digest must not repeat already-alerted lots",
+            "digest must not repeat an already-reported state",
         )
+
+    def test_digest_realerts_on_transition_to_expired(self):
+        """A2/A5: a batch alerted while NEARING is re-alerted when it later
+        crosses into EXPIRED. The clock is advanced via the ``today`` argument
+        WITHOUT editing the expiry date (an edit would re-arm markers and mask
+        the state transition being tested)."""
+        lot = self._receive("OR-15", 5)  # today+5 → nearing (90-day horizon)
+        # Anchor on this specific lot so other companies' demo batches (which
+        # the digest also scans) can't perturb the assertion.
+        domain = [("res_model", "=", "stock.lot"), ("res_id", "=", lot.id)]
+        self.env["stock.lot"]._pharma_run_expiry_digest(today=self.today)
+        self.assertEqual(
+            self.env["mail.activity"].search_count(domain), 1, "first (nearing) digest"
+        )
+        self.assertTrue(self._marker(lot, "nearing_expiry"))
+        # Same day again: the 'nearing_expiry' state is already recorded.
+        self.env["stock.lot"]._pharma_run_expiry_digest(today=self.today)
+        self.assertEqual(
+            self.env["mail.activity"].search_count(domain), 1, "no repeat for same state"
+        )
+        # Advance past expiry: EXPIRED is a new state → a second digest entry.
+        later = self.today + timedelta(days=10)
+        self.env["stock.lot"]._pharma_run_expiry_digest(today=later)
+        self.assertEqual(
+            self.env["mail.activity"].search_count(domain),
+            2,
+            "transition nearing → expired produced a second digest",
+        )
+        self.assertTrue(self._marker(lot, "expired"))
 
     def test_gs1_scan_fills_lot_and_expiry(self):
         """Scanning 01+17+10 fills the lot name and expiration date and clears

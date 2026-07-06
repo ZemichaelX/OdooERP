@@ -88,13 +88,13 @@ class TestPharmaReviewRegressions(TransactionCase):
             lot.expiration_date = False
 
     def test_alerted_resets_when_expiry_changed(self):
-        """R3#6: a relabelled expiry re-arms the digest (pharma_alerted clears)
-        so the batch can be reported again against the new date."""
+        """R3#6: a relabelled expiry re-arms the digest (its markers are
+        dropped) so the batch can be reported again against the new date."""
         lot = self._receive("LOT-C", 30)  # nearing
         self.env["stock.lot"]._pharma_run_expiry_digest()
-        self.assertTrue(lot.pharma_alerted)
+        self.assertTrue(lot.pharma_alert_ids, "batch was reported (marker exists)")
         lot.expiration_date = datetime.combine(self.today + timedelta(days=400), time(12, 0))
-        self.assertFalse(lot.pharma_alerted, "re-armed after expiry change")
+        self.assertFalse(lot.pharma_alert_ids, "markers dropped after expiry change")
 
     def test_expiry_local_date_helper(self):
         """R1#7: the expiry is read as a LOCAL date (the last usable day),

@@ -6,6 +6,12 @@ from datetime import date
 from odoo import api, fields, models
 from odoo.exceptions import ValidationError
 
+from .payslip_compute import _calc
+
+# First effective date of the seeded default pension configuration (mirrors the
+# PAYE band seed). A rate change is a new effective-dated record, never an edit.
+SEED_EFFECTIVE_FROM = date(2024, 7, 1)
+
 
 class L10nEtPensionConfig(models.Model):
     _name = "l10n.et.pension.config"
@@ -47,3 +53,28 @@ class L10nEtPensionConfig(models.Model):
                         "the same company."
                     )
                 )
+
+    @api.model
+    def _l10n_et_ensure_default(self, company):
+        """Seed the default 7%/11% uncapped pension config for ``company`` if it
+        has none (per-company, like the PAYE band seeder — A1). Idempotent; a
+        company that already has a config is left untouched."""
+        if self.sudo().search_count([("company_id", "=", company.id)]):
+            return
+        self.sudo().create(
+            {
+                "company_id": company.id,
+                "name": "Ethiopia Pension (default 7%/11%)",
+                "employee_rate": _calc.DEFAULT_PENSION_EMPLOYEE_RATE,
+                "employer_rate": _calc.DEFAULT_PENSION_EMPLOYER_RATE,
+                "insurable_cap": 0.0,
+                "effective_from": SEED_EFFECTIVE_FROM,
+            }
+        )
+
+    @api.model
+    def _l10n_et_seed_all_companies(self):
+        """Data-file/migration hook: seed every active company's pension config."""
+        for company in self.env["res.company"].search([("active", "=", True)]):
+            self._l10n_et_ensure_default(company)
+        return True

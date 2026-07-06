@@ -1,12 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<odoo noupdate="1">
-    <!-- Default Ethiopian pension: 7% employee / 11% employer, uncapped by default.
-         Set insurable_cap if a client's policy caps pensionable earnings. VERIFY per client. -->
-    <record id="pension_config_default" model="l10n.et.pension.config">
-        <field name="name">Ethiopia Pension (default 7%/11%)</field>
-        <field name="employee_rate">0.07</field>
-        <field name="employer_rate">0.11</field>
-        <field name="insurable_cap">0</field>
-        <field name="effective_from">2024-07-01</field>
-    </record>
+<odoo>
+    <!-- Default Ethiopian pension (7% employee / 11% employer, uncapped) seeded
+         PER COMPANY from the reference calculator, on install and every upgrade
+         (A1). Set insurable_cap per client if pensionable earnings are capped;
+         existing configs are never overwritten. VERIFY per client. -->
+    <function model="l10n.et.pension.config" name="_l10n_et_seed_all_companies"/>
 </odoo>

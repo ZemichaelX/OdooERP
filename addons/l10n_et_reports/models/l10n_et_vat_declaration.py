@@ -8,7 +8,6 @@ core l10n_et VAT tax codes resolved per company — nothing is duplicated here.
 """
 
 from odoo import api, fields, models
-from odoo.exceptions import UserError
 
 # (template tax xmlid, row label) — declaration structure per side.
 OUTPUT_TAX_ROWS = [
@@ -43,6 +42,12 @@ class L10nEtVatDeclaration(models.Model):
         help="Output minus input VAT: positive = payable to MoR, negative = "
         "credit carried forward.",
     )
+    off_chart = fields.Boolean(
+        string="Not on Ethiopian Chart",
+        compute="_compute_totals",
+        help="True when the company is not on the Ethiopian chart of accounts, "
+        "so no VAT tax codes resolve. Totals read as zero rather than raising.",
+    )
 
     @api.depends("date_from", "company_id")
     def _compute_name(self):
@@ -53,12 +58,18 @@ class L10nEtVatDeclaration(models.Model):
 
     @api.depends("date_from", "date_to", "company_id")
     def _compute_totals(self):
-        """Live totals from posted moves (see mixin docstring)."""
+        """Live totals from posted moves (see mixin docstring).
+
+        Never raises on read (A4): a company that is not on the Ethiopian chart
+        reads as zeros with ``off_chart`` set, so the list/form stay usable and
+        surface the reason instead of erroring.
+        """
         for report in self:
             data = report._get_report_data()
             report.output_vat_total = data["output_total_tax"]
             report.input_vat_total = data["input_total_tax"]
             report.net_vat = data["net_vat"]
+            report.off_chart = data["off_chart"]
 
     def _tax_rows(self, row_specs):
         """Build (label, base, tax) rows for one side of the declaration.
@@ -82,18 +93,17 @@ class L10nEtVatDeclaration(models.Model):
         return rows
 
     def _get_report_data(self):
-        """Full declaration dataset for rendering, export and tests."""
+        """Full declaration dataset for rendering, export and tests.
+
+        Does not raise when the company is off the Ethiopian chart (A4): it
+        returns zeroed totals with ``off_chart=True`` so reading the record
+        (list view, form, export) is always safe. The print/export actions and
+        the form surface the warning instead of erroring.
+        """
         self.ensure_one()
         output_rows = self._tax_rows(OUTPUT_TAX_ROWS)
         input_rows = self._tax_rows(INPUT_TAX_ROWS)
-        if not output_rows and not input_rows:
-            raise UserError(
-                self.env._(
-                    "No Ethiopian VAT tax codes found for %(company)s — the "
-                    "company must be on the Ethiopian chart of accounts.",
-                    company=self.company_id.display_name,
-                )
-            )
+        off_chart = not output_rows and not input_rows
         rounding = self.currency_id.round
         output_total_tax = rounding(sum(row["amount"] for row in output_rows))
         input_total_tax = rounding(sum(row["amount"] for row in input_rows))
@@ -125,6 +135,17 @@ class L10nEtVatDeclaration(models.Model):
             "is_payable": net_vat > 0,
             "tie_out": tie_out,
             "tie_out_ok": all(row["ok"] for row in tie_out),
+            "off_chart": off_chart,
+            "off_chart_warning": (
+                self.env._(
+                    "%(company)s is not on the Ethiopian chart of accounts — "
+                    "no VAT tax codes resolve, so all figures are zero. Load "
+                    "the Ethiopian chart before filing.",
+                    company=self.company_id.display_name,
+                )
+                if off_chart
+                else ""
+            ),
         }
 
     def action_print_pdf(self):

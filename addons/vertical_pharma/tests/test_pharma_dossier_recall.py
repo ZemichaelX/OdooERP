@@ -11,6 +11,7 @@ recall is for) and must NOT list Bethel: precision by exclusion.
 from datetime import datetime, time, timedelta
 
 from odoo import Command, fields
+from odoo.exceptions import AccessError
 from odoo.tests import TransactionCase, tagged
 
 
@@ -195,3 +196,41 @@ class TestPharmaDossierRecall(TransactionCase):
         self.assertNotIn(self.b124, dossier.lot_ids)
         self.assertEqual(self.b123._pharma_dossiers(), dossier)
         self.assertFalse(self.b124._pharma_dossiers())
+
+    def test_dossier_financials_restricted_to_managers(self):
+        """A7: an import dossier carries landed-cost financials, so a warehouse
+        user may READ it but not write/create; a purchase manager can."""
+
+        def _user(login, group_xmlid):
+            return self.env["res.users"].create(
+                {
+                    "name": login,
+                    "login": login,
+                    "company_ids": [Command.set(self.company.ids)],
+                    "company_id": self.company.id,
+                    "group_ids": [Command.link(self.env.ref(group_xmlid).id)],
+                }
+            )
+
+        clerk = _user("wh_clerk_a7", "stock.group_stock_user")
+        buyer = _user("purch_mgr_a7", "purchase.group_purchase_manager")
+        dossier = self.env["pharma.import.dossier"].create(
+            {"supplier_id": self.supplier.id, "amount_goods": 100000}
+        )
+        # Warehouse clerk: read is fine, write/create are refused.
+        dossier.with_user(clerk).read(["amount_goods"])
+        with self.assertRaises(AccessError):
+            dossier.with_user(clerk).write({"amount_goods": 999})
+        with self.assertRaises(AccessError):
+            self.env["pharma.import.dossier"].with_user(clerk).create(
+                {"supplier_id": self.supplier.id}
+            )
+        # Purchase manager: write and create both succeed.
+        dossier.with_user(buyer).write({"amount_goods": 200000})
+        self.assertEqual(dossier.amount_goods, 200000)
+        created = (
+            self.env["pharma.import.dossier"]
+            .with_user(buyer)
+            .create({"supplier_id": self.supplier.id, "amount_freight": 5000})
+        )
+        self.assertTrue(created.name.startswith("IMP/"))

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     "name": "Pharma Vertical (SapianERP)",
-    "version": "19.0.1.0.0",
+    "version": "19.0.2.0.0",
     "summary": "Pharmaceutical distribution compliance (the DAT blueprint): "
     "mandatory batch+expiry on pharma receipts, FEFO picking, configurable "
     "expiry-alert digests with escalation states, expired-lot delivery blocking, "
@@ -12,7 +12,10 @@
     "website": "https://sapiantech.com",
     "category": "Localization/Ethiopia",
     "license": "LGPL-3",
-    "depends": ["stock", "product_expiry"],
+    # purchase + account: an import dossier is a purchasing/accounting artifact
+    # (landed costs), so its financial fields are writable only by purchase /
+    # account managers (A7); warehouse users get read-only.
+    "depends": ["stock", "product_expiry", "purchase", "account"],
     "data": [
         "security/ir.model.access.csv",
         "security/vertical_pharma_security.xml",
