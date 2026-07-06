@@ -12,6 +12,7 @@ import sys
 sys.path.insert(0, os.path.dirname(__file__))
 
 import pytest
+import et_payroll_calc as calc
 from et_payroll_calc import (
     compute_paye,
     compute_pension,
@@ -116,3 +117,65 @@ def test_payroll_non_citizen_no_pension():
     r = compute_payroll(PayrollInput(basic_salary=10000, is_citizen=False))
     assert r.pension_employee == 0.0
     assert r.net_pay == 8350.0  # 10000 - 1650 - 0
+
+
+# --------------------------------------------------------------------------------------
+# Allowance exemption split (accountant-verified Jul 2026)
+# --------------------------------------------------------------------------------------
+def test_transport_allowance_golden_10000_salary_3000_transport():
+    """Kickoff golden: salary 10,000 + transport 3,000 → exempt 2,200 (the
+    2,200 ceiling is lower than 25% = 2,500), taxable 800 — PAYE on 10,800."""
+    exempt, taxable = calc.split_allowance(
+        3000,
+        10000,
+        cap_amount=calc.DEFAULT_TRANSPORT_EXEMPT_CAP,
+        cap_salary_pct=calc.DEFAULT_TRANSPORT_EXEMPT_SALARY_PCT,
+    )
+    assert (exempt, taxable) == (2200.0, 800.0)
+    r = calc.compute_payroll(
+        calc.PayrollInput(
+            basic_salary=10000, taxable_allowances=taxable, non_taxable_allowances=exempt
+        )
+    )
+    assert r.taxable_income == 10800.0
+    assert r.paye == pytest.approx(1890.0, abs=0.01)  # 30% × 10,800 − 1,350
+
+
+def test_transport_allowance_salary_pct_binds_on_low_salary():
+    """Salary 8,000 → 25% = 2,000 is LOWER than 2,200: transport 3,000 →
+    exempt 2,000, taxable 1,000."""
+    exempt, taxable = calc.split_allowance(3000, 8000, cap_amount=2200, cap_salary_pct=0.25)
+    assert (exempt, taxable) == (2000.0, 1000.0)
+
+
+def test_transport_allowance_under_both_ceilings_fully_exempt():
+    exempt, taxable = calc.split_allowance(1500, 10000, cap_amount=2200, cap_salary_pct=0.25)
+    assert (exempt, taxable) == (1500.0, 0.0)
+
+
+def test_allowance_no_ceiling_fully_exempt():
+    """Hardship/medical rule: no configured ceiling → fully exempt."""
+    exempt, taxable = calc.split_allowance(5000, 10000)
+    assert (exempt, taxable) == (5000.0, 0.0)
+
+
+def test_allowance_zero_or_negative_amount_is_noop():
+    assert calc.split_allowance(0, 10000, cap_amount=2200) == (0.0, 0.0)
+    assert calc.split_allowance(-100, 10000, cap_amount=2200) == (0.0, 0.0)
+
+
+def test_allowance_zero_salary_pct_ceiling_all_taxable():
+    """Percentage ceiling with zero salary: nothing can be exempted via the
+    salary fraction."""
+    exempt, taxable = calc.split_allowance(1000, 0, cap_amount=2200, cap_salary_pct=0.25)
+    assert (exempt, taxable) == (0.0, 1000.0)
+
+
+def test_split_allowance_no_invented_cent_on_half_cent_ceiling():
+    exempt, taxable = calc.split_allowance(3000, 8000.02, cap_amount=2200, cap_salary_pct=0.25)
+    assert round(exempt + taxable, 2) == 3000.00
+
+
+def test_round2_half_up_at_magnitude_and_sign():
+    assert calc._round2(700000000.005) == 700000000.01
+    assert calc._round2(-1.005) == -1.01

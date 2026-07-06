@@ -3,6 +3,7 @@
 expiry digest. The state math lives in reference/pharma_calc.py."""
 
 from odoo import api, fields, models
+from odoo.exceptions import ValidationError
 from odoo.tools import html_escape
 
 from ..reference import pharma_calc
@@ -31,6 +32,41 @@ class StockLot(models.Model):
         "never reported twice.",
     )
 
+    @api.constrains("expiration_date", "product_id")
+    def _check_pharma_expiration_kept(self):
+        """A pharma batch must always carry an expiration date: clearing it
+        after receipt would slip the lot past the delivery gate and out of the
+        digest (both key off a non-null expiry)."""
+        for lot in self:
+            if lot.is_pharma and not lot.expiration_date:
+                raise ValidationError(
+                    self.env._(
+                        "Pharmaceutical batch %(lot)s must keep an expiration "
+                        "date — it cannot be cleared.",
+                        lot=lot.name or "?",
+                    )
+                )
+
+    def write(self, vals):
+        """Re-arm the expiry digest whenever a batch's expiry is changed: a lot
+        already reported and then relabelled (corrected earlier, or extended to
+        a later date) must be eligible to be reported again against the new
+        date. Skip when the caller is toggling ``pharma_alerted`` itself."""
+        if "expiration_date" in vals and "pharma_alerted" not in vals:
+            vals = dict(vals, pharma_alerted=False)
+        return super().write(vals)
+
+    def _pharma_expiry_local_date(self):
+        """The expiry as a LOCAL calendar date. ``expiration_date`` is a naive
+        UTC datetime, so a batch entered as local-midnight 2026-09-25 is stored
+        21:00 the day before at UTC+3; taking ``.date()`` raw would treat it as
+        expiring a day early — wrong at Ethiopian time against the "last usable
+        day" convention."""
+        self.ensure_one()
+        if not self.expiration_date:
+            return None
+        return fields.Datetime.context_timestamp(self, self.expiration_date).date()
+
     @api.depends("expiration_date", "product_id.is_pharma", "company_id")
     def _compute_pharma_state(self):
         """Delegate to the reference calculator with the company horizon."""
@@ -41,7 +77,7 @@ class StockLot(models.Model):
                 continue
             company = lot.company_id or self.env.company
             lot.pharma_state = pharma_calc.expiry_state(
-                lot.expiration_date and lot.expiration_date.date(),
+                lot._pharma_expiry_local_date(),
                 today,
                 company.pharma_expiry_alert_days or pharma_calc.DEFAULT_ALERT_HORIZON_DAYS,
             )
@@ -69,7 +105,7 @@ class StockLot(models.Model):
             )
             lots = candidates.filtered(
                 lambda lot: lot.with_company(company).product_qty > 0
-                and pharma_calc.expiry_state(lot.expiration_date.date(), today, horizon)
+                and pharma_calc.expiry_state(lot._pharma_expiry_local_date(), today, horizon)
                 != pharma_calc.STATE_FRESH
             )
             if not lots:

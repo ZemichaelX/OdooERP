@@ -159,7 +159,12 @@ class SapianDemoTrader(models.AbstractModel):
         return company
 
     def _create_products(self):
-        """ETB-priced local products (bilingual names) + an ETB pricelist."""
+        """ETB-priced local products (bilingual names) + an ETB pricelist.
+
+        The three physical goods are storable (is_storable) so on-hand
+        quantities are tracked and the delivery flows move real stock — a
+        trading demo should show inventory, not untracked consumables.
+        Consulting stays a service."""
         self.env["product.pricelist"].create(
             {
                 "name": "ETB Retail Pricelist",
@@ -173,6 +178,7 @@ class SapianDemoTrader(models.AbstractModel):
                 {
                     "name": "Teff Flour 25kg — የጤፍ ዱቄት",
                     "type": "consu",
+                    "is_storable": True,
                     "list_price": 3200,
                     "standard_price": 2600,
                 }
@@ -181,6 +187,7 @@ class SapianDemoTrader(models.AbstractModel):
                 {
                     "name": "Ethiopian Coffee Beans 5kg — የቡና ፍሬ",
                     "type": "consu",
+                    "is_storable": True,
                     "list_price": 4500,
                     "standard_price": 3600,
                 }
@@ -189,6 +196,7 @@ class SapianDemoTrader(models.AbstractModel):
                 {
                     "name": "Sunflower Cooking Oil 20L",
                     "type": "consu",
+                    "is_storable": True,
                     "list_price": 5800,
                     "standard_price": 5000,
                 }
@@ -328,12 +336,22 @@ class SapianDemoTrader(models.AbstractModel):
         """Two quotation → delivery → invoice flows with 15% VAT.
 
         Output VAT golden: 32,000 + 24,000 = 56,000 base → 8,400 VAT.
+        Orders use the ETB pricelist so the invoices are priced and reported
+        in the company currency, not Odoo's default USD pricelist.
         """
         order_model = self.env["sale.order"]
+        pricelist = self.env["product.pricelist"].search(
+            [
+                ("currency_id", "=", self.env.ref("base.ETB").id),
+                ("company_id", "=", self.env.company.id),
+            ],
+            limit=1,
+        )
         # Fasika: 10 × Teff @ 3,200 = 32,000 + 4,800 VAT = 36,800.
         order_fasika = order_model.create(
             {
                 "partner_id": partners["fasika"].id,
+                "pricelist_id": pricelist.id,
                 "order_line": [
                     Command.create(
                         {
@@ -349,6 +367,7 @@ class SapianDemoTrader(models.AbstractModel):
         order_zemen = order_model.create(
             {
                 "partner_id": partners["zemen"].id,
+                "pricelist_id": pricelist.id,
                 "order_line": [
                     Command.create(
                         {
@@ -371,7 +390,10 @@ class SapianDemoTrader(models.AbstractModel):
             order.action_confirm()
             self._validate_pickings(order.picking_ids)
             invoices = order._create_invoices()
-            invoices.write({"invoice_date": "2026-07-10"})
+            # Set the due date alongside the invoice date: with no payment term
+            # the due date is otherwise left at the (earlier) creation date,
+            # producing a due-before-issued document.
+            invoices.write({"invoice_date": "2026-07-10", "invoice_date_due": "2026-08-09"})
             invoices.action_post()
 
     def _run_purchase_flow(self, partners, products):

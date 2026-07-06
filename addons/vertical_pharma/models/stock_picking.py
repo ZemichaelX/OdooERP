@@ -59,7 +59,7 @@ class StockPicking(models.Model):
                 and line.lot_id
                 and line.lot_id.expiration_date
                 and pharma_calc.expiry_state(
-                    line.lot_id.expiration_date.date(),
+                    line.lot_id._pharma_expiry_local_date(),
                     today,
                     picking.company_id.pharma_expiry_alert_days
                     or pharma_calc.DEFAULT_ALERT_HORIZON_DAYS,

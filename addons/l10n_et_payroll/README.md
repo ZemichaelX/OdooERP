@@ -31,15 +31,38 @@ filings without them.
 ## Models
 - `l10n.et.paye.band` / `l10n.et.pension.config` — effective-dated rate config;
   a future change is a NEW record, history never moves.
+- `l10n.et.allowance.type` — per-company statutory allowance rules (seeded,
+  accountant-verified Jul 2026): transport exempt up to the LOWER of ETB
+  2,200/month or 25% of basic salary (excess taxable, computed automatically);
+  hardship and actual-cost medical fully exempt; housing and position fully
+  taxable. An input line linked to a type gets its exempt/taxable split from
+  the rule — the manual flag only applies to untyped lines.
 - `l10n.et.payslip.compute` — wraps `reference/et_payroll_calc.py` (pure Python,
   golden-tested in `tests_fast/`); both bands and pension config are selected by
   the payslip period end date.
 - `l10n.et.payroll.run` / `l10n.et.payslip` / `l10n.et.payslip.input`.
 
+## Pension nationality rules (Proc 1268/2022, verified Jul 2026)
+Mandatory for Ethiopian nationals (unset nationality counts as Ethiopian);
+VOLUNTARY for foreign nationals of Ethiopian origin — tick "Pension Opt-In"
+on the employee; other foreign nationals are excluded entirely. The payslip's
+"Pension Applies" flag is set from this at generation.
+
+## Per-diem (travel) — documented, no engine rule
+Per-diems for business travel are exempt within the government scale when
+they reimburse actual travel; enter them as an EARNING input line with
+Taxable unticked (or use a custom exempt allowance type named "Per-diem").
+Amounts beyond the directive scale should be entered as a taxable line.
+The engine deliberately has no per-diem calculator: the rules are per-trip
+and evidence-based, not a monthly formula — the accountant reviews these
+case by case.
+
 ## Golden values (Proc 1395/2025 — VERIFY before go-live)
 Basic 10,000 → PAYE 1,650, pension 700/1,100, net 7,650 (journal: expenses
 11,100 = payables 1,650 + 1,800 + 7,650). +2,000 taxable overtime → PAYE 2,250
-on 12,000, pension unchanged (basic only), net 9,050.
+on 12,000, pension unchanged (basic only), net 9,050. Transport allowance:
+salary 10,000 + transport 3,000 → exempt 2,200, taxable 800 → PAYE 1,890 on
+10,800.
 
 ## Skipped in v1 (deliberate)
 Severance, attendance-driven overtime, Amharic payslip, Telebirr payout, leave

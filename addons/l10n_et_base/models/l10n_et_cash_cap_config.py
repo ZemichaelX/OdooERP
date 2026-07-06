@@ -9,6 +9,15 @@ from odoo.exceptions import ValidationError
 from ..reference import et_tax_calc
 
 DEFAULT_SOURCE_NOTE = (
+    "Cash payments to one party may not exceed ETB 50,000 — single transaction "
+    "or same-day aggregate, whichever hits first (Art. 81, Proc 1395/2025; "
+    "accountant-verified Jul 2026)."
+)
+
+# The pre-correction default (30,000, unverified) — recognized and fixed on
+# upgrade so DBs seeded before the Jul 2026 accountant review pick up the
+# verified figure WITHOUT touching caps a client deliberately customized.
+_SUPERSEDED_SOURCE_NOTE = (
     "Cash payments to one party may not exceed ETB 30,000 per day "
     "(Proc 1395/2025). Re-verify with the Ministry of Revenue before go-live."
 )
@@ -119,7 +128,8 @@ class L10nEtCashCapConfig(models.Model):
 
     @api.model
     def _l10n_et_ensure_default(self, company):
-        """Seed the Proc 1395/2025 default cap for ``company`` if it has none."""
+        """Seed the Art. 81 (Proc 1395/2025) default cap for ``company`` if it
+        has none."""
         if not self.search_count([("company_id", "=", company.id)]):
             self.create(
                 {
@@ -128,3 +138,26 @@ class L10nEtCashCapConfig(models.Model):
                     "source_note": DEFAULT_SOURCE_NOTE,
                 }
             )
+
+    @api.model
+    def _l10n_et_fix_superseded_defaults(self):
+        """Upgrade hook: correct configs still carrying the pre-review 30,000
+        default to the accountant-verified 50,000 (Art. 81, Proc 1395/2025).
+
+        Only rows with BOTH the old cap and the old source note are touched —
+        a deliberately customized cap (different amount or an edited note) is
+        client configuration and stays untouched."""
+        stale = self.search(
+            [
+                ("cap_amount", "=", 30000.0),
+                ("source_note", "=", _SUPERSEDED_SOURCE_NOTE),
+            ]
+        )
+        if stale:
+            stale.write(
+                {
+                    "cap_amount": et_tax_calc.DEFAULT_CASH_CAP,
+                    "source_note": DEFAULT_SOURCE_NOTE,
+                }
+            )
+        return True

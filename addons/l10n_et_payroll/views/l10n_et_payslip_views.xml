@@ -49,7 +49,10 @@
                                 <list editable="bottom">
                                     <field name="name"/>
                                     <field name="category"/>
-                                    <field name="taxable"/>
+                                    <field name="allowance_type_id"
+                                           optional="show"/>
+                                    <field name="taxable"
+                                           readonly="allowance_type_id"/>
                                     <field name="amount"/>
                                 </list>
                             </field>

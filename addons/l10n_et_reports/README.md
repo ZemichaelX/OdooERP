@@ -28,6 +28,14 @@ markers — nothing re-declared here.
   (`id_tax03/04/06/07/08/10`, WHT via the `l10n_et_wht_kind` marker), so the
   module is inert on companies not on the Ethiopian chart.
 
+## ⚠ WHT anti-avoidance (accountant note, Jul 2026)
+The 20,000/10,000 WHT thresholds are PER TRANSACTION, but the authority may
+AGGREGATE deliberately split invoices (one supply invoiced as several
+sub-threshold pieces) and assess the WHT that was avoided. The WHT summary
+reports what was actually withheld per posted bill — it does not detect
+splitting. Advise clients: never split a supply to duck the threshold; when
+in doubt, withhold.
+
 ## ⚠ Verify against current MoR forms
 The computations are exact and golden-tested; the ROW LAYOUT of the printed
 declaration is a simple section-level rendering. Before filing with the

@@ -14,6 +14,7 @@
     "data": [
         "security/ir.model.access.csv",
         "security/l10n_et_base_security.xml",
+        "data/l10n_et_base_upgrade.xml",
         "views/l10n_et_wht_config_views.xml",
         "views/l10n_et_cash_cap_config_views.xml",
         "views/res_partner_views.xml",

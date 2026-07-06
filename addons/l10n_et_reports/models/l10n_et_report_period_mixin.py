@@ -19,6 +19,8 @@ from dateutil.relativedelta import relativedelta
 from odoo import api, fields, models
 from odoo.exceptions import UserError
 
+from odoo.addons.l10n_et_base.reference import et_tax_calc
+
 
 class L10nEtReportPeriodMixin(models.AbstractModel):
     _name = "l10n.et.report.period.mixin"
@@ -118,11 +120,17 @@ class L10nEtReportPeriodMixin(models.AbstractModel):
         return self.currency_id.round(sign * sum(lines.mapped("balance")))
 
     def _store_csv(self, rows, filename_prefix):
-        """Serialize ``rows`` (lists of cells) to the record's CSV export field."""
+        """Serialize ``rows`` (lists of cells) to the record's CSV export field.
+
+        Every cell is neutralized against spreadsheet formula injection: some
+        cells (supplier names, TINs) are counterparty-controlled and this file
+        is opened in Excel/LibreOffice by the accountant.
+        """
         self.ensure_one()
         buffer = io.StringIO()
         writer = csv.writer(buffer)
-        writer.writerows(rows)
+        safe_rows = [[et_tax_calc.csv_safe_cell(cell) for cell in row] for row in rows]
+        writer.writerows(safe_rows)
         self.csv_export_file = base64.b64encode(buffer.getvalue().encode("utf-8"))
         self.csv_export_filename = f"{filename_prefix}_{self.date_from:%Y_%m}.csv"
 

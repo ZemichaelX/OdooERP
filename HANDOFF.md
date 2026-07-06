@@ -58,9 +58,13 @@ Built and container-verified on real Odoo 19 scratch/demo DBs:
   batches, digest pre-fired, recall golden B-123 (Hiwot 120 + Kadisco 80; Bethel got B-124
   only — precision by exclusion), dossier landed-cost golden 2,511,500 ETB.
 
-Quality state: 79/79 fast pytest goldens (`pytest tests_fast/`), Odoo tests green in container:
-33 (l10n_et_base) + 21 (payroll) + 18 (reports) + 14 (onboarding/demo) + 13 (vertical_pharma,
-incl. HttpCase) + 7 (sapian_demo_pharma); ruff/black clean, whole-addons pylint-odoo 10.00/10.
+Quality state (after the 2026-07-06 pre-release review): 90/90 fast pytest goldens
+(`pytest tests_fast/`), 133 Odoo tests green in container (l10n_et_base 44, l10n_et_payroll
+45, l10n_et_reports 24, sapian_core 14, vertical_pharma 25, sapian_demo_trader 12,
+sapian_demo_pharma 9); ruff/black clean, whole-addons pylint-odoo 10.00/10; install AND
+uninstall clean on a fresh DB. Accountant config corrections applied (cash cap 50k Art. 81,
+allowance exemption engine, pension nationality opt-in) + 19 adversarial-review findings
+resolved (18 fixed, 1 deferred fail-safe — see the findings table below).
 Odoo 19 test-infra gotchas: HttpCase needs `--workers=0` (odoo.conf ships workers=2); Git Bash
 mangles `--test-tags /module` into a Windows path — silent no-op, exit 0 (use MSYS_NO_PATHCONV=1
 and check the test-count line); product_expiry auto-fills missing expiry from
@@ -114,19 +118,58 @@ delivery runs, partner directory, SMS, EFDA live API), other verticals (trading/
 payments/SMS (Telebirr/Chapa), e-invoice ITAS, Ethiopian calendar, full white-label/debrand, BI,
 biometrics, severance, Amharic payslips.
 
+## Pre-release adversarial review (2026-07-06) — findings table
+
+Three fresh-context reviewer subagents (R1 calculation, R2 security, R3 state-machine)
+over all five modules. Every finding confirmed by executed input or refuted; confirmed
+findings fixed with regression tests (all green). Two criticals were independently
+reported by two reviewers each.
+
+| # | Sev | Finding | Verdict | Resolution |
+|---|-----|---------|---------|------------|
+| R1#1/R3#1 | critical | Editing an allowance type's ceiling recomputed CONFIRMED (posted) payslips | confirmed | `_compute_amounts` skips `state=='done'` slips; posted month frozen. Test. |
+| R1#2 | critical | Each transport line got its own 2,200 ceiling → double exemption, PAYE understated | confirmed (4,400 exempt vs 2,200) | Lines of the same type summed before the split. Test. |
+| R3#2 | critical | A confirmed run/payslip could be deleted, orphaning the posted journal entry | confirmed | `@api.ondelete` guards on run + payslip block delete while `done`. Test. |
+| R1#3/R3#3 | major | Cash cap blind to sibling payments posted in one batch (two 30k slipped a 50k cap) | confirmed | Check now counts same-batch siblings. Test. |
+| R2#1 | major | HR Officer read wage/bank/TIN via the payslip's plain fields (sudo laundering) | confirmed (`hr.version.wage` is manager-restricted) | Payroll run/payslip/input ACLs restricted to `hr.group_hr_manager`. |
+| R1#4 | major | No overlap guard on PAYE bands / pension config → order-dependent rate | confirmed | `_check_no_overlap` constraints added to both. Test. |
+| R3#4 | major | Un-flagging `is_pharma` dropped existing lots out of every expiry gate | confirmed | `write` blocks clearing the flag while lots exist. Test. |
+| R3#5 | major | Clearing a pharma lot's `expiration_date` escaped the delivery gate + digest | confirmed | `@api.constrains` forbids a null expiry on a pharma lot. Test. |
+| R1#5 | minor | `split_allowance` could invent a cent on a half-cent 25% ceiling | confirmed (3,000.01 ≠ 3,000) | Round exempt first, remainder is taxable. Fast test. |
+| R1#6 | minor | Payroll `_round2` used the broken `+1e-9` nudge (fails at magnitude/negatives) | confirmed | Aligned with the base Decimal half-up rounder. Fast test. |
+| R1#7 | minor | Pharma expiry compared UTC date vs local "today" → off-by-one at UTC+3 | confirmed | `_pharma_expiry_local_date` via `context_timestamp`. Test. |
+| R2#2 | minor | No multi-company rule on `paye.band` / `pension.config` | confirmed | `ir.rule` added for both. |
+| R2#3 | minor | No multi-company rule on `sapian.module.catalog` | confirmed | New `sapian_core` security XML with the rule. |
+| R2#4 | minor | CSV formula injection in bank/VAT/WHT exports (supplier/employee names) | confirmed | `csv_safe_cell` neutralizer (pure, numbers exempt). Fast + Odoo tests. |
+| R3#6 | minor | `pharma_alerted` never reset, so a relabelled batch was never re-digested | confirmed | Lot `write` re-arms the digest on any expiry change. Test. |
+| R3#7 | minor | Stale bank CSV survived a reset-to-draft | confirmed | Reset clears `bank_export_file`. Test. |
+| R3#8 | minor | Reset drafted+unlinked a reconciled payroll move | confirmed | Reset blocks when the entry has reconciled lines. Test. |
+| R2#5 | minor | `list_db=True` shipped in odoo.conf | confirmed (`.env` is gitignored, not a committed-secret leak) | Default flipped to `list_db=False`. |
+| R3#9 | minor | Recall report over-reports because customer RETURNS are not netted | confirmed | **DEFERRED**: over-reporting is fail-safe (a recall must contact everyone); netting returns is a v2 refinement. Documented, not fixed. |
+
+Demo-data bugs (also fixed): sales invoices used the USD default pricelist (→ ETB
+pricelist assigned); invoice due date sat before the issue date (→ due date set
+explicitly); physical demo goods were not storable (→ `is_storable=True`). All three
+now asserted in `sapian_demo_trader` e2e tests.
+
 ## Open loops (track these)
 
-- Accountant review out with a friend (`Tax-Questions-For-You.docx`). Critical answers: Q5 —
-  does punitive 30% apply below 20k/10k thresholds (config flag ready to flip) and either-or-both
-  TIN/licence; Q10 — real filed form samples to match report layouts. Answers arrive as CONFIG
-  changes + report-layout tweaks, not rework.
-- Print 5 demo PDFs for the accountant (payslip, PAYE declaration, pension schedule, invoice,
-  WHT certificate) — one small Claude Code task: "render demo documents to samples/".
-- Verify GitHub push completed (user was given the PowerShell commands).
-- `scripts/provision_client.sh` must write a real `admin_passwd` into odoo.conf at deploy (known gap).
+- ~~Accountant review Q5 (punitive threshold gating, either/both TIN+licence) + cash cap~~
+  **ANSWERED & APPLIED (2026-07-06)**: punitive 30% when EITHER TIN or licence missing;
+  thresholds gate ALL WHT (config default confirmed, kept); cash cap 50,000 Art. 81
+  (single or same-day aggregate); allowance exemption engine + pension nationality opt-in.
+  Still open: Q10 — real filed MoR form samples to match report ROW LAYOUTS (report tweak,
+  not rework).
+- Print 5 demo PDFs for the accountant — DONE earlier (samples/, 7 PDFs). Re-render after the
+  Q10 layout match if the forms differ.
+- `scripts/provision_client.sh` must write a real `admin_passwd` into odoo.conf at deploy (known
+  gap). Related: odoo.conf now ships `list_db = False` (R2#5); the provision script should keep
+  it False and set a per-tenant `admin_passwd`.
 - Old `Accountant-Review-Questions.docx` at OdooERP top level can be deleted (superseded).
-- Pre-first-client: re-verify all rates vs gazetted proclamations + accountant sign-off; one
-  adversarial review pass of l10n_et_base + payroll (deliberately deferred).
+- ~~One adversarial review pass of l10n_et_base + payroll (deferred)~~ **DONE (2026-07-06)** —
+  3-reviewer pass over all five modules; findings table above; all fixed but the fail-safe
+  recall-returns netting (R3#9, deferred to pharma session 2). Re-verify rates vs gazetted
+  proclamations remains a per-go-live step.
 - VAT on imported services is modeled as ordinary input VAT in demo data; real treatment is
   likely reverse-charge — confirm with accountant before first client with foreign service
   purchases. No code change now.

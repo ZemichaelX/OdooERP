@@ -2,3 +2,4 @@
 from . import test_pharma_compliance
 from . import test_pharma_dossier_recall
 from . import test_pharma_web
+from . import test_review_regressions

@@ -1,7 +1,10 @@
 # -*- coding: utf-8 -*-
 """Effective-dated PAYE bands. Rates are configuration data, not code (CLAUDE.md rule #4)."""
 
-from odoo import fields, models, api
+from datetime import date
+
+from odoo import api, fields, models
+from odoo.exceptions import ValidationError
 
 
 class L10nEtPayeBand(models.Model):
@@ -28,6 +31,50 @@ class L10nEtPayeBand(models.Model):
         for b in self:
             hi = "and above" if b.is_top_band else f"{b.upper_bound:,.0f}"
             b.name = f"{b.lower_bound:,.0f}–{hi} @ {b.rate * 100:.0f}%"
+
+    @api.constrains(
+        "lower_bound",
+        "upper_bound",
+        "is_top_band",
+        "effective_from",
+        "effective_to",
+        "company_id",
+    )
+    def _check_no_overlap(self):
+        """PAYE for a given income on a given date must be unambiguous: no two
+        bands of the same company may overlap in BOTH the effective window AND
+        the income interval. Forgetting to close the old generation's
+        ``effective_to`` when seeding a new one would otherwise make
+        ``compute_paye`` return whichever row sorts first."""
+        for band in self:
+            band_to = band.effective_to or date.max
+            band_hi = None if band.is_top_band else band.upper_bound
+            others = self.search(
+                [
+                    ("id", "!=", band.id),
+                    ("company_id", "=", band.company_id.id),
+                    ("effective_from", "<=", band_to),
+                    "|",
+                    ("effective_to", "=", False),
+                    ("effective_to", ">=", band.effective_from),
+                ]
+            )
+            for other in others:
+                other_hi = None if other.is_top_band else other.upper_bound
+                # Half-open income intervals (lower exclusive, upper inclusive)
+                # overlap when each starts below the other's ceiling.
+                low_below_other_hi = other_hi is None or band.lower_bound < other_hi
+                other_low_below_hi = band_hi is None or other.lower_bound < band_hi
+                if low_below_other_hi and other_low_below_hi:
+                    raise ValidationError(
+                        self.env._(
+                            "PAYE bands overlap in time and income for the same "
+                            "company (%(a)s vs %(b)s). Close the old band's "
+                            "effective-to date before adding the new one.",
+                            a=band.name,
+                            b=other.name,
+                        )
+                    )
 
     @api.model
     def get_active_bands(self, on_date=None, company=None):

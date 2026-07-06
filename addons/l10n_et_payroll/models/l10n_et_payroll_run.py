@@ -15,6 +15,8 @@ from dateutil.relativedelta import relativedelta
 from odoo import Command, api, fields, models
 from odoo.exceptions import UserError
 
+from odoo.addons.l10n_et_base.reference import et_tax_calc
+
 
 class L10nEtPayrollRun(models.Model):
     _name = "l10n.et.payroll.run"
@@ -119,9 +121,11 @@ class L10nEtPayrollRun(models.Model):
     def action_generate_payslips(self):
         """Create one draft payslip per selected employee (skipping existing).
 
-        Basic salary defaults from the employee's current version wage; the
-        citizenship flag defaults from the employee's nationality (unset
-        nationality counts as Ethiopian — the common case for local staff).
+        Basic salary defaults from the employee's current version wage. The
+        pension flag follows Proc 1268/2022 (accountant-verified Jul 2026):
+        Ethiopian nationals mandatory (unset nationality counts as Ethiopian —
+        the common case for local staff); foreign nationals of Ethiopian
+        origin only when opted in; other foreign nationals excluded.
         """
         self.ensure_one()
         if self.state != "draft":
@@ -140,12 +144,14 @@ class L10nEtPayrollRun(models.Model):
             # generating payroll legitimately needs it regardless of which HR
             # group runs the batch. Only the wage value is read.
             wage = employee.sudo().current_version_id.wage
+            is_ethiopian = not employee.country_id or employee.country_id == ethiopia
+            pension_applies = is_ethiopian or employee.sudo().l10n_et_pension_opt_in
             created |= self.env["l10n.et.payslip"].create(
                 {
                     "run_id": self.id,
                     "employee_id": employee.id,
                     "basic_salary": wage,
-                    "is_citizen": (not employee.country_id or employee.country_id == ethiopia),
+                    "is_citizen": pension_applies,
                 }
             )
         if created:
@@ -289,11 +295,13 @@ class L10nEtPayrollRun(models.Model):
             account = slip.employee_id.sudo().primary_bank_account_id
             if not account:
                 missing_accounts.append(slip.employee_id.name)
+            # Neutralize spreadsheet formula injection: employee/bank names are
+            # user-influenced and this file is opened in Excel/LibreOffice.
             writer.writerow(
                 [
-                    slip.employee_id.name,
-                    account.bank_id.name or "",
-                    account.acc_number or "",
+                    et_tax_calc.csv_safe_cell(slip.employee_id.name),
+                    et_tax_calc.csv_safe_cell(account.bank_id.name or ""),
+                    et_tax_calc.csv_safe_cell(account.acc_number or ""),
                     f"{slip.net_pay:.2f}",
                 ]
             )
@@ -456,11 +464,41 @@ class L10nEtPayrollRun(models.Model):
             raise UserError(self.env._("Only confirmed runs can be reset."))
         move = self.move_id
         if move:
+            # Refuse to tear down an entry whose payables were already settled:
+            # unlinking it would silently un-reconcile the remittance/salary
+            # payments and desync the ledger.
+            if move.sudo().line_ids.filtered(
+                lambda line: line.matched_debit_ids or line.matched_credit_ids
+            ):
+                raise UserError(
+                    self.env._(
+                        "This payroll entry has reconciled lines (salary/PAYE/"
+                        "pension already paid). Un-reconcile those payments "
+                        "before resetting the run."
+                    )
+                )
             # sudo: same justification as posting — symmetric accounting cleanup
             # of the run's own fixed-format entry, logged below.
             move.sudo().button_draft()
             move.sudo().unlink()
         self.move_id = False
+        # A stale bank file carries the pre-reset net amounts; drop it so a
+        # re-export is forced after any edit.
+        self.bank_export_file = False
+        self.bank_export_filename = False
         self.state = "draft"
         self.message_post(body=self.env._("Payroll reset to draft; journal entry removed."))
         return True
+
+    @api.ondelete(at_uninstall=False)
+    def _unlink_except_confirmed(self):
+        """A confirmed run owns a posted journal entry; deleting it would
+        orphan the GL entry and cascade-delete the payslips (posted history).
+        Reset to draft first."""
+        if any(run.state == "done" for run in self):
+            raise UserError(
+                self.env._(
+                    "Cannot delete a confirmed payroll run — reset it to draft "
+                    "first (that removes the journal entry cleanly)."
+                )
+            )

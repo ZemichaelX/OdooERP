@@ -65,4 +65,23 @@ class ProductTemplate(models.Model):
     def write(self, vals):
         if vals.get("is_pharma"):
             self._inject_pharma_vals(vals)
+        if "is_pharma" in vals and not vals["is_pharma"]:
+            # Un-flagging drops every existing lot out of the expiry gates and
+            # the digest (both key off product.is_pharma via the related field);
+            # refuse while batches exist so expired stock can't silently ship.
+            offending = self.filtered(
+                lambda tmpl: tmpl.is_pharma
+                and self.env["stock.lot"]
+                .sudo()
+                .search_count([("product_id", "in", tmpl.product_variant_ids.ids)])
+            )
+            if offending:
+                raise ValidationError(
+                    self.env._(
+                        "Cannot remove the pharmaceutical flag from %(products)s: "
+                        "batches already exist. Their expiry compliance would be "
+                        "lost. Archive the product instead.",
+                        products=", ".join(offending.mapped("display_name")),
+                    )
+                )
         return super().write(vals)

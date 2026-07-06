@@ -1,3 +1,5 @@
 from . import test_payroll_compute
 from . import test_payroll_run
 from . import test_payroll_reports
+from . import test_allowance_pension_rules
+from . import test_review_regressions

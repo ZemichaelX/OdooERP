@@ -122,8 +122,26 @@ ERP for a generic trader, with minimal token spend.
 docs/plan-2026/ is the v2 master-planning package (researched Jul 2026). Where it and the
 older docs disagree, plan-2026 wins on: strategy/pricing/packaging (03), market facts and
 CURRENT TAX RULES (02, 07 — e.g. WHT is now 3% with 20k/10k thresholds, TOT abolished,
-ETB 30k cash cap, VAT threshold 2M), customization/white-label spec (06), delivery
-methodology (09), and high-level epic ordering (10). The older 01_CLAUDE_CODE_BUILD_SPEC
-remains the detailed task-level spec; map its tasks into plan-2026 epics as you go.
-PAYE bands and pension rates in the built payroll engine already match Proc 1395/2025 —
-no rework needed there. plan-2026/CLAUDE.md is a reference copy; THIS file is authoritative.
+VAT threshold 2M), customization/white-label spec (06), delivery methodology (09), and
+high-level epic ordering (10). The older 01_CLAUDE_CODE_BUILD_SPEC remains the detailed
+task-level spec; map its tasks into plan-2026 epics as you go. PAYE bands and pension
+rates in the built payroll engine already match Proc 1395/2025 — no rework needed there.
+plan-2026/CLAUDE.md is a reference copy; THIS file is authoritative.
+
+## Accountant-verified tax facts (Jul 2026 review — seeded as config; supersede older figures)
+- Cash cap: ETB 50,000 per party — single transaction OR same-day aggregate, whichever
+  hits first (Art. 81, Proc 1395/2025; cross-verified vs KPMG's proclamation copy).
+  The 30,000 figure in older docs is superseded.
+- Allowances: transport exempt up to LOWER of 2,200/month or 25% of basic (excess
+  taxable, engine-computed); hardship exempt; medical actual-cost exempt; housing and
+  position TAXABLE. Per-diem = evidence-based input line, no monthly formula.
+- Pension (Proc 1268/2022): mandatory for Ethiopian nationals; foreign nationals of
+  Ethiopian origin voluntary (opt-in flag on employee); other foreigners excluded.
+- WHT defaults CONFIRMED: either TIN or licence missing → 30% punitive; thresholds gate
+  all WHT including punitive. Authority may aggregate deliberately split invoices.
+- VAT: excess input VAT carries forward by default (refunds = exporter/investor
+  processes). Reg 570/2025: real-time EFD + QR invoices for VAT-registered traders
+  (simplified invoice ≤ 10,000) — fiscal-device integration is high priority for retail.
+- Filing: Category A via etax.mor.gov.et, others via regional bureaus; pension via
+  POESSA declaration + bank slip within 30 days. MoR beneficiary accounts (future
+  payment-instruction printout): pension 1000140034057, VAT/profit tax 1000140046047.

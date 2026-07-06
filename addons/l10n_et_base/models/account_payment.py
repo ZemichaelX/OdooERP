@@ -54,8 +54,20 @@ class AccountPayment(models.Model):
                     ("state", "in", ("in_process", "paid")),
                 ]
             )
+            # Also count siblings being posted in THIS batch: they are still
+            # draft during the check, so a search on posted state misses them —
+            # otherwise two 30,000 payments posted together each see prior 0 and
+            # both slip under a 50,000 cap.
+            batch_siblings = (self - payment).filtered(
+                lambda other, p=payment: other.company_id == p.company_id
+                and other.payment_type == "outbound"
+                and other.journal_id.type == "cash"
+                and other.date == p.date
+                and other.partner_id.commercial_partner_id == partner
+            )
             prior_total = sum(
-                abs(prior.amount_company_currency_signed) for prior in prior_payments
+                abs(other.amount_company_currency_signed)
+                for other in prior_payments | batch_siblings
             )
             amount = abs(payment.amount_company_currency_signed)
             result = et_tax_calc.check_cash_cap(amount, prior_total, cap=config.cap_amount)
@@ -65,8 +77,9 @@ class AccountPayment(models.Model):
             # format kwarg must not be called "source".
             message = self.env._(
                 "Cash payments to %(partner)s on %(date)s total %(total).2f "
-                "%(currency)s — %(excess).2f over the daily cash cap of "
-                "%(cap).2f (%(legal_source)s).",
+                "%(currency)s — %(excess).2f over the %(cap).2f cash cap "
+                "(single transaction or same-day aggregate per party — "
+                "%(legal_source)s).",
                 partner=partner.display_name,
                 date=payment.date,
                 total=result.total_day,

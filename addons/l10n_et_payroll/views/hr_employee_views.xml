@@ -11,6 +11,8 @@
                        groups="hr.group_hr_user">
                     <field name="l10n_et_tin"/>
                     <field name="l10n_et_pension_id"/>
+                    <field name="l10n_et_pension_opt_in"
+                           invisible="not country_id"/>
                 </group>
             </xpath>
         </field>

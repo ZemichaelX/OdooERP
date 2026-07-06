@@ -27,7 +27,7 @@ You are building SapianERP: a productized, Ethiopia-localized ERP on Odoo 19 Com
 - PAYE monthly (Proc 1395/2025, eff. 2025-07-01): 0–2,000 @0% · –4,000 @15% · –7,000 @20% · –10,000 @25% · –14,000 @30% · above @35%
 - Pension (Proc 1268/2022): employee 7% / employer 11% of basic
 - VAT (Proc 1341/2024): 15%, monthly filing, registration threshold ETB 2M
-- WHT (Aug 2025): 3% on goods >20,000 / services >10,000; 30% punitive if no TIN; cash cap 30,000/day/party
+- WHT (confirmed Jul 2026): 3% on goods >20,000 / services >10,000; 30% punitive if TIN OR licence missing; thresholds gate all WHT. Cash cap 50,000/party — single transaction or same-day aggregate (Art. 81, Proc 1395/2025)
 - Labor (Proc 1156/2019): OT 1.5/1.75/2/2.5×; leave 16d +1/2yr; probation ≤60 working days
 
 ## Backlog

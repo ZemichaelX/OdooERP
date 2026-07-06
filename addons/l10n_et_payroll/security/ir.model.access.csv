@@ -3,9 +3,8 @@ access_paye_band_user,l10n.et.paye.band.user,model_l10n_et_paye_band,base.group_
 access_paye_band_admin,l10n.et.paye.band.admin,model_l10n_et_paye_band,base.group_system,1,1,1,1
 access_pension_config_user,l10n.et.pension.config.user,model_l10n_et_pension_config,base.group_user,1,0,0,0
 access_pension_config_admin,l10n.et.pension.config.admin,model_l10n_et_pension_config,base.group_system,1,1,1,1
-access_l10n_et_payroll_run_hr_user,l10n.et.payroll.run hr user,model_l10n_et_payroll_run,hr.group_hr_user,1,1,1,0
 access_l10n_et_payroll_run_hr_manager,l10n.et.payroll.run hr manager,model_l10n_et_payroll_run,hr.group_hr_manager,1,1,1,1
-access_l10n_et_payslip_hr_user,l10n.et.payslip hr user,model_l10n_et_payslip,hr.group_hr_user,1,1,1,0
 access_l10n_et_payslip_hr_manager,l10n.et.payslip hr manager,model_l10n_et_payslip,hr.group_hr_manager,1,1,1,1
-access_l10n_et_payslip_input_hr_user,l10n.et.payslip.input hr user,model_l10n_et_payslip_input,hr.group_hr_user,1,1,1,1
 access_l10n_et_payslip_input_hr_manager,l10n.et.payslip.input hr manager,model_l10n_et_payslip_input,hr.group_hr_manager,1,1,1,1
+access_allowance_type_user,l10n.et.allowance.type.user,model_l10n_et_allowance_type,base.group_user,1,0,0,0
+access_allowance_type_hr_manager,l10n.et.allowance.type.hr.manager,model_l10n_et_allowance_type,hr.group_hr_manager,1,1,1,1

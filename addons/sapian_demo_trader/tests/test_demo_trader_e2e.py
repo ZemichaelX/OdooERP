@@ -72,6 +72,16 @@ class TestDemoTraderE2E(TransactionCase):
         self.assertEqual(len(invoices), 2)
         self.assertEqual(sum(invoices.mapped("amount_untaxed")), 56000.0)
         self.assertEqual(sum(invoices.mapped("amount_tax")), 8400.0)
+        # Demo-data review regressions: invoices are in ETB (not the default
+        # USD pricelist), and the due date is never before the issue date.
+        etb = self.env.ref("base.ETB")
+        for invoice in invoices:
+            self.assertEqual(invoice.currency_id, etb, "sales invoice must be ETB")
+            self.assertGreaterEqual(
+                invoice.invoice_date_due,
+                invoice.invoice_date,
+                "due date must not precede the invoice date",
+            )
         # Deliveries actually happened (quotation → delivery → invoice).
         deliveries = self.env["stock.picking"].search(
             [

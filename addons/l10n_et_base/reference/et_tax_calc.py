@@ -18,8 +18,11 @@ Sources (re-verify before go-live):
 - WHT 3% on goods > ETB 20,000 / services > ETB 10,000 per transaction; 30% punitive
   where the supplier lacks a TIN + valid business licence; 15% on foreign digital
   services (Aug 2025 rules; MoR practice notes).
-- Cash cap: cash payments to one party in a single day may not exceed ETB 30,000
-  (Proc 1395/2025).
+- Cash cap: cash payments to one party may not exceed ETB 50,000 — as a single
+  transaction OR as the aggregate of payments to that party in one day, whichever
+  hits first (Art. 81, Proc 1395/2025; accountant-verified Jul 2026 against KPMG's
+  copy of the proclamation). A single payment over the cap is just the aggregate
+  check with zero prior payments.
 - TIN: Ministry of Revenue TINs are 10-digit numbers (often displayed XXXX-XXXX-XX).
   No public check-digit algorithm is gazetted, so validation is format-only; if MoR
   publishes a checksum, extend ``validate_tin`` here (single source of truth).
@@ -39,7 +42,8 @@ DEFAULT_WHT_THRESHOLD_GOODS = 20000.0  # per-transaction threshold, goods (exclu
 DEFAULT_WHT_THRESHOLD_SERVICE = 10000.0  # per-transaction threshold, services (exclusive)
 
 # --- Cash-payment cap default ---------------------------------------------------------
-DEFAULT_CASH_CAP = 30000.0  # ETB per party per day (Proc 1395/2025)
+# Art. 81, Proc 1395/2025 — verified Jul 2026 (accountant + KPMG proclamation copy).
+DEFAULT_CASH_CAP = 50000.0  # ETB per party: single transaction or same-day aggregate
 
 # --- TIN format -----------------------------------------------------------------------
 TIN_LENGTH = 10  # MoR TINs are 10 digits
@@ -179,12 +183,14 @@ def check_cash_cap(
     *,
     cap: float = DEFAULT_CASH_CAP,
 ) -> CashCapResult:
-    """Check the Proc 1395/2025 daily cash cap for one party.
+    """Check the Art. 81 (Proc 1395/2025) cash cap for one party.
 
     ``prior_cash_today`` is the sum of cash already paid to this party earlier the same
-    day; ``payment_amount`` is the new cash payment being validated. The cap is on the
-    daily TOTAL to one party. Comparison is strictly greater-than: a running total of
-    exactly the cap is allowed; anything above it is flagged.
+    day; ``payment_amount`` is the new cash payment being validated. The cap applies to
+    a SINGLE transaction and to the same-day AGGREGATE per party, whichever hits first —
+    both are covered by this one check, since a single over-cap payment is the aggregate
+    case with ``prior_cash_today == 0``. Comparison is strictly greater-than: a running
+    total of exactly the cap is allowed; anything above it is flagged.
 
     The Odoo layer decides whether "flagged" means warn or block (a company setting).
     Non-finite amounts raise ``ValueError``: NaN compares False against the cap, so a
@@ -200,6 +206,39 @@ def check_cash_cap(
     exceeded = total > cap
     excess = _round2(total - cap) if exceeded else 0.0
     return CashCapResult(total_day=total, cap=cap, exceeded=exceeded, excess=excess)
+
+
+_CSV_INJECTION_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _looks_numeric(text: str) -> bool:
+    """True when ``text`` is a plain number (optionally signed, with thousands
+    separators) — such a value is never a spreadsheet formula."""
+    try:
+        float(text.replace(",", ""))
+        return True
+    except ValueError:
+        return False
+
+
+def csv_safe_cell(value) -> str:
+    """Neutralize spreadsheet formula injection in an exported CSV cell.
+
+    A cell whose text begins with ``= + - @`` (or a tab/CR) is interpreted as a
+    formula by Excel/LibreOffice when the file is opened — a supplier or
+    employee name like ``=WEBSERVICE(...)`` would then execute. Prefixing such
+    a value with a single quote defuses it while remaining human-readable. The
+    exports (bank salary file, VAT/WHT CSVs) are opened in exactly those tools,
+    so every user-influenced cell must pass through here.
+    """
+    text = "" if value is None else str(value)
+    if not text or _looks_numeric(text):
+        # A pure number (incl. a leading minus/plus and thousands separators)
+        # is never a formula — quoting it would corrupt numeric columns.
+        return text
+    if text[0] in _CSV_INJECTION_PREFIXES:
+        return "'" + text
+    return text
 
 
 @dataclass

@@ -5,9 +5,9 @@ The moat. Exact functional specs for the `l10n_et_*` modules. All rates/brackets
 ## 1. `l10n_et_base` — Chart of accounts & taxes
 
 - **Chart of accounts:** IFRS-aligned Ethiopian CoA template (assets/liabilities/equity/revenue/expense with local conventions: VAT receivable/payable, WHT receivable/payable, pension payable, PAYE payable, customs duty clearing). Support IFRS for SMEs statement layout (AABE mandate).
-- **VAT (Proc 1341/2024, Reg 570/2025):** 15% standard sale/purchase taxes; zero-rated and exempt tax codes; monthly VAT period; registration-threshold awareness (warn if unregistered client config sells > ETB 2M/yr). Tax on invoices auto-applied by fiscal position.
-- **Withholding tax (Aug 2025 rules):** 3% WHT on goods > ETB 20,000 and services > ETB 10,000 per transaction — implemented as automatic WHT lines on vendor bills/payments above thresholds; 30% punitive WHT flag for suppliers without TIN + licence (partner compliance fields: TIN, licence no., expiry); 15% WHT code for foreign digital services. WHT certificates printable; remittance-within-30-days reminder.
-- **Other 1395/2025 mechanics:** cash-payment cap warning (block/warn on cash payments > ETB 30,000 to one party in a day); MAT (2.5% of turnover) informational computation in annual closing report; taxpayer category A/B field on company.
+- **VAT (Proc 1341/2024, Reg 570/2025):** 15% standard sale/purchase taxes; zero-rated and exempt tax codes; monthly VAT period; registration-threshold awareness (warn if unregistered client config sells > ETB 2M/yr). Tax on invoices auto-applied by fiscal position. **Excess input VAT: carry-forward is the confirmed default treatment (accountant, Jul 2026) — cash refunds are exporter/priority-investor processes, not the ordinary path; the VAT declaration models a credit as carry-forward.** **Reg 570/2025 requires REAL-TIME EFD + QR-coded invoices for VAT-registered traders (simplified invoice allowed ≤ ETB 10,000) — this RAISES the priority of fiscal-device integration (`l10n_et_einvoice` §6) for any retail client.**
+- **Withholding tax (accountant-CONFIRMED Jul 2026):** 3% WHT on goods > ETB 20,000 and services > ETB 10,000 per transaction — implemented as automatic WHT lines on vendor bills above thresholds; 30% punitive when EITHER the TIN or the business licence is missing (partner compliance fields: TIN, licence no., expiry); 15% WHT code for foreign digital services; thresholds gate ALL WHT including punitive. WHT certificates printable; remittance-within-30-days reminder. **Anti-avoidance: the authority may aggregate deliberately split invoices — never split a supply to duck the threshold.**
+- **Other 1395/2025 mechanics:** cash-payment cap warning (block/warn) — **ETB 50,000 per party: single transaction OR same-day aggregate, whichever hits first (Art. 81, Proc 1395/2025 — accountant-verified Jul 2026 against KPMG's proclamation copy; supersedes the 30,000 figure in earlier drafts)**; MAT (2.5% of turnover) informational computation in annual closing report; taxpayer category A/B field on company.
 - **Partner fields:** TIN (checksum-validated format), VAT reg no., business licence, Amharic name.
 - **Multi-currency:** USD/EUR purchase flows with NBE reference-rate import; FX gain/loss accounts.
 
@@ -16,8 +16,8 @@ The moat. Exact functional specs for the `l10n_et_*` modules. All rates/brackets
 - **PAYE bands (Proc 1395/2025, effective 1 Jul 2025)** as effective-dated records:
   0–2,000: 0% · 2,001–4,000: 15% · 4,001–7,000: 20% · 7,001–10,000: 25% · 10,001–14,000: 30% · >14,000: 35%.
   Reference check: basic ETB 10,000 → PAYE 1,650; pension 700; net 7,650.
-- **Pension (Proc 1268/2022):** employee 7% / employer 11% of basic salary; eligibility from 45 days of employment; citizen/non-citizen handling; remittance file for MoR within 30 days of month-end.
-- **Salary structure:** basic + configurable allowances (transport, housing, hardship — with taxable/non-taxable flags per current directive), deductions (loans, advances, court orders), overtime pay classes fed by attendance (1.5×/1.75×/2×/2.5× per labor law), absence deductions.
+- **Pension (Proc 1268/2022, accountant-verified Jul 2026):** employee 7% / employer 11% of basic salary; eligibility from 45 days of employment. **Nationality rules: MANDATORY for Ethiopian nationals; VOLUNTARY (opt-in flag on the employee) for foreign nationals of Ethiopian origin; other foreign nationals EXCLUDED entirely.** Remittance via POESSA declaration + bank slip within 30 days of month-end.
+- **Salary structure (allowance rules accountant-verified Jul 2026):** basic + configurable allowance types — **transport exempt up to the LOWER of ETB 2,200/month or 25% of basic salary (excess taxable, computed by the engine); hardship exempt; medical actual-cost exempt; housing and position allowances TAXABLE by default; per-diems handled as evidence-based input lines (no monthly formula)** — deductions (loans, advances, court orders), overtime pay classes fed by attendance (1.5×/1.75×/2×/2.5× per labor law), absence deductions.
 - **Outputs:** payslips (branded, EN/AM, optional Ethiopian-calendar date), payroll register, bank transfer file (CBE/other formats), PAYE + pension remittance reports, payroll journal auto-posting (salary expense, payables per tax/pension).
 - **Historical correctness:** payslips computed with the bands effective on their period — a rate change never rewrites history.
 
@@ -60,6 +60,14 @@ The moat. Exact functional specs for the `l10n_et_*` modules. All rates/brackets
 - Import dossier: certificate of competence, product registration, PO approval, clearance docs attached to shipment record; recall report (find every customer who received a batch in minutes).
 - FEFO enforcement + configurable expiry alert horizon (DAT default: 3 months) with escalation (email → SMS digest → dashboard flag).
 
-## 9. Verification protocol (applies to everything above)
+## 9. Filing channels & remittance facts (accountant-verified Jul 2026)
+
+- **Tax filing:** Category A taxpayers file via **etax.mor.gov.et**; other categories file at regional revenue bureaus. The statutory report exports (VAT declaration, WHT summary, PAYE declaration) are designed to transcribe onto either channel.
+- **Pension:** POESSA declaration + bank payment slip, within 30 days of month-end.
+- **MoR bank beneficiary accounts** (for a future payment-instruction printout feature —
+  keep as config data, verify per filing): pension `1000140034057`; VAT & profit tax
+  `1000140046047`.
+
+## 10. Verification protocol (applies to everything above)
 
 Before any client go-live: re-verify current rates/thresholds against (1) gazetted proclamations/regulations, (2) MoR practice notes, (3) a local accountant's sign-off. Log verification date in the client manifest. The system displays the effective-date source on every tax/payroll config screen.

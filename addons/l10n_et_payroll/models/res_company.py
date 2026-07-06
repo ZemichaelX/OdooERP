@@ -6,7 +6,7 @@ auto-resolved from the Ethiopian chart template ('et', extended by l10n_et_base)
 when unset, so a SaaS tenant needs zero manual setup but any client can remap.
 """
 
-from odoo import fields, models
+from odoo import api, fields, models
 from odoo.exceptions import UserError
 
 # Default template xmlids on chart 'et' (core l10n_et + l10n_et_base additions).
@@ -22,6 +22,16 @@ DEFAULT_ACCOUNT_XMLIDS = {
 
 class ResCompany(models.Model):
     _inherit = "res.company"
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        """New companies get the statutory allowance types seeded immediately
+        (they are per-company configuration, like the WHT/cash-cap configs)."""
+        companies = super().create(vals_list)
+        allowance_types = self.env["l10n.et.allowance.type"].sudo()
+        for company in companies:
+            allowance_types._l10n_et_ensure_defaults(company)
+        return companies
 
     l10n_et_payroll_journal_id = fields.Many2one(
         "account.journal",

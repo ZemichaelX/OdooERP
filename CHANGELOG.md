@@ -4,6 +4,47 @@ All notable changes to SapianERP. Epics per `docs/plan-2026/10-claude-code-roadm
 
 ## [Unreleased]
 
+### Pre-release hardening — accountant corrections + adversarial review ✅ (2026-07-06)
+Two phases; the exception to the no-multi-agent rule (final pre-release pass).
+
+**Phase 1 — accountant-verified config corrections (Jul 2026 review):**
+- Cash cap 30,000 → **50,000 ETB** (Art. 81, Proc 1395/2025, cross-verified vs KPMG's
+  proclamation copy). Semantics: single transaction OR same-day aggregate per party,
+  whichever hits first — the aggregate check covers the single-transaction case. Goldens
+  updated; an upgrade hook corrects DBs still on the old 30k default (customized caps
+  untouched); warning text reworded.
+- **Allowance exemption engine** (`l10n.et.allowance.type`, seeded per company with source
+  notes): transport exempt up to the LOWER of 2,200/month or 25% of basic (excess taxable,
+  computed — golden salary 10,000 + transport 3,000 → exempt 2,200, taxable 800, PAYE 1,890);
+  hardship + actual-cost medical exempt; housing + position taxable. Payslip input lines link
+  to a type; the rule computes the split. Per-diem documented as an evidence-based input line.
+- **Pension nationality rules**: mandatory for Ethiopian nationals, voluntary for foreign
+  nationals of Ethiopian origin (opt-in flag on the employee), excluded for other foreigners.
+- WHT defaults confirmed (either TIN or licence missing → 30%; thresholds gate all WHT);
+  anti-avoidance note added to the reports README. Docs (plan-2026/07, CLAUDE.md tax-facts,
+  HANDOFF) updated with VAT carry-forward default, Reg 570/2025 EFD+QR mandate, filing
+  channels and MoR beneficiary accounts.
+
+**Phase 2 — 3-reviewer adversarial pass (R1 calc, R2 security, R3 state-machine) over all
+five modules; every finding confirmed by executed input or refuted; 18 fixed with regression
+tests, 1 deferred (fail-safe). Full findings table in HANDOFF.md.** Highlights:
+- critical: allowance-ceiling edit rewrote confirmed payslips (now frozen); each transport
+  line got its own monthly ceiling → double exemption (now summed per type); confirmed
+  run/payslip deletable → orphaned journal (ondelete guards).
+- major: cash cap blind to same-batch siblings; HR Officer read wages/bank/TIN via the payslip
+  (ACLs restricted to HR manager); no PAYE-band/pension overlap guard; un-flagging is_pharma or
+  clearing a lot's expiry escaped the expiry gates (constraints added).
+- minor: allowance half-cent rounding; payroll rounder aligned to Decimal half-up; pharma
+  expiry UTC/local off-by-one; multi-company rules on paye.band/pension.config/module.catalog;
+  CSV formula-injection neutralizer on all exports; digest re-arm on expiry relabel; bank file
+  cleared on reset; reset blocked on a reconciled move; `list_db=False` default.
+- deferred (fail-safe): recall report doesn't net customer returns (over-reports; a recall must
+  contact everyone) — pharma session 2.
+- Demo-data bugs fixed: sales invoices now ETB (were USD default pricelist); invoice due date
+  no longer precedes the issue date; physical demo goods are storable. Asserted in e2e tests.
+- Result: 90 fast goldens + 133 Odoo tests green; install/uninstall clean; lint 10.00; the
+  live demo DB (`scratch_final`) upgraded in place (cash cap corrected, allowance types seeded).
+
 ### Pharma vertical, session 1 — vertical_pharma + sapian_demo_pharma ✅ (2026-07-05)
 The DAT International pitch module (docs/plan-2026/07 §8, 05; behavior per the
 client's own requirements in docs/01-proposal-extraction.md §8.1).

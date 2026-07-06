@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Multi-company isolation: a tenant's module catalog is its own
+         (CLAUDE.md rule #3). -->
+    <record id="sapian_module_catalog_company_rule" model="ir.rule">
+        <field name="name">Sapian Module Catalog: multi-company</field>
+        <field name="model_id" ref="model_sapian_module_catalog"/>
+        <field name="domain_force">[('company_id', 'in', company_ids)]</field>
+    </record>
+</odoo>

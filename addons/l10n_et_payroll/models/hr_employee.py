@@ -31,6 +31,15 @@ class HrEmployee(models.Model):
         help="POESSA pension registration number. Required per employee on the "
         "pension remittance schedule — filings without it are rejected.",
     )
+    l10n_et_pension_opt_in = fields.Boolean(
+        string="Pension Opt-In (Foreign, Ethiopian Origin)",
+        groups="hr.group_hr_user",
+        help="Proc 1268/2022 (accountant-verified Jul 2026): pension is "
+        "MANDATORY for Ethiopian nationals, VOLUNTARY for foreign nationals "
+        "of Ethiopian origin (tick this to opt them in), and EXCLUDED for "
+        "other foreign nationals. Only meaningful when the employee's "
+        "nationality is not Ethiopian.",
+    )
 
     @api.constrains("l10n_et_tin")
     def _check_l10n_et_tin(self):

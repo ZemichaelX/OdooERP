@@ -41,9 +41,13 @@ class L10nEtPayslip(models.Model):
         "version wage at generation; editable while the run is draft.",
     )
     is_citizen = fields.Boolean(
-        string="Ethiopian Citizen",
+        string="Pension Applies",
         default=True,
-        help="Pension (Proc 1268/2022) applies to Ethiopian citizens only.",
+        help="Pension (Proc 1268/2022, accountant-verified Jul 2026) applies "
+        "to Ethiopian nationals (mandatory) and to foreign nationals of "
+        "Ethiopian origin who opted in (flag on the employee); other foreign "
+        "nationals are excluded. Set at generation from the employee's "
+        "nationality + opt-in flag; editable while draft.",
     )
     input_line_ids = fields.One2many(
         "l10n.et.payslip.input",
@@ -110,16 +114,49 @@ class L10nEtPayslip(models.Model):
         "input_line_ids.amount",
         "input_line_ids.category",
         "input_line_ids.taxable",
+        "input_line_ids.allowance_type_id",
+        "input_line_ids.allowance_type_id.rule",
+        "input_line_ids.allowance_type_id.cap_amount",
+        "input_line_ids.allowance_type_id.cap_salary_pct",
     )
     def _compute_amounts(self):
         """Delegate the payroll math to the reference calculator (via the
-        compute helper) with the configuration effective on the period end."""
+        compute helper) with the configuration effective on the period end.
+
+        Earning lines with an allowance type get their exempt/taxable split
+        from the type's statutory rule (e.g. transport partially exempt);
+        untyped lines fall back to the manual 'taxable' flag.
+
+        A capped allowance ceiling (e.g. transport 2,200/month) is statutory
+        PER EMPLOYEE PER MONTH, so lines of the same type are SUMMED before the
+        split — splitting per line would grant the ceiling once per line and
+        under-withhold PAYE.
+
+        Amounts of a CONFIRMED run are frozen: recomputing them would let a
+        later config edit (e.g. an allowance ceiling change) rewrite a posted
+        month. Stored values from the draft computation are kept untouched."""
         for slip in self:
+            if slip.state == "done":
+                continue
             earnings = slip.input_line_ids.filtered(lambda line: line.category == "earning")
-            taxable_extra = sum(earnings.filtered("taxable").mapped("amount"))
-            exempt_extra = sum(
-                earnings.filtered(lambda line: not line.taxable).mapped("amount")
-            )
+            taxable_extra = 0.0
+            exempt_extra = 0.0
+            typed = earnings.filtered("allowance_type_id")
+            untyped = earnings - typed
+            for allowance_type in typed.allowance_type_id:
+                type_lines = typed.filtered(
+                    lambda line, at=allowance_type: line.allowance_type_id == at
+                )
+                exempt, taxable = allowance_type.split(
+                    sum(type_lines.mapped("amount")), slip.basic_salary
+                )
+                taxable_extra += taxable
+                exempt_extra += exempt
+            for line in untyped:
+                if line.taxable:
+                    taxable_extra += line.amount
+                else:
+                    exempt_extra += line.amount
             deductions = sum(
                 slip.input_line_ids.filtered(lambda line: line.category == "deduction").mapped(
                     "amount"
@@ -164,6 +201,18 @@ class L10nEtPayslip(models.Model):
             )
         return super().write(vals)
 
+    @api.ondelete(at_uninstall=False)
+    def _unlink_except_confirmed_run(self):
+        """Deleting a slip of a confirmed run desyncs the posted journal totals;
+        reset the run to draft first."""
+        if any(slip.state == "done" for slip in self):
+            raise UserError(
+                self.env._(
+                    "Cannot delete a payslip of a confirmed payroll run. Reset "
+                    "the run to draft first."
+                )
+            )
+
 
 class L10nEtPayslipInput(models.Model):
     _name = "l10n.et.payslip.input"
@@ -188,11 +237,21 @@ class L10nEtPayslipInput(models.Model):
         help="Earnings add to gross; deductions are POST-TAX (loans, advances, "
         "court orders) and only reduce net pay.",
     )
+    allowance_type_id = fields.Many2one(
+        "l10n.et.allowance.type",
+        check_company=True,
+        help="Statutory allowance type: its exemption rule computes the "
+        "exempt/taxable split automatically (e.g. transport is exempt up to "
+        "the lower of ETB 2,200 or 25%% of basic salary). When set, the "
+        "manual 'Taxable' flag is ignored.",
+    )
     taxable = fields.Boolean(
         default=True,
         help="Earnings only: whether this amount enters the PAYE base "
         "(overtime and bonuses are taxable; some allowances are exempt within "
-        "directive limits). Ignored on deductions — all deductions are post-tax.",
+        "directive limits). Ignored on deductions — all deductions are "
+        "post-tax — and ignored when an Allowance Type is set (the type's "
+        "rule decides).",
     )
     amount = fields.Monetary(
         required=True,

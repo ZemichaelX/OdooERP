@@ -217,22 +217,29 @@ def test_wht_service_200000_with_tin_is_6000():
 
 
 # --------------------------------------------------------------------------------------
-# Cash-payment cap (Proc 1395/2025)
+# Cash-payment cap (Art. 81, Proc 1395/2025 — 50,000 ETB, verified Jul 2026)
 # --------------------------------------------------------------------------------------
-def test_cash_cap_exactly_30000_allowed():
-    r = calc.check_cash_cap(30000, prior_cash_today=0)
-    assert r.exceeded is False and r.total_day == 30000.0 and r.excess == 0.0
+def test_cash_cap_exactly_50000_allowed():
+    r = calc.check_cash_cap(50000, prior_cash_today=0)
+    assert r.exceeded is False and r.total_day == 50000.0 and r.excess == 0.0
 
 
 def test_cash_cap_just_over_flags():
-    r = calc.check_cash_cap(30000.01, prior_cash_today=0)
+    r = calc.check_cash_cap(50000.01, prior_cash_today=0)
     assert r.exceeded is True and r.excess == 0.01
 
 
+def test_cash_cap_single_transaction_over_cap_flags():
+    """Art. 81 caps the SINGLE transaction too — covered by the aggregate check
+    with zero prior payments: one 60,000 cash payment → flagged, 10,000 over."""
+    r = calc.check_cash_cap(60000, prior_cash_today=0)
+    assert r.exceeded is True and r.total_day == 60000.0 and r.excess == 10000.0
+
+
 def test_cash_cap_accumulates_across_day():
-    """15,000 already paid today + a new 20,000 → 35,000 total → flagged, 5,000 over."""
-    r = calc.check_cash_cap(20000, prior_cash_today=15000)
-    assert r.exceeded is True and r.total_day == 35000.0 and r.excess == 5000.0
+    """30,000 already paid today + a new 25,000 → 55,000 total → flagged, 5,000 over."""
+    r = calc.check_cash_cap(25000, prior_cash_today=30000)
+    assert r.exceeded is True and r.total_day == 55000.0 and r.excess == 5000.0
 
 
 def test_cash_cap_small_payment_ok():
@@ -241,14 +248,14 @@ def test_cash_cap_small_payment_ok():
 
 
 def test_cash_cap_respects_overridden_cap():
-    r = calc.check_cash_cap(40000, prior_cash_today=0, cap=50000)
-    assert r.exceeded is False and r.total_day == 40000.0
+    r = calc.check_cash_cap(60000, prior_cash_today=0, cap=100000)
+    assert r.exceeded is False and r.total_day == 60000.0
 
 
 def test_cash_cap_accumulated_exactly_at_cap_allowed():
-    """20,000 earlier + 10,000 now = exactly 30,000 → still allowed."""
-    r = calc.check_cash_cap(10000, prior_cash_today=20000)
-    assert r.exceeded is False and r.total_day == 30000.0 and r.excess == 0.0
+    """30,000 earlier + 20,000 now = exactly 50,000 → still allowed."""
+    r = calc.check_cash_cap(20000, prior_cash_today=30000)
+    assert r.exceeded is False and r.total_day == 50000.0 and r.excess == 0.0
 
 
 def test_cash_cap_non_finite_raises():
@@ -308,3 +315,23 @@ def test_tin_unicode_digits_rejected():
     arabic_indic = "١٢٣٤٥٦٧٨٩٠"  # Arabic-Indic 1234567890
     assert calc.validate_tin(arabic_indic).valid is False
     assert calc.validate_tin("12345678²³").valid is False  # 8 digits + ²³
+
+
+# --------------------------------------------------------------------------------------
+# CSV formula-injection neutralization (R2#4)
+# --------------------------------------------------------------------------------------
+def test_csv_safe_cell_neutralizes_formula_prefixes():
+    for danger in ("=WEBSERVICE(1)", "+SUM(A1)", "-2+3", "@SUM(A1)", "\ttab", "\rcr"):
+        out = calc.csv_safe_cell(danger)
+        assert out.startswith("'"), danger
+        assert out[1:] == danger
+
+
+def test_csv_safe_cell_leaves_numbers_and_text():
+    # Legitimate negative numbers must NOT be quoted (they are not formulas).
+    assert calc.csv_safe_cell("-9450.00") == "-9450.00"
+    assert calc.csv_safe_cell("-2,850.00") == "-2,850.00"
+    assert calc.csv_safe_cell("Awash Agro Industry PLC") == "Awash Agro Industry PLC"
+    assert calc.csv_safe_cell("0011223344") == "0011223344"
+    assert calc.csv_safe_cell(None) == ""
+    assert calc.csv_safe_cell(1234.5) == "1234.5"

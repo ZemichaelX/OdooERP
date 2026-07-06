@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Runs on install AND every upgrade: corrects config rows still carrying
+         superseded pre-accountant-review defaults (customized rows untouched). -->
+    <function model="l10n.et.cash.cap.config" name="_l10n_et_fix_superseded_defaults"/>
+</odoo>

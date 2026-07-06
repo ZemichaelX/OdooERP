@@ -12,6 +12,7 @@
     "depends": ["base", "web"],
     "data": [
         "security/ir.model.access.csv",
+        "security/sapian_core_security.xml",
         "views/sapian_module_catalog_views.xml",
         "wizard/sapian_onboarding_wizard_views.xml",
         "data/sapian_catalog_sync.xml",

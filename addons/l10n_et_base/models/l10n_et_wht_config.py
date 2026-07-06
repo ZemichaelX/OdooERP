@@ -24,9 +24,10 @@ TEMPLATE_TAX_XMLID_BY_KIND = {
 }
 
 DEFAULT_SOURCE_NOTE = (
-    "WHT 3% goods >20,000 / services >10,000; 30% punitive without TIN+licence; "
-    "15% foreign digital services (Aug 2025 rules, Proc 979/2016 art. 92 lineage). "
-    "Re-verify with the Ministry of Revenue before go-live."
+    "WHT 3% goods >20,000 / services >10,000; 30% punitive when EITHER the TIN "
+    "or the business licence is missing; 15% foreign digital services. "
+    "Thresholds gate ALL WHT including punitive. Accountant-confirmed Jul 2026 "
+    "(Proc 979/2016 art. 92 lineage + Aug 2025 rules)."
 )
 
 
@@ -85,10 +86,11 @@ class L10nEtWhtConfig(models.Model):
     punitive_respects_thresholds = fields.Boolean(
         string="Punitive Rate Respects Thresholds",
         default=True,
-        help="If set (current reading of the Aug 2025 rules), the 30% punitive rate "
-        "only applies above the same goods/services thresholds. Unset for the "
-        "ungated reading (Proc 979/2016 art. 92 predecessor rule) — flippable "
-        "without a code release, pending accountant sign-off.",
+        help="If set, the 30% punitive rate only applies above the same "
+        "goods/services thresholds. ACCOUNTANT-CONFIRMED Jul 2026: keep set "
+        "(thresholds gate all WHT including punitive). Unset only if the "
+        "authority instructs the ungated reading — flippable without a code "
+        "release.",
     )
     source_note = fields.Char(
         required=True,
