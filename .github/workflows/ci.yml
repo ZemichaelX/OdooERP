@@ -75,6 +75,9 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Run the Odoo integration suites (with demo data)
+        # The odoo:19.0 image's default shell is dash (no `pipefail`); force
+        # bash, whose GitHub wrapper already runs with `-eo pipefail`.
+        shell: bash
         run: |
           set -euo pipefail
           mkdir -p /tmp/odoo-data
