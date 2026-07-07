@@ -1,10 +1,24 @@
 #!/usr/bin/env bash
-# Provision a new client instance: create DB and install the base + chosen modules.
+# Provision a new client instance: create the DB and install the base + chosen
+# modules, landing the company on the Ethiopian chart of accounts ('et').
 # Usage: ./scripts/provision_client.sh <db_name> [comma,separated,modules]
+#
+# Why two phases (this is the fix for the "company ends up on generic_coa" bug):
+# Odoo auto-loads a chart of accounts the moment `account` installs, choosing by
+# the company's COUNTRY. A brand-new DB's company has no country, so it gets the
+# generic chart — and Odoo won't let you switch charts afterwards. So we:
+#   1. create the DB with `base` only (no accounting, no chart yet),
+#   2. set the company country to Ethiopia,
+#   3. install the real modules — now `account` sees an Ethiopian company and
+#      loads the 'et' chart automatically, and the l10n_et_* loaders apply the
+#      payroll accounts / WHT / VAT defaults on top.
+# The chosen MODULES must include an Ethiopian localization (l10n_et_*) so the
+# 'et' chart template exists; the default set does.
 set -euo pipefail
 
 DB_NAME="${1:?usage: provision_client.sh <db_name> [modules]}"
-MODULES="${2:-sapian_core,l10n_et_payroll}"
+MODULES="${2:-sapian_core,l10n_et_base,l10n_et_payroll,l10n_et_reports}"
+COUNTRY_CODE="${SAPIAN_COUNTRY:-et}"   # override for a non-Ethiopian tenant
 COMPOSE="docker compose -f docker/docker-compose.yml"
 ODOO_CONF="config/odoo.conf"
 
@@ -28,10 +42,29 @@ else
 fi
 
 echo ">> Provisioning client DB: ${DB_NAME}"
-echo ">> Installing modules: ${MODULES}"
+echo ">> Country: ${COUNTRY_CODE} | Modules: ${MODULES}"
 
+# --- Phase 1: create the DB with base only (no chart yet) ----------------------
+echo ">> [1/3] Creating database (base only)..."
+$COMPOSE run --rm odoo \
+  odoo -d "${DB_NAME}" -i base --without-demo=all --stop-after-init
+
+# --- Phase 2: set the company country BEFORE any chart loads -------------------
+echo ">> [2/3] Setting company country to '${COUNTRY_CODE}'..."
+printf "%s\n" \
+  "company = env['res.company'].search([], limit=1)" \
+  "country = env['res.country'].search([('code','=','${COUNTRY_CODE}'.upper())], limit=1)" \
+  "company.country_id = country" \
+  "env.cr.commit()" \
+  "print('>> country set to', company.country_id.code)" \
+  | $COMPOSE run --rm -T odoo odoo shell -d "${DB_NAME}" --no-http
+
+# --- Phase 3: install the real modules — 'et' chart auto-loads now -------------
+echo ">> [3/3] Installing modules (chart auto-loads for the country)..."
 $COMPOSE run --rm odoo \
   odoo -d "${DB_NAME}" -i "${MODULES}" --without-demo=all --stop-after-init
 
-echo ">> Done. Next: configure company/branding/roles via the onboarding wizard,"
-echo ">>       import master data from data-templates/, enable backups & 2FA."
+echo ">> Done. The company is on the '${COUNTRY_CODE}' chart of accounts."
+echo ">> Next: configure company profile/branding/roles via the onboarding wizard,"
+echo ">>       set the fiscal year + TIN, import master data from data-templates/,"
+echo ">>       and confirm scripts/backup.sh is scheduled."

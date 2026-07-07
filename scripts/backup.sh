@@ -2,6 +2,10 @@
 # Daily backup of a client DB + filestore. Schedule via cron.
 # Usage: ./scripts/backup.sh <db_name> <backup_dir>
 set -euo pipefail
+# Git Bash (Windows) rewrites container-absolute paths like /var/lib/odoo/...
+# into C:/Program Files/Git/...; disable that so docker exec gets the real path.
+# No-op on Linux/CI.
+export MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*'
 DB_NAME="${1:?usage: backup.sh <db_name> <backup_dir>}"
 BACKUP_DIR="${2:?usage: backup.sh <db_name> <backup_dir>}"
 STAMP="$(date +%Y%m%d_%H%M%S)"
