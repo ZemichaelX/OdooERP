@@ -209,6 +209,14 @@ no controllers/public routes/`t-raw`/raw SQL anywhere.
   the drift (states recompute live).
 - EFDA traceability export is a stub by design; GS1 capture side is done, so the export becomes
   an adapter once EFDA publishes transport specs — quote it as a small paid change order.
+- Dress-rehearsal ritual (`sapian_dress_rehearsal`, 2026-07-07): `scripts/dress_rehearsal.sh`
+  rebuilds `scratch_rehearsal` from empty, runs a full August-2026 month through the real flows,
+  and prints an independent reconciliation (trial balance / VAT / WHT / payroll / stock — all
+  green). Run it before any release. The tenant "Rehearsal Trading PLC" is KEPT on
+  `scratch_rehearsal` for click-through. Gotcha encoded there: the scripted period (August) is
+  ahead of the container clock, so the credit-note reversal is marked auto-post 'at_date' — the
+  provisioner forces `auto_post='no'` to post it in period; the Ethiopian chart ships no cash
+  journal, so the rehearsal creates one for the cash-cap payment.
 
 ## Tone with the user
 

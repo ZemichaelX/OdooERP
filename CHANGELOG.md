@@ -4,6 +4,31 @@ All notable changes to SapianERP. Epics per `docs/plan-2026/10-claude-code-roadm
 
 ## [Unreleased]
 
+### Dress rehearsal — full-month simulation + independent exam ✅ (2026-07-07)
+New `sapian_dress_rehearsal` module: a rerunnable pre-release ritual that
+provisions a fresh tenant through the onboarding wizard, drives one realistic
+month (August 2026) of business through the REAL flows, then proves the books
+with an exam that recomputes every figure by a path independent of what it
+checks.
+- The month: 25 sales orders (3 partial deliveries → backorders, 1 return +
+  credit note; invoiced on ordered qty so VAT is decoupled from delivery),
+  12 purchases (10 goods POs feeding stock, mix above/below the 20,000 WHT
+  threshold; 2 direct service bills — no-TIN domestic 30%, foreign digital
+  15%), a 5-employee payroll run (incl. a transport allowance capped at 25%
+  of 6,000 = 1,500 and a pension-exempt foreigner), several bank payments +
+  one vendor CASH payment near the 50,000 cap, and one inventory adjustment.
+- The exam (all green): trial balance (48 balanced moves, debits==credits
+  2,814,155), VAT (15% × 397,000 base = output 59,550; input 186,090; ties to
+  GL), WHT (per-bill recompute 34,950 @3% + 3,000 @15% + 12,000 @30% = 49,950;
+  ties to WHT-payable GL), payroll (5 payslips recomputed from CONFIG-sourced
+  bands/rates — PAYE 11,650, pension EE 2,905), stock (on-hand per product =
+  received − delivered ± adjustment vs quant, incl. the −5 Teff shrinkage).
+- 3 role walkthroughs over HTTP (HttpCase): warehouse receive, accountant
+  bill-with-WHT (3% auto-applied), HR payroll confirm.
+- `scripts/dress_rehearsal.sh` rebuilds `scratch_rehearsal` from empty, runs
+  the month and prints the reconciliation table; the tenant is kept for
+  manual click-through. 6 Odoo tests (TransactionCase + HttpCase); lint 10.00.
+
 ### Defensive-audit fixes — A1–A10 (2026-07-06)
 Second, independent defensive audit (single-context, evidence-per-finding) over all six
 modules + docker/config/scripts/CI. All confirmed findings fixed with regression tests;
