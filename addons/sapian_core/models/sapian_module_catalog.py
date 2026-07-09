@@ -99,6 +99,15 @@ class SapianModuleCatalog(models.Model):
 
     # The standard sellable set (docs/plan-2026/05): seeded per company on demand
     # so the onboarding wizard always has entries to offer.
+    #
+    # Tiers drive onboarding pre-selection (default_get pre-ticks core):
+    #   core     — installed for essentially every client (the sellable baseline)
+    #   common   — Ethiopian add-ons most clients take
+    #   optional — standard Odoo Community apps offered on demand; no Ethiopian
+    #              customization layer, so left un-ticked until a client asks.
+    # The optional block makes the extra Community apps installable through
+    # onboarding instead of only via the raw Apps menu; each technical_name is a
+    # stock Odoo 19 Community module.
     STANDARD_CATALOG = [
         ("Inventory", "stock", "supply_chain", "core"),
         ("Sales", "sale_management", "sales", "core"),
@@ -107,6 +116,15 @@ class SapianModuleCatalog(models.Model):
         ("Ethiopian Accounting", "l10n_et_base", "finance", "core"),
         ("Ethiopian Payroll", "l10n_et_payroll", "hr", "common"),
         ("Ethiopian Statutory Reports", "l10n_et_reports", "finance", "common"),
+        # Standard Odoo Community apps — no Ethiopian layer yet, offered on demand.
+        ("CRM", "crm", "sales", "optional"),
+        ("Manufacturing", "mrp", "supply_chain", "optional"),
+        ("Project", "project", "services", "optional"),
+        ("Email Marketing", "mass_mailing", "marketing", "optional"),
+        ("Fleet", "fleet", "platform", "optional"),
+        ("Repair", "repair", "supply_chain", "optional"),
+        ("Maintenance", "maintenance", "supply_chain", "optional"),
+        ("Website & eCommerce", "website_sale", "sales", "optional"),
     ]
 
     @api.model

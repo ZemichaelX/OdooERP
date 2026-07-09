@@ -4,6 +4,17 @@ All notable changes to SapianERP. Epics per `docs/plan-2026/10-claude-code-roadm
 
 ## [Unreleased]
 
+### Onboarding catalog — offer the standard Odoo Community apps ✅ (2026-07-09)
+`sapian.module.catalog` STANDARD_CATALOG grows from 7 to 15 entries. Added the
+stock Odoo 19 Community apps that had no Ethiopian layer and were previously
+reachable only via the raw Apps menu, as `optional`-tier entries: CRM (`crm`),
+Manufacturing (`mrp`), Project (`project`), Email Marketing (`mass_mailing`),
+Fleet (`fleet`), Repair (`repair`), Maintenance (`maintenance`), and
+Website & eCommerce (`website_sale`). Tier drives pre-selection, so the
+onboarding wizard still pre-ticks only the `core` tier — the optional apps are
+offered but never auto-installed. No new Ethiopian customization for these yet.
+Catalog-count tests updated 7 → 15.
+
 ### Dress rehearsal — full-month simulation + independent exam ✅ (2026-07-07)
 New `sapian_dress_rehearsal` module: a rerunnable pre-release ritual that
 provisions a fresh tenant through the onboarding wizard, drives one realistic

@@ -43,15 +43,25 @@ class TestOnboardingWizard(TransactionCase):
         entries = self.env["sapian.module.catalog"].search(
             [("company_id", "=", self.company.id)]
         )
-        self.assertEqual(len(entries), 7, "standard catalog not seeded")
+        self.assertEqual(len(entries), 15, "standard catalog not seeded")
         expected = entries.filtered("enabled") or entries.filtered(lambda e: e.tier == "core")
         self.assertEqual(set(wizard.module_catalog_ids.ids), set(expected.ids))
+        # Optional Community apps are seeded but never pre-ticked for their tier:
+        # an optional entry may only be pre-selected if it is actually installed
+        # (enabled), never merely because it sits in the catalog.
+        preselected_optional = wizard.module_catalog_ids.filtered(
+            lambda e: e.tier == "optional"
+        )
+        self.assertTrue(
+            all(preselected_optional.mapped("enabled")),
+            "optional apps must be pre-selected only when installed",
+        )
 
     def test_catalog_seeding_is_idempotent(self):
         catalog = self.env["sapian.module.catalog"]
         catalog._ensure_default_catalog(self.company)
         catalog._ensure_default_catalog(self.company)
-        self.assertEqual(catalog.search_count([("company_id", "=", self.company.id)]), 7)
+        self.assertEqual(catalog.search_count([("company_id", "=", self.company.id)]), 15)
 
     def test_catalog_enabled_mirrors_installed_state(self):
         """Enabled is a status mirror: seeding and the upgrade-time sync both
