@@ -11,6 +11,13 @@
     "website": "https://sapiantech.com",
     "category": "Localization/Ethiopia",
     "license": "LGPL-3",
+    # Every app in sapian_core's STANDARD_CATALOG must be listed here: the demo
+    # hands the onboarding wizard the FULL catalog, and the wizard installs
+    # whatever is still uninstalled. Module installation is forbidden while
+    # demo data loads (and inside tests), so every pick has to be installed
+    # already by the time demo/demo_trader.xml runs — then the wizard's install
+    # step is a no-op. Adding a catalog entry without adding it here re-breaks
+    # `-i sapian_demo_trader --with-demo`.
     "depends": [
         "sale_management",
         "purchase",
@@ -19,6 +26,16 @@
         "l10n_et_base",
         "l10n_et_payroll",
         "l10n_et_reports",
+        # Standard Odoo Community apps offered by the catalog (no Ethiopian
+        # layer yet) — dependencies purely so the demo can pre-install them.
+        "crm",
+        "mrp",
+        "project",
+        "mass_mailing",
+        "fleet",
+        "repair",
+        "maintenance",
+        "website_sale",
     ],
     "demo": [
         "demo/demo_trader.xml",

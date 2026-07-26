@@ -4,6 +4,120 @@ All notable changes to SapianERP. Epics per `docs/plan-2026/10-claude-code-roadm
 
 ## [Unreleased]
 
+### Demo provisioning fixed + images pinned by digest ✅ (2026-07-26)
+`-i sapian_demo_trader --with-demo` on a fresh database — the documented
+rebuild one-liner — had started failing, and the trader suite was silently
+running 2 of its 12 tests in CI (the e2e goldens never ran, because their
+demo tenant never loaded).
+
+**Root cause — two ingredients, neither sufficient alone.** The catalog
+expansion in `66c21cc` (7 → 15 apps) opened a dormant code path: the demo
+hands the onboarding wizard the FULL catalog, and with eight of those apps
+absent from `sapian_demo_trader`'s manifest the wizard's `_install_modules`
+found pending modules and called `button_immediate_install` — during demo
+data loading. That path was harmless on the `odoo:19.0` image of 9 July (CI
+was green on this exact addons code). A later upstream rebuild of the same
+unpinned `19.0` tag tightened the guards in
+`ir_module._button_immediate_function`, and the previously dormant call
+became fatal: `RuntimeError: Module operations inside tests are not
+transactional and thus forbidden` under `--test-enable` in CI, and
+`UserError: ... cannot be called on init or non loaded registries` on a
+plain install. So: dormant path opened by `66c21cc`, armed by an
+`odoo:19.0` rebuild.
+
+- **Fixed at the demo end** (real onboarding is unchanged — a client
+  onboarding SHOULD install modules): the eight standard Community apps the
+  catalog offers (`crm`, `mrp`, `project`, `mass_mailing`, `fleet`, `repair`,
+  `maintenance`, `website_sale`) are now `sapian_demo_trader` dependencies,
+  so they are installed before demo data runs and the wizard's install step
+  is a no-op. The demo's pick list is unchanged — Selam still shows all 15
+  catalog entries.
+- **Recurrence made impossible:** `sapian_core`'s `_install_modules` now
+  skips the install with a logged warning naming the skipped modules when
+  the registry cannot support a module operation (not ready, still
+  initialising, or in test mode — the same conditions core checks). Neither
+  holds during real onboarding, so runtime behaviour is identical; a future
+  catalog addition that forgets the manifest degrades with a clear warning
+  instead of an opaque core error.
+- **Collateral, also fixed:** with `website_sale` installed, archiving the
+  Odoo placeholder company is refused while it owns the demo website, so
+  `_configure_demo_login` reassigns any placeholder-owned website to the demo
+  company first.
+- **Images pinned by digest (R7):** `ci.yml` (odoo + postgres) and
+  `docker/Dockerfile` pin the digests currently published for `odoo:19.0`
+  and `postgres:16` — verified against Docker Hub's registry API — instead of
+  floating tags. This is what let the fleet drift silently; upgrading an
+  image is now a deliberate, tested change (bump the digest in its own PR).
+- Verified: the README one-liner completes on a genuinely fresh database in
+  a single pass (no pre-install workaround) with demo data loaded — Selam
+  provisioned with logo, 6 posted moves, 3 payslips, 15 catalog entries,
+  placeholders archived, and zero install-skip warnings (the deps cover
+  every pick). Fast goldens 90/90; ruff/black clean.
+- Existing `sapian_core` onboarding tests do NOT exercise `_install_modules`
+  with modules actually pending — they assert catalog pre-selection and
+  profile/branding only, which is why this path was never covered. Noted,
+  not built this session.
+
+### Ops hardening — backup/restore drilled end-to-end ✅ (2026-07-26)
+Ops-layer-only session (no addons changes): the backup/restore path is now
+drilled, not just written. All seven fixes verified by a real restore drill.
+- `restore.sh`: the filestore phase used to `compose exec` into the odoo
+  container the script had just STOPPED — impossible, and with `set -e` the
+  abort landed after the DB was dropped/restored but before odoo restarted
+  (tenant DB-only, filestore missing, Odoo down). Filestore now restores via
+  throwaway `compose run --rm --no-deps` containers on the same `odoo-data`
+  volume; all input validation happens before anything destructive; on any
+  failure odoo deliberately stays STOPPED with an explicit known-state
+  message (a half-restored tenant must never serve traffic). Also: the
+  archive's top-level dir is renamed on extraction (`tar --transform`) so
+  restoring under a different db name still gets its filestore.
+- `provision_client.sh`: the generated `admin_passwd` was appended to the
+  git-tracked `config/odoo.conf` (one `git add -A` away from committing a
+  tenant master password, and compose mounted the same tracked file). Secrets
+  now go to gitignored `config/odoo.runtime.conf` — created from the template
+  if missing — which is what `docker-compose.yml` mounts; the tracked
+  template stays clean (`git status` verified clean across a provision run).
+  Deploy step documented in `docker/README.md`.
+- `backup.sh`: `pg_dump` gets the same fail-guard + partial-file cleanup the
+  filestore path already had (A9); every dump is verified restorable with
+  `pg_restore --list` before success is reported; retention pruning matches
+  the exact database (`NAME_[0-9]*`), so backing up `sapian` can no longer
+  delete `sapian_prod_*` archives (regression-tested with aged files).
+- `.env` location fixed everywhere: compose's project directory is `docker/`
+  (it is invoked `-f docker/docker-compose.yml`), so the documented repo-root
+  `.env` was never read and `${DB_PASSWORD:?}` aborted all scripts. The file
+  now lives at `docker/.env`; CLAUDE.md, README.md and docker/README.md
+  corrected.
+- `dress_rehearsal.sh`: drops its target DB only after a typed-name
+  confirmation (same guard as restore.sh), and exits non-zero when the
+  reconciliation exam fails (`EXAM_VERDICT` sentinel — odoo shell always
+  exits 0), so it can gate a release unattended.
+- All four scripts resolve the repo root from their own location
+  (`BASH_SOURCE`), so cron/Task Scheduler invocations work from any cwd, and
+  all are executable (mode 100755) on a fresh clone.
+- Restore drill (this session, containerized Odoo 19): `backup.sh` on the
+  Selam demo tenant (dump passed `pg_restore --list`, filestore 2,372 files)
+  → `restore.sh` onto `scratch_restore_drill` → on the restored DB all
+  July-2026 goldens hold (VAT base 56,000 / output VAT 8,400; WHT 7,260;
+  payroll gross 23,800 / PAYE 3,900 / net 18,374), the company logo reads
+  back from the restored filestore and a payslip PDF renders. Fast goldens
+  90/90 before and after.
+- Review follow-ups (same session, second pass): `backup.sh`'s filestore leg
+  now uses the same throwaway-container pattern as restore.sh, so a backup
+  succeeds with the odoo service stopped or crashed (drilled: full backup
+  taken with odoo down, dump `pg_restore --list`-verified, archive file count
+  == live filestore). `restore.sh` validates the filestore archive with a
+  full `tar tzf` listing in pre-flight and extracts into a temp dir, swapping
+  it in only after a fully successful extraction — a truncated archive is
+  rejected before anything is dropped (drilled: truncated .tgz rejected with
+  the target filestore and DB intact, then a clean end-to-end restore). All
+  four scripts pre-flight `config/odoo.runtime.conf`: created from the
+  template when missing, clear abort when docker has created the path as a
+  directory on a fresh clone.
+- Demo-provisioning break found while drilling — root-caused and fixed in the
+  next entry below. (An earlier draft of this entry blamed `66c21cc` alone;
+  that attribution was wrong — see below.)
+
 ### Onboarding catalog — offer the standard Odoo Community apps ✅ (2026-07-09)
 `sapian.module.catalog` STANDARD_CATALOG grows from 7 to 15 entries. Added the
 stock Odoo 19 Community apps that had no Ethiopian layer and were previously
@@ -14,6 +128,22 @@ Website & eCommerce (`website_sale`). Tier drives pre-selection, so the
 onboarding wizard still pre-ticks only the `core` tier — the optional apps are
 offered but never auto-installed. No new Ethiopian customization for these yet.
 Catalog-count tests updated 7 → 15.
+
+### Ops scripts — Windows-safe backup, restore, et-chart provisioning ✅ (2026-07-07)
+Two commits (`51f3456`, `85d5f05`) hardening the operations layer:
+- `backup.sh`: disable Git Bash MSYS path conversion (it mangled the
+  container-absolute filestore path on Windows and aborted the backup; no-op on
+  Linux/CI). New optional `[offsite_dir]` + `[retention_days]` args: after a
+  successful DB+filestore backup, both archives are copied to a synced folder
+  (e.g. OneDrive) for an off-site copy, with retention pruning in both
+  locations; off-site failure aborts loudly (A9). Machine-specific paths stay
+  out of the repo (local Task Scheduler `.cmd` wrapper).
+- `restore.sh`: new companion script — drops/recreates the DB from a `pg_dump`
+  and restores the filestore, with a typed confirmation guard.
+- `provision_client.sh`: two-phase provisioning (base → set company country →
+  install modules) so new tenants land on the Ethiopian 'et' chart instead of
+  `generic_coa`, which Odoo won't let you switch afterwards.
+- `backups/.gitignore`: never commit tenant data dumps.
 
 ### Dress rehearsal — full-month simulation + independent exam ✅ (2026-07-07)
 New `sapian_dress_rehearsal` module: a rerunnable pre-release ritual that
@@ -163,6 +293,12 @@ client's own requirements in docs/01-proposal-extraction.md §8.1).
   the product does; `res.groups.users` → `all_user_ids`; stock.warehouse has
   no activity mixin; HttpCase needs `--workers=0` (odoo.conf ships workers=2);
   Git Bash mangles `--test-tags /module` (use MSYS_NO_PATHCONV=1).
+
+### Project skill — Fable 5 prompting guide ✅ (2026-07-04)
+`.claude/skills/fable5-prompting/SKILL.md` (`ad9cf37`): a project skill for
+drafting/reviewing kickoff prompts, system prompts and agent instructions
+tuned to Claude Fable 5 — token-conscious session design for this repo's
+Claude Code workflow. Tooling only; no product code.
 
 ### Cleanup — demo polish, catalog truth, CI, samples ✅ (2026-07-04)
 - Demo login: provisioning archives ALL Odoo placeholder companies (incl. the

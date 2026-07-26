@@ -24,10 +24,14 @@ Web-path hardening (bug-fix session, reproduced over XML-RPC):
 """
 
 import base64
+import logging
 
 from odoo import Command, api, fields, models
 from odoo.exceptions import UserError
+from odoo.modules import module as module_tools
 from odoo.tools.image import image_process
+
+_logger = logging.getLogger(__name__)
 
 HOME_ACTION = {"type": "ir.actions.act_url", "url": "/odoo", "target": "self"}
 
@@ -267,6 +271,20 @@ class SapianOnboardingWizard(models.TransientModel):
             .search([("name", "in", technical_names), ("state", "=", "uninstalled")])
         )
         if not modules:
+            return self.env(), False
+        # Odoo forbids module operations while the registry is loading (demo
+        # data, module install) or inside tests — core raises there, which is
+        # an opaque failure for a demo/test that merely picked an uninstalled
+        # app. Neither condition can hold during real onboarding (a live
+        # request has a ready registry), so runtime behaviour is unchanged:
+        # skip the install and say which apps were left alone.
+        if not self.env.registry.ready or self.env.registry._init or module_tools.current_test:
+            _logger.warning(
+                "SapianERP onboarding: registry cannot perform module operations "
+                "(loading or test mode); skipped installing %s. Add them to the "
+                "calling module's manifest dependencies instead.",
+                ", ".join(sorted(modules.mapped("name"))),
+            )
             return self.env(), False
         modules.button_immediate_install()
         self.env.transaction.reset()

@@ -1,4 +1,6 @@
 .env
+# Runtime odoo.conf mounted by docker-compose — carries the per-tenant admin_passwd.
+config/odoo.runtime.conf
 *.pyc
 __pycache__/
 .pytest_cache/

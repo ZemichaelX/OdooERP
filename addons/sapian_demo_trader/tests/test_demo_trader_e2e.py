@@ -55,10 +55,14 @@ class TestDemoTraderE2E(TransactionCase):
         self.assertEqual(company.fiscalyear_last_month, "7")
         self.assertEqual(company.fiscalyear_last_day, 7)
         self.assertEqual(company.primary_color, "#1a7f5a")
-        enabled = self.env["sapian.module.catalog"].search(
-            [("company_id", "=", company.id), ("enabled", "=", True)]
-        )
-        self.assertEqual(len(enabled), 7)
+        # The demo picks the WHOLE catalog and this module depends on every
+        # app in it, so each entry is installed and therefore enabled. Counted
+        # against the catalog, not a literal, so adding a catalog entry (with
+        # its manifest dependency) doesn't turn this red.
+        catalog = self.env["sapian.module.catalog"].search([("company_id", "=", company.id)])
+        enabled = catalog.filtered("enabled")
+        self.assertTrue(catalog)
+        self.assertEqual(enabled, catalog)
 
     def test_sales_invoices_vat(self):
         """Both customer invoices posted with 15% VAT: 36,800 and 27,600."""

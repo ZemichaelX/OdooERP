@@ -21,7 +21,10 @@ services:
       PASSWORD: ${DB_PASSWORD}
     volumes:
       - ../addons:/mnt/extra-addons:ro
-      - ../config/odoo.conf:/etc/odoo/odoo.conf:ro
+      # Runtime copy of config/odoo.conf (gitignored — holds admin_passwd).
+      # Created by scripts/provision_client.sh, or by hand:
+      #   cp config/odoo.conf config/odoo.runtime.conf
+      - ../config/odoo.runtime.conf:/etc/odoo/odoo.conf:ro
       - odoo-data:/var/lib/odoo
     restart: unless-stopped
 

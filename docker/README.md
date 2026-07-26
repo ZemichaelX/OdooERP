@@ -4,15 +4,29 @@ Each client runs an isolated Dockerized Odoo 19 instance (see `CLAUDE.md`).
 
 - `docker-compose.yml` — Postgres 16 + Odoo (custom addons mounted read-only).
 - `Dockerfile` — Odoo 19 image + the Ethiopic font for Amharic PDF reports.
-- `.env` — `DB_PASSWORD` etc. **Never commit** (git-ignored).
+- `docker/.env` — `DB_PASSWORD` etc. **Never commit** (git-ignored). It must
+  live HERE, not at the repo root: compose is invoked with
+  `-f docker/docker-compose.yml`, so its project directory — where it reads
+  `.env` for `${DB_PASSWORD}` interpolation — is `docker/`.
+- `config/odoo.runtime.conf` — the odoo.conf that compose actually mounts.
+  Git-ignored because it carries per-tenant secrets; `config/odoo.conf` is
+  only the clean, tracked template.
 
-## Local development
+## Local development / deploy steps
 
 ```bash
-cp .env.example .env          # set DB_PASSWORD
+# from the repo root
+cp .env.example docker/.env                    # 1. set DB_PASSWORD
+cp config/odoo.conf config/odoo.runtime.conf   # 2. runtime config (see below)
 docker compose -f docker/docker-compose.yml up -d
 # http://localhost:8069
 ```
+
+Step 2 can be skipped when provisioning a tenant: `scripts/provision_client.sh`
+creates `config/odoo.runtime.conf` from the template if it is missing, then
+generates a strong per-tenant `admin_passwd` into it (printed once — vault it).
+Secrets never touch the tracked `config/odoo.conf`; `git status` stays clean
+across a provision run.
 
 ## Production hardening — reverse proxy + TLS (deferred to the go-live runbook)
 
