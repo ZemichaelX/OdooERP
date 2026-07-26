@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_l10n_et_pension_config_list" model="ir.ui.view">
+        <field name="name">l10n.et.pension.config.list</field>
+        <field name="model">l10n.et.pension.config</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="name"/>
+                <field name="effective_from"/>
+                <field name="effective_to" optional="show"/>
+                <field name="employee_rate" widget="percentage"/>
+                <field name="employer_rate" widget="percentage"/>
+                <field name="insurable_cap" optional="show"/>
+                <field name="company_id" groups="base.group_multi_company"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_l10n_et_pension_config_form" model="ir.ui.view">
+        <field name="name">l10n.et.pension.config.form</field>
+        <field name="model">l10n.et.pension.config</field>
+        <field name="arch" type="xml">
+            <form>
+                <sheet>
+                    <group>
+                        <group string="Contribution Rates">
+                            <field name="name"/>
+                            <field name="employee_rate" widget="percentage"/>
+                            <field name="employer_rate" widget="percentage"/>
+                            <field name="insurable_cap"/>
+                        </group>
+                        <group string="Effective Period">
+                            <field name="effective_from"/>
+                            <field name="effective_to"/>
+                            <field name="company_id" groups="base.group_multi_company"/>
+                        </group>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_l10n_et_pension_config" model="ir.actions.act_window">
+        <field name="name">Pension Configuration</field>
+        <field name="res_model">l10n.et.pension.config</field>
+        <field name="view_mode">list,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">Pension contribution rates</p>
+            <p>Proc 1268/2022 rates (7% employee / 11% employer) are seeded per
+            company. A rate change is a NEW effective-dated record so posted
+            payslips keep the rates they were computed with.</p>
+        </field>
+    </record>
+
+    <menuitem id="menu_l10n_et_pension_config"
+              action="action_l10n_et_pension_config"
+              parent="menu_l10n_et_payroll_config"
+              sequence="20"
+              groups="hr.group_hr_manager"/>
+</odoo>

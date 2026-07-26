@@ -11,7 +11,7 @@ serves the parameters.
 from datetime import date
 
 from odoo import Command, api, fields, models
-from odoo.exceptions import ValidationError
+from odoo.exceptions import UserError, ValidationError
 
 from ..reference import et_tax_calc
 
@@ -197,6 +197,64 @@ class L10nEtWhtConfig(models.Model):
             order="effective_from desc",
             limit=1,
         )
+
+    @api.model
+    def _l10n_et_resolve_config(self, company, on_date):
+        """Return ``(config, skip_note)`` for an engine call — never fails open.
+
+        Three outcomes, deliberately different (the silent empty recordset used
+        to cover all three):
+
+        * company out of scope (``l10n_et_tax_engine_active`` off) → empty
+          recordset, no note: the engine stays inert, which is correct for a
+          non-Ethiopian company or one with no Ethiopian fiscal setup.
+        * in scope but NO configuration records at all → ``UserError``. That is
+          the compliance hole this replaces: posting bills with no withholding
+          and no warning must be impossible.
+        * in scope, records exist, but none is effective on ``on_date`` (a
+          backdated document that predates the earliest configuration) → empty
+          recordset plus a note for the document's chatter. Deliberately NOT an
+          error: importing historical bills whose withholding was computed and
+          remitted years before this engine existed is normal delivery work,
+          and a hard block would make data migration impossible.
+        """
+        if not company.l10n_et_tax_engine_active:
+            return self.browse(), None
+        config = self._get_config(company, on_date)
+        if config:
+            return config, None
+        earliest = self.search(
+            [("company_id", "=", company.id)], order="effective_from asc", limit=1
+        )
+        if not earliest:
+            raise UserError(
+                self.env._(
+                    "No Ethiopian withholding tax configuration exists for "
+                    "%(company)s. Configure it under Accounting › Configuration › "
+                    "Ethiopian WHT Configuration, or turn off the Ethiopian Tax "
+                    "Engine on the company if Ethiopian withholding does not "
+                    "apply there.",
+                    company=company.display_name,
+                )
+            )
+        return self.browse(), self.env._(
+            "No Ethiopian WHT configuration is effective for %(date)s, so no "
+            "withholding was applied. The earliest configured date is "
+            "%(earliest)s.",
+            date=on_date,
+            earliest=earliest.effective_from,
+        )
+
+    @api.model
+    def _l10n_et_seed_all_companies(self):
+        """Data-file/migration hook: seed every active company's WHT config."""
+        # sudo: a data-file/migration hook must see EVERY company's existing
+        # records, not just those the loading user's allowed-companies rule
+        # exposes — otherwise it "finds none" and creates a duplicate.
+        seeder = self.sudo()
+        for company in self.env["res.company"].sudo().search([("active", "=", True)]):
+            seeder._l10n_et_ensure_default(company)
+        return True
 
     @api.model
     def _l10n_et_ensure_default(self, company):

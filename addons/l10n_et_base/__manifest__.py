@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     "name": "Ethiopia Accounting Base (SapianERP)",
-    "version": "19.0.1.1.0",
+    "version": "19.0.1.2.0",
     "summary": "Ethiopian chart-of-accounts additions, VAT fiscal positions, "
     "threshold-driven withholding tax automation and the Proc 1395/2025 "
     "cash-payment cap. See README.md; re-verify all rates with the "
@@ -18,6 +18,7 @@
         "views/l10n_et_wht_config_views.xml",
         "views/l10n_et_cash_cap_config_views.xml",
         "views/res_partner_views.xml",
+        "views/res_company_views.xml",
         "views/l10n_et_base_menus.xml",
         "report/wht_certificate_reports.xml",
         "report/wht_certificate_templates.xml",

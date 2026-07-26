@@ -1,6 +1,9 @@
 services:
   db:
-    image: postgres:16
+    # Pinned by DIGEST (R7), same as ci.yml: the 16 tag is rebuilt upstream
+    # continuously. Upgrading the image is a deliberate, tested change — bump
+    # this digest in its own PR and let the CI integration suite prove it.
+    image: postgres:16@sha256:33f923b05f64ca54ac4401c01126a6b92afe839a0aa0a52bc5aeb5cc958e5f20
     environment:
       POSTGRES_DB: postgres
       POSTGRES_USER: odoo

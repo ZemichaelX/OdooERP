@@ -51,8 +51,9 @@ class L10nEtPayslipCompute(models.AbstractModel):
             raise UserError(
                 self.env._(
                     "No Ethiopian PAYE bands are configured for %(company)s "
-                    "effective %(date)s. Seed or add PAYE bands (Payroll › "
-                    "Configuration › PAYE Bands) before running payroll — "
+                    "effective %(date)s. Seed or add PAYE bands (Employees › "
+                    "Ethiopian Payroll › Configuration › PAYE Bands) before "
+                    "running payroll — "
                     "rates must come from effective-dated configuration, never "
                     "code defaults.",
                     company=company.display_name,
@@ -75,8 +76,8 @@ class L10nEtPayslipCompute(models.AbstractModel):
                 self.env._(
                     "No Ethiopian pension configuration for %(company)s "
                     "effective %(date)s. Seed or add a pension configuration "
-                    "(Payroll › Configuration › Pension) before running "
-                    "payroll.",
+                    "(Employees › Ethiopian Payroll › Configuration › Pension "
+                    "Configuration) before running payroll.",
                     company=company.display_name,
                     date=on_date,
                 )

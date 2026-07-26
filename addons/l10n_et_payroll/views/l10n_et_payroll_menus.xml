@@ -9,4 +9,16 @@
               action="action_l10n_et_payroll_run"
               parent="menu_l10n_et_payroll_root"
               sequence="10"/>
+    <menuitem id="menu_l10n_et_payslip"
+              action="action_l10n_et_payslip"
+              parent="menu_l10n_et_payroll_root"
+              sequence="20"/>
+    <!-- Rates and bands are effective-dated CONFIGURATION: a client whose PAYE
+         or pension rate changes must be able to add a new record without a
+         release, so the models need a way in (B7). -->
+    <menuitem id="menu_l10n_et_payroll_config"
+              name="Configuration"
+              parent="menu_l10n_et_payroll_root"
+              sequence="90"
+              groups="hr.group_hr_manager"/>
 </odoo>

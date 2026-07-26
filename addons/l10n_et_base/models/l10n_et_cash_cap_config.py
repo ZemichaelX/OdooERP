@@ -4,7 +4,7 @@
 from datetime import date
 
 from odoo import api, fields, models
-from odoo.exceptions import ValidationError
+from odoo.exceptions import UserError, ValidationError
 
 from ..reference import et_tax_calc
 
@@ -125,6 +125,54 @@ class L10nEtCashCapConfig(models.Model):
             order="effective_from desc",
             limit=1,
         )
+
+    @api.model
+    def _l10n_et_resolve_config(self, company, on_date):
+        """Return ``(config, skip_note)`` for the cash-cap check — never fails open.
+
+        Same three outcomes as the WHT resolver (see
+        ``l10n.et.wht.config._l10n_et_resolve_config``): out of scope → inert;
+        in scope with no configuration at all → ``UserError``, the compliance
+        hole this replaces; in scope but the payment predates the earliest
+        configuration → skipped with a note for the payment's chatter, so
+        migrating historical payments stays possible.
+        """
+        if not company.l10n_et_tax_engine_active:
+            return self.browse(), None
+        config = self._get_config(company, on_date)
+        if config:
+            return config, None
+        earliest = self.search(
+            [("company_id", "=", company.id)], order="effective_from asc", limit=1
+        )
+        if not earliest:
+            raise UserError(
+                self.env._(
+                    "No Ethiopian cash-payment cap configuration exists for "
+                    "%(company)s. Configure it under Accounting › Configuration › "
+                    "Ethiopian Cash Cap, or turn off the Ethiopian Tax Engine on "
+                    "the company if the Ethiopian cash cap does not apply there.",
+                    company=company.display_name,
+                )
+            )
+        return self.browse(), self.env._(
+            "No Ethiopian cash-cap configuration is effective for %(date)s, so "
+            "the cash cap was not checked. The earliest configured date is "
+            "%(earliest)s.",
+            date=on_date,
+            earliest=earliest.effective_from,
+        )
+
+    @api.model
+    def _l10n_et_seed_all_companies(self):
+        """Data-file/migration hook: seed every active company's cash cap."""
+        # sudo: a data-file/migration hook must see EVERY company's existing
+        # records, not just those the loading user's allowed-companies rule
+        # exposes — otherwise it "finds none" and creates a duplicate.
+        seeder = self.sudo()
+        for company in self.env["res.company"].sudo().search([("active", "=", True)]):
+            seeder._l10n_et_ensure_default(company)
+        return True
 
     @api.model
     def _l10n_et_ensure_default(self, company):
