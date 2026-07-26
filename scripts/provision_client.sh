@@ -32,6 +32,11 @@ ODOO_CONF_RUNTIME="${REPO_ROOT}/config/odoo.runtime.conf"
 # clean. Generate one on first provisioning and print it ONCE for the operator
 # to store in the vault. Idempotent: an existing admin_passwd (a re-provision)
 # is left untouched.
+if [ -d "${ODOO_CONF_RUNTIME}" ]; then
+  echo "!! ${ODOO_CONF_RUNTIME} is a DIRECTORY (docker created it before the file existed)." >&2
+  echo "!! Remove it (rm -rf config/odoo.runtime.conf) and re-run — it will be recreated from config/odoo.conf." >&2
+  exit 1
+fi
 if [ ! -f "${ODOO_CONF_RUNTIME}" ]; then
   echo ">> Creating ${ODOO_CONF_RUNTIME} from the template."
   cp "${ODOO_CONF_TEMPLATE}" "${ODOO_CONF_RUNTIME}"

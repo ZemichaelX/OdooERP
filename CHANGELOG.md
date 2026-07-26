@@ -48,6 +48,18 @@ drilled, not just written. All seven fixes verified by a real restore drill.
   payroll gross 23,800 / PAYE 3,900 / net 18,374), the company logo reads
   back from the restored filestore and a payslip PDF renders. Fast goldens
   90/90 before and after.
+- Review follow-ups (same session, second pass): `backup.sh`'s filestore leg
+  now uses the same throwaway-container pattern as restore.sh, so a backup
+  succeeds with the odoo service stopped or crashed (drilled: full backup
+  taken with odoo down, dump `pg_restore --list`-verified, archive file count
+  == live filestore). `restore.sh` validates the filestore archive with a
+  full `tar tzf` listing in pre-flight and extracts into a temp dir, swapping
+  it in only after a fully successful extraction — a truncated archive is
+  rejected before anything is dropped (drilled: truncated .tgz rejected with
+  the target filestore and DB intact, then a clean end-to-end restore). All
+  four scripts pre-flight `config/odoo.runtime.conf`: created from the
+  template when missing, clear abort when docker has created the path as a
+  directory on a fresh clone.
 - Known issue found while drilling (NOT fixed here — follow-up session):
   commit `66c21cc`'s catalog expansion broke unattended fresh-DB demo
   provisioning — `sapian_demo_trader._onboard_company` hands the wizard every

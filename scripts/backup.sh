@@ -18,6 +18,20 @@ mkdir -p "${BACKUP_DIR}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COMPOSE="docker compose -f ${REPO_ROOT}/docker/docker-compose.yml"
 
+# Pre-flight: compose mounts config/odoo.runtime.conf (gitignored, absent on a
+# fresh clone). If a compose command ever ran before the file existed, docker
+# created that path as a DIRECTORY — detect both cases so the documented path
+# can't strand the operator on a confusing mount error.
+if [ -d "${REPO_ROOT}/config/odoo.runtime.conf" ]; then
+  echo "!! ${REPO_ROOT}/config/odoo.runtime.conf is a DIRECTORY (docker created it before the file existed)." >&2
+  echo "!! Remove it (rm -rf config/odoo.runtime.conf) and re-run — it will be recreated from config/odoo.conf." >&2
+  exit 1
+fi
+if [ ! -f "${REPO_ROOT}/config/odoo.runtime.conf" ]; then
+  echo ">> Creating config/odoo.runtime.conf from the template."
+  cp "${REPO_ROOT}/config/odoo.conf" "${REPO_ROOT}/config/odoo.runtime.conf"
+fi
+
 DB_DUMP="${BACKUP_DIR}/${DB_NAME}_${STAMP}.dump"
 FILESTORE_ARCHIVE="${BACKUP_DIR}/${DB_NAME}_filestore_${STAMP}.tgz"
 
@@ -44,8 +58,11 @@ fi
 # it is an INCOMPLETE backup. A failure here must abort loudly (A9) — never
 # print "Backup written" on a partial success. The partial archive is removed
 # so it can't be mistaken for a good one.
+# Throwaway container (same pattern as restore.sh): the backup must work with
+# the odoo SERVICE stopped or crashed — right after a crash is exactly when a
+# backup matters most.
 echo ">> Archiving filestore"
-if ! $COMPOSE exec -T odoo tar czf - -C /var/lib/odoo/filestore "${DB_NAME}" > "${FILESTORE_ARCHIVE}"; then
+if ! $COMPOSE run --rm --no-deps -T odoo tar czf - -C /var/lib/odoo/filestore "${DB_NAME}" > "${FILESTORE_ARCHIVE}"; then
   echo "!! Filestore archive FAILED for ${DB_NAME} — removing partial file and aborting." >&2
   rm -f "${FILESTORE_ARCHIVE}"
   exit 1
