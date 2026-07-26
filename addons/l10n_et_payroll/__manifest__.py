@@ -22,6 +22,8 @@
         "views/res_company_views.xml",
         "views/l10n_et_payroll_menus.xml",
         "views/allowance_type_views.xml",
+        "views/paye_band_views.xml",
+        "views/pension_config_views.xml",
         "report/l10n_et_payroll_reports.xml",
         "report/payslip_templates.xml",
         "report/statutory_templates.xml",

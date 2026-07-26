@@ -60,7 +60,7 @@
 
     <menuitem id="menu_l10n_et_allowance_type"
               action="action_l10n_et_allowance_type"
-              parent="menu_l10n_et_payroll_root"
+              parent="menu_l10n_et_payroll_config"
               sequence="30"
               groups="hr.group_hr_manager"/>
 </odoo>

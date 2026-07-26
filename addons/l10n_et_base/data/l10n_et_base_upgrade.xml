@@ -3,4 +3,12 @@
     <!-- Runs on install AND every upgrade: corrects config rows still carrying
          superseded pre-accountant-review defaults (customized rows untouched). -->
     <function model="l10n.et.cash.cap.config" name="_l10n_et_fix_superseded_defaults"/>
+
+    <!-- Seed every existing company's WHT + cash-cap configuration. Companies
+         created from now on are seeded by res.company.create; this fills in the
+         ones that predate that hook (a group's second company, a tenant
+         provisioned without loading chart 'et'), which used to have NO config
+         and therefore silently withheld nothing. Idempotent. -->
+    <function model="l10n.et.wht.config" name="_l10n_et_seed_all_companies"/>
+    <function model="l10n.et.cash.cap.config" name="_l10n_et_seed_all_companies"/>
 </odoo>

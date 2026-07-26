@@ -77,6 +77,15 @@ class SapianDemoPharma(models.AbstractModel):
                 "city": "Addis Ababa",
                 "street": "Haile Gebrselassie Avenue",
                 "phone": "+251 11 662 0000",
+                # This pitch tenant demonstrates stock/expiry/recall discipline
+                # and is provisioned WITHOUT a chart of accounts, so the WHT
+                # engine has no Ethiopian taxes to resolve and would raise on
+                # the first vendor bill someone posts during a demo. Turning the
+                # engine off is a statement about the missing fiscal setup, not
+                # about Tena's tax obligations. Proper fix (deferred, see
+                # CHANGELOG): give Tena the 'et' chart so the landed-cost
+                # dossier has books to land in.
+                "l10n_et_tax_engine_active": False,
             }
         )
         admin = self.env.ref("base.user_admin", raise_if_not_found=False)

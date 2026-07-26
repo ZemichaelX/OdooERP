@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_l10n_et_paye_band_list" model="ir.ui.view">
+        <field name="name">l10n.et.paye.band.list</field>
+        <field name="model">l10n.et.paye.band</field>
+        <field name="arch" type="xml">
+            <list editable="bottom">
+                <field name="effective_from"/>
+                <field name="effective_to" optional="show"/>
+                <field name="lower_bound"/>
+                <field name="upper_bound"/>
+                <field name="is_top_band" widget="boolean_toggle"/>
+                <field name="rate" widget="percentage"/>
+                <field name="deduction"/>
+                <field name="company_id" groups="base.group_multi_company"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_l10n_et_paye_band_form" model="ir.ui.view">
+        <field name="name">l10n.et.paye.band.form</field>
+        <field name="model">l10n.et.paye.band</field>
+        <field name="arch" type="xml">
+            <form>
+                <sheet>
+                    <group>
+                        <group string="Band">
+                            <field name="lower_bound"/>
+                            <field name="upper_bound" invisible="is_top_band"/>
+                            <field name="is_top_band"/>
+                        </group>
+                        <group string="Tax">
+                            <field name="rate" widget="percentage"/>
+                            <field name="deduction"/>
+                        </group>
+                    </group>
+                    <group>
+                        <group string="Effective Period">
+                            <field name="effective_from"/>
+                            <field name="effective_to"/>
+                        </group>
+                        <group>
+                            <field name="company_id" groups="base.group_multi_company"/>
+                        </group>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_l10n_et_paye_band" model="ir.actions.act_window">
+        <field name="name">PAYE Bands</field>
+        <field name="res_model">l10n.et.paye.band</field>
+        <field name="view_mode">list,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">Employment income tax bands</p>
+            <p>The Proc 1395/2025 bands are seeded per company. A rate change is a
+            NEW effective-dated band — never edit a band that posted payslips
+            already used, or history would move.</p>
+        </field>
+    </record>
+
+    <menuitem id="menu_l10n_et_paye_band"
+              action="action_l10n_et_paye_band"
+              parent="menu_l10n_et_payroll_config"
+              sequence="10"
+              groups="hr.group_hr_manager"/>
+</odoo>

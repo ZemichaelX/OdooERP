@@ -4,6 +4,79 @@ All notable changes to SapianERP. Epics per `docs/plan-2026/10-claude-code-roadm
 
 ## [Unreleased]
 
+### Ethiopian tax engines fail LOUD, not open ✅ (2026-07-26)
+The WHT and cash-cap configurations were seeded **only** when chart 'et'
+loaded (`template_et._post_load_data`), and both engines read "no
+configuration" as "do nothing". A group's second company, or a tenant
+provisioned any other way, therefore posted vendor bills with **no
+withholding** and cash payments with **no cap check** — no error, no warning.
+Structurally the same defect as audit finding A1 (payroll), but failing open
+instead of loud. Same treatment applied:
+
+- **Seeded per company on `res.company.create`** (`l10n_et_base/models/
+  res_company.py`), plus a data-file `<function>` on install/upgrade and a
+  `19.0.1.2.0` post-migration for databases that already exist. Every company
+  now owns real, effective-dated records.
+- **Scope is explicit**: new `res.company.l10n_et_tax_engine_active`, defaulted
+  from the company country (ET) and editable. It is *computed* rather than a
+  create-time default because provisioning creates the company first and sets
+  the country afterwards (the onboarding wizard, `provision_client.sh`) — a
+  plain default would leave every wizard-provisioned tenant out of scope. One
+  flag governs **both** engines so they cannot drift apart.
+- **Three outcomes replace the silent empty recordset** (`_l10n_et_resolve_config`
+  on both config models):
+  - out of scope → inert, silently and correctly (a foreign subsidiary sharing
+    the database keeps posting bills and payments normally);
+  - in scope, no configuration at all → **raises**, naming the company and
+    where to configure it. That is the compliance hole;
+  - in scope, but the document predates the earliest configuration → the
+    withholding/cap check is **skipped with a chatter note** naming the
+    earliest configured date. Deliberately not an error: importing historical
+    vendor bills whose withholding was computed and remitted years before this
+    engine existed is normal delivery work, and a hard block would make data
+    migration impossible for every client with pre-Aug-2025 history. The skip
+    is auditable in the same channel as the WHT audit trail.
+- The "no Ethiopian withholding tax record found" error now offers the third
+  exit as well — turn the engine off for a company with no Ethiopian fiscal
+  setup — alongside setting the tax or reloading the chart.
+- **Tena Pharma** (`sapian_demo_pharma`) ships with the flag **off**: it is
+  provisioned without a chart of accounts, so the engine would have no ET taxes
+  to resolve and would raise on the first vendor bill posted during a pitch.
+  That is a statement about missing fiscal setup, not about Tena's tax
+  obligations. **Follow-up (not built here):** give Tena the 'et' chart — it is
+  an importer whose pitch includes a 2,511,500 ETB landed-cost dossier, so a
+  prospect asking "where does that hit my books?" currently has nowhere to look.
+- Regression suite `l10n_et_base/tests/test_tax_engine_scope.py` (12 tests):
+  second-company withholding (golden 1,500 on 50,000), second-company cash cap,
+  non-Ethiopian company stays inert, both raise branches, both backdated
+  branches, country-set-after-creation, and the upgrade seeding path. **8 of 10
+  discriminating tests fail on the pre-fix code**; two (`withholds_on_goods_bill`,
+  `enforces_cash_cap`) pass before and after because loading chart 'et' already
+  seeded configs on the old path — they pin the end state rather than the bug.
+
+### Catalog/dependency invariant machine-checked ✅ (2026-07-26)
+`sapian_demo_trader`'s manifest comment ("every catalog app must also be a
+dependency") is now a test: `test_catalog_dependencies` asserts the
+STANDARD_CATALOG module names are a subset of the module's transitive manifest
+dependencies. That is the real recurrence guard for the demo-provisioning
+break; the `_install_modules` warning only makes a violation graceful.
+`test_company_onboarded_via_wizard` no longer asserts `enabled == catalog`
+(true by construction): it compares the enabled entries against the modules
+genuinely installed, so it can again catch "the wizard failed to enable a pick".
+
+### PAYE bands + pension configuration reachable in the UI ✅ (2026-07-26, B7)
+`l10n.et.paye.band` and `l10n.et.pension.config` had ACLs, record rules and
+seeders but no menu, action or views — and the payslip error message pointed at
+"Payroll › Configuration › PAYE Bands", which did not exist. When a rate changed
+at a client, nobody could edit it. Added list+form views and actions for both,
+an action+menu for `l10n.et.payslip` (views existed, unreachable), and a
+Configuration submenu under Ethiopian Payroll (allowance types moved there too).
+ACLs unchanged; the error messages now name the menus that exist.
+
+### Deployment postgres pinned by digest ✅ (2026-07-26)
+`docker/docker-compose.yml` pinned `postgres:16` to the same digest `ci.yml`
+uses — the deployment stack was the one still drifting.
+
 ### Demo provisioning fixed + images pinned by digest ✅ (2026-07-26)
 `-i sapian_demo_trader --with-demo` on a fresh database — the documented
 rebuild one-liner — had started failing, and the trader suite was silently

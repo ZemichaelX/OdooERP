@@ -52,11 +52,17 @@ class AccountMove(models.Model):
                     }
                 )
 
-        config = self.env["l10n.et.wht.config"]._get_config(
-            self.company_id, self.invoice_date or fields.Date.context_today(self)
+        on_date = self.invoice_date or fields.Date.context_today(self)
+        config, skip_note = self.env["l10n.et.wht.config"]._l10n_et_resolve_config(
+            self.company_id, on_date
         )
+        if skip_note:
+            # Backdated document: no configuration is effective for its date, so
+            # withholding is skipped deliberately. The chatter already carries
+            # the WHT audit trail, so the skip is recorded in the same place.
+            self.message_post(body=skip_note)
         if not config or not product_lines:
-            return  # No ET configuration: engine stays inert (non-ET company).
+            return  # Out of scope, or nothing to withhold on: engine stays inert.
 
         partner = self.commercial_partner_id
         has_tin = et_tax_calc.validate_tin(partner.l10n_et_tin).valid
@@ -107,10 +113,12 @@ class AccountMove(models.Model):
                 raise UserError(
                     self.env._(
                         "No Ethiopian withholding tax record found for '%(kind)s'. "
-                        "Set it on the WHT configuration '%(config)s' or reload the "
-                        "Ethiopian chart template.",
+                        "Set it on the WHT configuration '%(config)s', reload the "
+                        "Ethiopian chart template, or turn off the Ethiopian Tax "
+                        "Engine on %(company)s if it has no Ethiopian fiscal setup.",
                         kind=decision,
                         config=config.display_name,
+                        company=self.company_id.display_name,
                     )
                 )
             lines.write({"tax_ids": [Command.link(tax.id)]})

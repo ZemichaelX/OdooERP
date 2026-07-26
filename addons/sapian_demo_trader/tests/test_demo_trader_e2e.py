@@ -18,6 +18,8 @@ tie out to the GL. Numbers (July 2026):
 
 from odoo.tests import TransactionCase, tagged
 
+from odoo.addons.sapian_core.models.sapian_module_catalog import SapianModuleCatalog
+
 
 @tagged("post_install", "-at_install")
 class TestDemoTraderE2E(TransactionCase):
@@ -55,14 +57,26 @@ class TestDemoTraderE2E(TransactionCase):
         self.assertEqual(company.fiscalyear_last_month, "7")
         self.assertEqual(company.fiscalyear_last_day, 7)
         self.assertEqual(company.primary_color, "#1a7f5a")
-        # The demo picks the WHOLE catalog and this module depends on every
-        # app in it, so each entry is installed and therefore enabled. Counted
-        # against the catalog, not a literal, so adding a catalog entry (with
-        # its manifest dependency) doesn't turn this red.
+        # The wizard must have ENABLED every pick whose module is genuinely
+        # installed. Comparing against the installed set (not against the
+        # catalog itself, which would be true by construction) keeps this able
+        # to catch "the wizard failed to enable a pick"; the catalog/dependency
+        # invariant that makes the two coincide is pinned separately in
+        # test_catalog_dependencies.
         catalog = self.env["sapian.module.catalog"].search([("company_id", "=", company.id)])
-        enabled = catalog.filtered("enabled")
-        self.assertTrue(catalog)
-        self.assertEqual(enabled, catalog)
+        installed_names = set(
+            self.env["ir.module.module"]
+            .search(
+                [("name", "in", catalog.mapped("technical_name")), ("state", "=", "installed")]
+            )
+            .mapped("name")
+        )
+        expected_enabled = catalog.filtered(
+            lambda entry: entry.technical_name in installed_names
+        )
+        self.assertEqual(len(catalog), len(SapianModuleCatalog.STANDARD_CATALOG))
+        self.assertTrue(expected_enabled)
+        self.assertEqual(catalog.filtered("enabled"), expected_enabled)
 
     def test_sales_invoices_vat(self):
         """Both customer invoices posted with 15% VAT: 36,800 and 27,600."""

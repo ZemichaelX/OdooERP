@@ -47,9 +47,14 @@ class AccountPayment(models.Model):
                 or not payment.partner_id
             ):
                 continue
-            config = self.env["l10n.et.cash.cap.config"]._get_config(
+            config, skip_note = self.env["l10n.et.cash.cap.config"]._l10n_et_resolve_config(
                 payment.company_id, payment.date
             )
+            if skip_note:
+                # Backdated payment: no configuration effective for its date.
+                # Recorded on the payment rather than blocking it (historical
+                # data migration), same channel as the cap's own audit notes.
+                payment.message_post(body=skip_note)
             if not config or config.enforcement == "off":
                 continue
             partner = payment.partner_id.commercial_partner_id
