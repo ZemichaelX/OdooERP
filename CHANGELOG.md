@@ -4,6 +4,59 @@ All notable changes to SapianERP. Epics per `docs/plan-2026/10-claude-code-roadm
 
 ## [Unreleased]
 
+### Ops hardening — backup/restore drilled end-to-end ✅ (2026-07-26)
+Ops-layer-only session (no addons changes): the backup/restore path is now
+drilled, not just written. All seven fixes verified by a real restore drill.
+- `restore.sh`: the filestore phase used to `compose exec` into the odoo
+  container the script had just STOPPED — impossible, and with `set -e` the
+  abort landed after the DB was dropped/restored but before odoo restarted
+  (tenant DB-only, filestore missing, Odoo down). Filestore now restores via
+  throwaway `compose run --rm --no-deps` containers on the same `odoo-data`
+  volume; all input validation happens before anything destructive; on any
+  failure odoo deliberately stays STOPPED with an explicit known-state
+  message (a half-restored tenant must never serve traffic). Also: the
+  archive's top-level dir is renamed on extraction (`tar --transform`) so
+  restoring under a different db name still gets its filestore.
+- `provision_client.sh`: the generated `admin_passwd` was appended to the
+  git-tracked `config/odoo.conf` (one `git add -A` away from committing a
+  tenant master password, and compose mounted the same tracked file). Secrets
+  now go to gitignored `config/odoo.runtime.conf` — created from the template
+  if missing — which is what `docker-compose.yml` mounts; the tracked
+  template stays clean (`git status` verified clean across a provision run).
+  Deploy step documented in `docker/README.md`.
+- `backup.sh`: `pg_dump` gets the same fail-guard + partial-file cleanup the
+  filestore path already had (A9); every dump is verified restorable with
+  `pg_restore --list` before success is reported; retention pruning matches
+  the exact database (`NAME_[0-9]*`), so backing up `sapian` can no longer
+  delete `sapian_prod_*` archives (regression-tested with aged files).
+- `.env` location fixed everywhere: compose's project directory is `docker/`
+  (it is invoked `-f docker/docker-compose.yml`), so the documented repo-root
+  `.env` was never read and `${DB_PASSWORD:?}` aborted all scripts. The file
+  now lives at `docker/.env`; CLAUDE.md, README.md and docker/README.md
+  corrected.
+- `dress_rehearsal.sh`: drops its target DB only after a typed-name
+  confirmation (same guard as restore.sh), and exits non-zero when the
+  reconciliation exam fails (`EXAM_VERDICT` sentinel — odoo shell always
+  exits 0), so it can gate a release unattended.
+- All four scripts resolve the repo root from their own location
+  (`BASH_SOURCE`), so cron/Task Scheduler invocations work from any cwd, and
+  all are executable (mode 100755) on a fresh clone.
+- Restore drill (this session, containerized Odoo 19): `backup.sh` on the
+  Selam demo tenant (dump passed `pg_restore --list`, filestore 2,372 files)
+  → `restore.sh` onto `scratch_restore_drill` → on the restored DB all
+  July-2026 goldens hold (VAT base 56,000 / output VAT 8,400; WHT 7,260;
+  payroll gross 23,800 / PAYE 3,900 / net 18,374), the company logo reads
+  back from the restored filestore and a payslip PDF renders. Fast goldens
+  90/90 before and after.
+- Known issue found while drilling (NOT fixed here — follow-up session):
+  commit `66c21cc`'s catalog expansion broke unattended fresh-DB demo
+  provisioning — `sapian_demo_trader._onboard_company` hands the wizard every
+  catalog entry, the eight new optional apps are not in its manifest deps, so
+  the wizard hits `button_immediate_install` during registry init and demo
+  install fails (and with `website_sale` installed, archiving the placeholder
+  company is blocked by the auto-created website). Fix: demo picks only the
+  core/common tiers, or add the optional apps to the demo manifest.
+
 ### Onboarding catalog — offer the standard Odoo Community apps ✅ (2026-07-09)
 `sapian.module.catalog` STANDARD_CATALOG grows from 7 to 15 entries. Added the
 stock Odoo 19 Community apps that had no Ethiopian layer and were previously

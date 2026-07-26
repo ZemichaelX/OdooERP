@@ -62,8 +62,10 @@ if [ -n "${FILESTORE_TGZ}" ]; then
   echo ">> Restoring filestore..."
   $COMPOSE run --rm --no-deps -T odoo \
     sh -c "rm -rf /var/lib/odoo/filestore/${DB_NAME} && mkdir -p /var/lib/odoo/filestore"
+  # The archive's top-level dir is named after the SOURCE db; rename it on
+  # extraction so restoring under a different db name still gets a filestore.
   $COMPOSE run --rm --no-deps -T odoo \
-    tar xzf - -C /var/lib/odoo/filestore < "${FILESTORE_TGZ}"
+    tar xzf - -C /var/lib/odoo/filestore --transform "s,^[^/]*,${DB_NAME}," < "${FILESTORE_TGZ}"
 fi
 
 echo ">> Starting odoo..."
