@@ -56,12 +56,16 @@ jobs:
     runs-on: ubuntu-latest
     # Run inside the same Odoo 19 image production uses, so the suite exercises
     # the real ORM/registry/report stack (A3). A DB failure here fails CI.
+    # Images are pinned by DIGEST (R7): the 19.0/16 tags are rebuilt upstream
+    # continuously, and an unannounced rebuild silently changed core behaviour
+    # under us once already. Upgrading an image is a deliberate, tested change
+    # — bump the digest in its own PR and let this suite prove it.
     container:
-      image: odoo:19.0
+      image: odoo:19.0@sha256:e415f9924395e7521245813135112f264b9222bcde3b1d3c2ee9ff073081540a
       options: --user root
     services:
       db:
-        image: postgres:16
+        image: postgres:16@sha256:33f923b05f64ca54ac4401c01126a6b92afe839a0aa0a52bc5aeb5cc958e5f20
         env:
           POSTGRES_USER: odoo
           POSTGRES_PASSWORD: odoo

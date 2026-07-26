@@ -4,6 +4,60 @@ All notable changes to SapianERP. Epics per `docs/plan-2026/10-claude-code-roadm
 
 ## [Unreleased]
 
+### Demo provisioning fixed + images pinned by digest ✅ (2026-07-26)
+`-i sapian_demo_trader --with-demo` on a fresh database — the documented
+rebuild one-liner — had started failing, and the trader suite was silently
+running 2 of its 12 tests in CI (the e2e goldens never ran, because their
+demo tenant never loaded).
+
+**Root cause — two ingredients, neither sufficient alone.** The catalog
+expansion in `66c21cc` (7 → 15 apps) opened a dormant code path: the demo
+hands the onboarding wizard the FULL catalog, and with eight of those apps
+absent from `sapian_demo_trader`'s manifest the wizard's `_install_modules`
+found pending modules and called `button_immediate_install` — during demo
+data loading. That path was harmless on the `odoo:19.0` image of 9 July (CI
+was green on this exact addons code). A later upstream rebuild of the same
+unpinned `19.0` tag tightened the guards in
+`ir_module._button_immediate_function`, and the previously dormant call
+became fatal: `RuntimeError: Module operations inside tests are not
+transactional and thus forbidden` under `--test-enable` in CI, and
+`UserError: ... cannot be called on init or non loaded registries` on a
+plain install. So: dormant path opened by `66c21cc`, armed by an
+`odoo:19.0` rebuild.
+
+- **Fixed at the demo end** (real onboarding is unchanged — a client
+  onboarding SHOULD install modules): the eight standard Community apps the
+  catalog offers (`crm`, `mrp`, `project`, `mass_mailing`, `fleet`, `repair`,
+  `maintenance`, `website_sale`) are now `sapian_demo_trader` dependencies,
+  so they are installed before demo data runs and the wizard's install step
+  is a no-op. The demo's pick list is unchanged — Selam still shows all 15
+  catalog entries.
+- **Recurrence made impossible:** `sapian_core`'s `_install_modules` now
+  skips the install with a logged warning naming the skipped modules when
+  the registry cannot support a module operation (not ready, still
+  initialising, or in test mode — the same conditions core checks). Neither
+  holds during real onboarding, so runtime behaviour is identical; a future
+  catalog addition that forgets the manifest degrades with a clear warning
+  instead of an opaque core error.
+- **Collateral, also fixed:** with `website_sale` installed, archiving the
+  Odoo placeholder company is refused while it owns the demo website, so
+  `_configure_demo_login` reassigns any placeholder-owned website to the demo
+  company first.
+- **Images pinned by digest (R7):** `ci.yml` (odoo + postgres) and
+  `docker/Dockerfile` pin the digests currently published for `odoo:19.0`
+  and `postgres:16` — verified against Docker Hub's registry API — instead of
+  floating tags. This is what let the fleet drift silently; upgrading an
+  image is now a deliberate, tested change (bump the digest in its own PR).
+- Verified: the README one-liner completes on a genuinely fresh database in
+  a single pass (no pre-install workaround) with demo data loaded — Selam
+  provisioned with logo, 6 posted moves, 3 payslips, 15 catalog entries,
+  placeholders archived, and zero install-skip warnings (the deps cover
+  every pick). Fast goldens 90/90; ruff/black clean.
+- Existing `sapian_core` onboarding tests do NOT exercise `_install_modules`
+  with modules actually pending — they assert catalog pre-selection and
+  profile/branding only, which is why this path was never covered. Noted,
+  not built this session.
+
 ### Ops hardening — backup/restore drilled end-to-end ✅ (2026-07-26)
 Ops-layer-only session (no addons changes): the backup/restore path is now
 drilled, not just written. All seven fixes verified by a real restore drill.
@@ -60,14 +114,9 @@ drilled, not just written. All seven fixes verified by a real restore drill.
   four scripts pre-flight `config/odoo.runtime.conf`: created from the
   template when missing, clear abort when docker has created the path as a
   directory on a fresh clone.
-- Known issue found while drilling (NOT fixed here — follow-up session):
-  commit `66c21cc`'s catalog expansion broke unattended fresh-DB demo
-  provisioning — `sapian_demo_trader._onboard_company` hands the wizard every
-  catalog entry, the eight new optional apps are not in its manifest deps, so
-  the wizard hits `button_immediate_install` during registry init and demo
-  install fails (and with `website_sale` installed, archiving the placeholder
-  company is blocked by the auto-created website). Fix: demo picks only the
-  core/common tiers, or add the optional apps to the demo manifest.
+- Demo-provisioning break found while drilling — root-caused and fixed in the
+  next entry below. (An earlier draft of this entry blamed `66c21cc` alone;
+  that attribution was wrong — see below.)
 
 ### Onboarding catalog — offer the standard Odoo Community apps ✅ (2026-07-09)
 `sapian.module.catalog` STANDARD_CATALOG grows from 7 to 15 entries. Added the

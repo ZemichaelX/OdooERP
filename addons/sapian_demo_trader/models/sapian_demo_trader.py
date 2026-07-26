@@ -126,6 +126,15 @@ class SapianDemoTrader(models.AbstractModel):
                 }
             )
         if placeholders:
+            # website_sale (a catalog app, so a dependency here) creates a
+            # demo website owned by the placeholder company, and Odoo refuses
+            # to archive a company that still owns one. Move any such website
+            # to the demo company first.
+            website = self.env.get("website")
+            if website is not None:
+                website.sudo().search([("company_id", "in", placeholders.ids)]).write(
+                    {"company_id": company.id}
+                )
             placeholders.sudo().write({"active": False})
 
     @api.model
