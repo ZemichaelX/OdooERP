@@ -36,7 +36,10 @@ in a future multi-tenant SaaS (no hard-coded company assumptions; respect `compa
 - docs/            architecture & module docs (the master planning package)
 
 ## How to run locally
-    cp .env.example .env          # set DB_PASSWORD etc.
+    cp .env.example docker/.env   # set DB_PASSWORD etc. (compose's project dir
+                                  # is docker/, so it reads docker/.env)
+    cp config/odoo.conf config/odoo.runtime.conf   # runtime config compose mounts
+                                  # (gitignored; provision_client.sh adds admin_passwd)
     docker compose -f docker/docker-compose.yml up -d
     # open http://localhost:8069
 

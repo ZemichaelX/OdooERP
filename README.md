@@ -21,9 +21,14 @@ playbook, customization guide). Operating rules: `CLAUDE.md`.
 - Accountant-review PDF samples in `samples/` (rendered from the demo tenant).
 
 ## Quick start
-1. `cp .env.example .env` and set a `DB_PASSWORD`.
-2. `docker compose -f docker/docker-compose.yml up -d`
-3. Open http://localhost:8069.
+1. `cp .env.example docker/.env` and set a `DB_PASSWORD` (compose's project
+   directory is `docker/`, so it reads `docker/.env` — a repo-root `.env` is
+   ignored).
+2. `cp config/odoo.conf config/odoo.runtime.conf` — the gitignored runtime
+   config that compose mounts (`scripts/provision_client.sh` creates it and
+   adds a per-tenant `admin_passwd`).
+3. `docker compose -f docker/docker-compose.yml up -d`
+4. Open http://localhost:8069.
 
 ## The demo (sales demo + local testing)
 The demo tenant lives in the local database **`scratch_final`**:

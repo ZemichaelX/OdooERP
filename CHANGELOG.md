@@ -15,6 +15,22 @@ onboarding wizard still pre-ticks only the `core` tier — the optional apps are
 offered but never auto-installed. No new Ethiopian customization for these yet.
 Catalog-count tests updated 7 → 15.
 
+### Ops scripts — Windows-safe backup, restore, et-chart provisioning ✅ (2026-07-07)
+Two commits (`51f3456`, `85d5f05`) hardening the operations layer:
+- `backup.sh`: disable Git Bash MSYS path conversion (it mangled the
+  container-absolute filestore path on Windows and aborted the backup; no-op on
+  Linux/CI). New optional `[offsite_dir]` + `[retention_days]` args: after a
+  successful DB+filestore backup, both archives are copied to a synced folder
+  (e.g. OneDrive) for an off-site copy, with retention pruning in both
+  locations; off-site failure aborts loudly (A9). Machine-specific paths stay
+  out of the repo (local Task Scheduler `.cmd` wrapper).
+- `restore.sh`: new companion script — drops/recreates the DB from a `pg_dump`
+  and restores the filestore, with a typed confirmation guard.
+- `provision_client.sh`: two-phase provisioning (base → set company country →
+  install modules) so new tenants land on the Ethiopian 'et' chart instead of
+  `generic_coa`, which Odoo won't let you switch afterwards.
+- `backups/.gitignore`: never commit tenant data dumps.
+
 ### Dress rehearsal — full-month simulation + independent exam ✅ (2026-07-07)
 New `sapian_dress_rehearsal` module: a rerunnable pre-release ritual that
 provisions a fresh tenant through the onboarding wizard, drives one realistic
@@ -163,6 +179,12 @@ client's own requirements in docs/01-proposal-extraction.md §8.1).
   the product does; `res.groups.users` → `all_user_ids`; stock.warehouse has
   no activity mixin; HttpCase needs `--workers=0` (odoo.conf ships workers=2);
   Git Bash mangles `--test-tags /module` (use MSYS_NO_PATHCONV=1).
+
+### Project skill — Fable 5 prompting guide ✅ (2026-07-04)
+`.claude/skills/fable5-prompting/SKILL.md` (`ad9cf37`): a project skill for
+drafting/reviewing kickoff prompts, system prompts and agent instructions
+tuned to Claude Fable 5 — token-conscious session design for this repo's
+Claude Code workflow. Tooling only; no product code.
 
 ### Cleanup — demo polish, catalog truth, CI, samples ✅ (2026-07-04)
 - Demo login: provisioning archives ALL Odoo placeholder companies (incl. the
