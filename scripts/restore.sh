@@ -16,6 +16,9 @@ export MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*'
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COMPOSE="docker compose -f ${REPO_ROOT}/docker/docker-compose.yml"
 
+# shellcheck source=scripts/lib/preflight.sh
+. "${REPO_ROOT}/scripts/lib/preflight.sh"
+
 # Pre-flight: compose mounts config/odoo.runtime.conf (gitignored, absent on a
 # fresh clone). If a compose command ever ran before the file existed, docker
 # created that path as a DIRECTORY — detect both cases so the documented path
@@ -45,6 +48,15 @@ if [ -n "${FILESTORE_TGZ}" ]; then
     echo "!! filestore archive is corrupt/truncated: ${FILESTORE_TGZ} — nothing touched." >&2
     exit 1
   fi
+fi
+
+# The stack must be reachable BEFORE the operator is asked to confirm a
+# destructive restore: a restore happens under pressure, and discovering the
+# daemon is down after typing the database name — with odoo already stopped and
+# the DB already dropped — is the worst possible moment to find out.
+if ! require_docker_stack "${COMPOSE}" db; then
+  log_error "!! Aborting before touching anything — the stack is not available."
+  exit 1
 fi
 
 echo ">> This will DROP and recreate database '${DB_NAME}'."
@@ -84,6 +96,9 @@ if [ -n "${FILESTORE_TGZ}" ]; then
   # --strip-components=1 drops the archive's source-db top-level dir; the mv
   # supplies the target name, so cross-name restores get a filestore too.
   echo ">> Restoring filestore..."
+  # shellcheck disable=SC2016  # Intentional: the body runs INSIDE the container
+  # and must not expand locally; only ${DB_NAME} is spliced in by closing and
+  # reopening the quotes, which is why it appears outside the single quotes.
   $COMPOSE run --rm --no-deps -T odoo sh -c '
     set -e
     TMP="/var/lib/odoo/filestore/.restore_tmp_$$"

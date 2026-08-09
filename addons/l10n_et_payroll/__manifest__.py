@@ -1,6 +1,6 @@
 {
     "name": "Ethiopia Payroll (PAYE & Pension)",
-    "version": "19.0.4.0.0",
+    "version": "19.0.5.0.0",
     "summary": "Ethiopian payroll: effective-dated PAYE bands and pension rates, "
     "monthly payslip batch runs with manual input lines, and aggregated payroll "
     "journal posting. Re-verify all rates against the Ministry of Revenue before "

@@ -157,8 +157,18 @@ class L10nEtPayeBand(models.Model):
         return vals
 
     @api.model
-    def _l10n_et_seed_all_companies(self):
-        """Data-file/migration hook: seed every active company's PAYE bands."""
+    def _l10n_et_seed_active_companies(self):
+        """Data-file/migration hook: seed every ACTIVE company's PAYE bands.
+
+        Archived companies are deliberately skipped: they run no payroll, and
+        if one is ever unarchived the missing configuration RAISES (A1) rather
+        than falling back to code constants — loud, not silent. The name says
+        "active" because that is what it does; an earlier name claimed "all"
+        while filtering on active, which is the kind of lie that hides bugs.
+        Note this is about rows EXISTING; that rows which exist carry the right
+        commencement date is a separate invariant, enforced by the migration's
+        post-condition across every company, archived included.
+        """
         for company in self.env["res.company"].search([("active", "=", True)]):
             self._l10n_et_ensure_default(company)
         return True

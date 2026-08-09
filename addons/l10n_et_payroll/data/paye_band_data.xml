@@ -15,5 +15,5 @@
       Revenue before payroll go-live; a future proclamation is a NEW generation
       of records, never an edit to these.
     -->
-    <function model="l10n.et.paye.band" name="_l10n_et_seed_all_companies"/>
+    <function model="l10n.et.paye.band" name="_l10n_et_seed_active_companies"/>
 </odoo>
