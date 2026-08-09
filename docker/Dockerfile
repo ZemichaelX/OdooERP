@@ -11,4 +11,5 @@ USER root
 RUN apt-get update \
     && apt-get install -y --no-install-recommends fonts-sil-abyssinica \
     && rm -rf /var/lib/apt/lists/*
+RUN pip install --no-cache-dir --break-system-packages "sentry-sdk==2.*"
 USER odoo
