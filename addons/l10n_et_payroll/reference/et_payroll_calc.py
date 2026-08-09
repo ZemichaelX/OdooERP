@@ -6,23 +6,35 @@ math. The Odoo model `l10n.et.payslip.compute` calls these functions so the logi
 unit-tested fast (pytest) without a running Odoo instance.
 
 IMPORTANT — these are CONFIGURATION VALUES, not universal constants. They reflect Ethiopia's
-2024/25 personal income tax reform (monthly PAYE) and the standard private/public pension
+2025 personal income tax reform (monthly PAYE) and the standard private/public pension
 split. Re-verify against the Ministry of Revenue before any payroll go-live. In the Odoo
 build, the bands live in effective-dated data records so historical payslips never change
 when a future rate is amended.
+
+PAYE has GENERATIONS, and the payslip's date decides which one applies. Seeding one set
+with a wrong commencement date silently computes the wrong tax for every payslip in the
+gap — and understated PAYE is the employer's liability at assessment.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
-# Monthly PAYE bands, 2024/25 reform.
 # Each tuple: (lower_bound_exclusive, upper_bound_inclusive, rate, deduction)
 # PAYE = rate * taxable_income - deduction  (progressive "quick" formula).
 # upper_bound None means "and above".
-DEFAULT_PAYE_BANDS: List[Tuple[float, float, float, float]] = [
+BandTable = List[Tuple[float, Optional[float], float, float]]
+
+# Monthly PAYE bands, Income Tax (Amendment) Proclamation No. 1395/2025.
+# Commenced 8 July 2025. (A separate provision of the same proclamation —
+# domestic withholding — commenced 7 August 2025; that is l10n_et_base's
+# concern, not payroll's.)
+# Source: EY global tax alert on Proclamation 1395/2025; Chambers and KPMG
+# summaries of the same. Secondary sources, not the Negarit Gazeta.
+PAYE_BANDS_1395_2025: BandTable = [
     (0.0, 2000.0, 0.00, 0.0),
     (2000.0, 4000.0, 0.15, 300.0),
     (4000.0, 7000.0, 0.20, 500.0),
@@ -30,6 +42,68 @@ DEFAULT_PAYE_BANDS: List[Tuple[float, float, float, float]] = [
     (10000.0, 14000.0, 0.30, 1350.0),
     (14000.0, None, 0.35, 2050.0),
 ]
+PAYE_1395_2025_EFFECTIVE_FROM = date(2025, 7, 8)
+
+# Monthly PAYE bands, Federal Income Tax Proclamation No. 979/2016 — the
+# generation in force until 1395/2025 commenced.
+# Source: the standard published 979/2016 schedule (secondary source).
+PAYE_BANDS_979_2016: BandTable = [
+    (0.0, 600.0, 0.00, 0.0),
+    (600.0, 1650.0, 0.10, 60.0),
+    (1650.0, 3200.0, 0.15, 142.50),
+    (3200.0, 5250.0, 0.20, 302.50),
+    (5250.0, 7800.0, 0.25, 565.0),
+    (7800.0, 10900.0, 0.30, 955.0),
+    (10900.0, None, 0.35, 1500.0),
+]
+# TODO: confirm against the Negarit Gazeta. Hamle 1, 2008 EC = 8 July 2016 is
+# the commonly cited commencement, but it is not the boundary that matters for
+# our payslips (that is 8 July 2025) and it is not gazette-verified here.
+PAYE_979_2016_EFFECTIVE_FROM = date(2016, 7, 8)
+
+
+@dataclass(frozen=True)
+class PayeBandGeneration:
+    """One statutory PAYE schedule and the date it commenced."""
+
+    effective_from: date
+    bands: BandTable
+    citation: str
+
+
+# Oldest first. Add a new generation here when a proclamation amends the bands;
+# never edit an existing one, or historical payslips would move.
+PAYE_BAND_GENERATIONS: List[PayeBandGeneration] = [
+    PayeBandGeneration(
+        effective_from=PAYE_979_2016_EFFECTIVE_FROM,
+        bands=PAYE_BANDS_979_2016,
+        citation="Federal Income Tax Proclamation No. 979/2016 (commencement "
+        "date pending gazette confirmation)",
+    ),
+    PayeBandGeneration(
+        effective_from=PAYE_1395_2025_EFFECTIVE_FROM,
+        bands=PAYE_BANDS_1395_2025,
+        citation="Income Tax (Amendment) Proclamation No. 1395/2025, in force " "8 July 2025",
+    ),
+]
+
+# "The bands in force now" — what callers with no date in hand should use.
+DEFAULT_PAYE_BANDS: BandTable = PAYE_BANDS_1395_2025
+
+
+def get_paye_bands(on_date: date) -> BandTable:
+    """Return the PAYE bands in force on ``on_date`` (commencement inclusive).
+
+    Dates before the earliest known generation fall back to the earliest one:
+    the alternative is refusing to compute a payslip from a period we have no
+    schedule for, which would block historical data migration for no gain.
+    """
+    applicable = PAYE_BAND_GENERATIONS[0]
+    for generation in PAYE_BAND_GENERATIONS:
+        if on_date >= generation.effective_from:
+            applicable = generation
+    return applicable.bands
+
 
 DEFAULT_PENSION_EMPLOYEE_RATE = 0.07  # 7% employee
 DEFAULT_PENSION_EMPLOYER_RATE = 0.11  # 11% employer

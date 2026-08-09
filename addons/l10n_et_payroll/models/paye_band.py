@@ -1,18 +1,22 @@
 # -*- coding: utf-8 -*-
 """Effective-dated PAYE bands. Rates are configuration data, not code (CLAUDE.md rule #4)."""
 
-from datetime import date
+from datetime import date, timedelta
 
 from odoo import api, fields, models
 from odoo.exceptions import ValidationError
 
 from .payslip_compute import _calc
 
-# First effective date of the seeded 2024/25-reform bands. A future proclamation
-# is a NEW generation of records with a later effective_from (and the old ones'
-# effective_to closed) — never an edit to these, so historical payslips are
-# reproducible.
-SEED_EFFECTIVE_FROM = date(2024, 7, 1)
+# Commencement of the CURRENT generation: Income Tax (Amendment) Proclamation
+# No. 1395/2025, in force 8 July 2025 (see reference/et_payroll_calc.py for the
+# citation). It was previously seeded as 2024-07-01 — twelve months before the
+# proclamation existed — which computed the 2025 (more generous) bands for
+# every payslip in the gap and so UNDERSTATED PAYE, the employer's liability at
+# assessment. A future proclamation is a NEW generation of records with a later
+# effective_from (and the previous one's effective_to closed) — never an edit
+# to these, so historical payslips stay reproducible.
+SEED_EFFECTIVE_FROM = _calc.PAYE_1395_2025_EFFECTIVE_FROM
 
 
 class L10nEtPayeBand(models.Model):
@@ -121,19 +125,36 @@ class L10nEtPayeBand(models.Model):
         )
         if has_any:
             return
-        vals = [
-            {
-                "company_id": company.id,
-                "lower_bound": lower,
-                "upper_bound": 0.0 if upper is None else upper,
-                "is_top_band": upper is None,
-                "rate": rate,
-                "deduction": deduction,
-                "effective_from": SEED_EFFECTIVE_FROM,
-            }
-            for lower, upper, rate, deduction in _calc.DEFAULT_PAYE_BANDS
-        ]
-        self.sudo().create(vals)
+        self.sudo().create(self._l10n_et_seed_values(company))
+
+    @api.model
+    def _l10n_et_seed_values(self, company):
+        """Create-values for EVERY known PAYE generation, oldest first.
+
+        Seeding only the current generation left the table unable to answer
+        "what was the tax in May 2025?" — one rate set with a date column, not
+        an effective-dated table. Each generation is closed the day before the
+        next one commences so the date windows never overlap.
+        """
+        generations = _calc.PAYE_BAND_GENERATIONS
+        vals = []
+        for index, generation in enumerate(generations):
+            following = generations[index + 1] if index + 1 < len(generations) else None
+            effective_to = following.effective_from - timedelta(days=1) if following else False
+            vals.extend(
+                {
+                    "company_id": company.id,
+                    "lower_bound": lower,
+                    "upper_bound": 0.0 if upper is None else upper,
+                    "is_top_band": upper is None,
+                    "rate": rate,
+                    "deduction": deduction,
+                    "effective_from": generation.effective_from,
+                    "effective_to": effective_to,
+                }
+                for lower, upper, rate, deduction in generation.bands
+            )
+        return vals
 
     @api.model
     def _l10n_et_seed_all_companies(self):

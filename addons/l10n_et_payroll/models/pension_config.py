@@ -8,9 +8,19 @@ from odoo.exceptions import ValidationError
 
 from .payslip_compute import _calc
 
-# First effective date of the seeded default pension configuration (mirrors the
-# PAYE band seed). A rate change is a new effective-dated record, never an edit.
-SEED_EFFECTIVE_FROM = date(2024, 7, 1)
+# Commencement of the seeded 7%/11% split. Unlike PAYE, the pension rates did
+# NOT change at the 1395/2025 boundary, so no payslip computes differently
+# either way — but 2024-07-01 (the old value, copied from the PAYE seed) was
+# still an unsupported assertion about when these rates began.
+#
+# The 7% employee / 11% employer split for private-organisation employees was
+# introduced by the Private Organisation Employees' Pension Proclamation
+# No. 715/2011 and carried forward unchanged by Proclamation No. 1268/2022,
+# which now governs (and which CLAUDE.md cites for the nationality rules).
+# Dating the seed from 715/2011 states only what is supported: these rates have
+# applied continuously since that scheme began.
+# TODO: confirm both commencement dates against the Negarit Gazeta.
+SEED_EFFECTIVE_FROM = date(2011, 7, 1)
 
 
 class L10nEtPensionConfig(models.Model):
