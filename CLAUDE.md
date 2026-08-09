@@ -54,6 +54,24 @@ Run Odoo module tests:
 Run the fast pure-Python payroll tests (no Odoo needed):
     pytest addons/l10n_et_payroll/reference/
 
+## Platform-specific fixes must be verified on that platform
+A fix for a platform-specific failure is NOT verified until it is verified on
+that platform. Linux evidence is not proof for a Windows bug.
+
+This rule was written after a Windows-only backup failure was "fixed" with
+Linux-only verification: every check passed, and the delivered script could not
+run on Windows at all — strictly worse than before, because nothing backed up
+until it was found by hand.
+
+- If the platform is not available in the session, say so **explicitly in the
+  report** and mark the item **UNVERIFIED**. Do not present Linux evidence as
+  proof of a Windows fix.
+- State the exact commands the operator should run on the real platform, and
+  treat the item as open until they report back.
+- The ops scripts are run from **Git Bash on Windows**. Anything touching
+  paths, `docker compose -f`, MSYS argument conversion, forking, or line
+  endings is platform-sensitive by default — assume it needs Windows proof.
+
 ## Definition of Done (every task)
 - Tests pass (pytest reference tests + Odoo module tests where relevant)
 - Lint clean (ruff, black, pylint-odoo)

@@ -15,20 +15,26 @@
 # happen when a process dies. So: preconditions first, work in <name>.tmp,
 # verify, then mv into place. Every outcome is recorded in LAST_BACKUP_STATUS.
 set -euo pipefail
-# Git Bash (Windows) rewrites container-absolute paths like /var/lib/odoo/...
-# into C:/Program Files/Git/...; disable that so docker exec gets the real path.
-# No-op on Linux/CI.
-export MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*'
+# Git Bash (Windows) converts POSIX-looking arguments to Windows paths on the
+# way out to native binaries. CONTAINER paths (/var/lib/odoo/...) must NOT be
+# converted — that mangles them into C:/Program Files/Git/... inside docker.
+# The exclusion is SCOPED to those paths: an earlier blanket
+# MSYS2_ARG_CONV_EXCL='*' also stopped the HOST path passed to `docker compose
+# -f` from being converted, so docker resolved /c/Users/... against the current
+# drive as C:\c\Users\... and every compose call failed. No-op off Windows.
+export MSYS2_ARG_CONV_EXCL='/var/lib/odoo'
 DB_NAME="${1:?usage: backup.sh <db_name> <backup_dir> [offsite_dir] [retention_days]}"
 BACKUP_DIR="${2:?usage: backup.sh <db_name> <backup_dir> [offsite_dir] [retention_days]}"
 OFFSITE_DIR="${3:-}"
 RETENTION_DAYS="${4:-14}"
 STAMP="$(date +%Y%m%d_%H%M%S)"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-COMPOSE="docker compose -f ${REPO_ROOT}/docker/docker-compose.yml"
-
 # shellcheck source=scripts/lib/preflight.sh
 . "${REPO_ROOT}/scripts/lib/preflight.sh"
+
+# The -f path goes through compose_cmd so the HOST path is in the form
+# docker can open on Windows (see scripts/lib/preflight.sh).
+COMPOSE="$(compose_cmd "${REPO_ROOT}/docker/docker-compose.yml")"
 
 STATUS_FILE="${BACKUP_DIR}/LAST_BACKUP_STATUS"
 

@@ -10,14 +10,22 @@
 # the script aborts and leaves odoo STOPPED so a half-restored tenant can never
 # serve traffic — fix the cause and re-run until the restore succeeds.
 set -euo pipefail
-# See backup.sh: stop Git Bash mangling container-absolute paths. No-op on Linux.
-export MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*'
+# Git Bash (Windows) converts POSIX-looking arguments to Windows paths on the
+# way out to native binaries. CONTAINER paths (/var/lib/odoo/...) must NOT be
+# converted — that mangles them into C:/Program Files/Git/... inside docker.
+# The exclusion is SCOPED to those paths: an earlier blanket
+# MSYS2_ARG_CONV_EXCL='*' also stopped the HOST path passed to `docker compose
+# -f` from being converted, so docker resolved /c/Users/... against the current
+# drive as C:\c\Users\... and every compose call failed. No-op off Windows.
+export MSYS2_ARG_CONV_EXCL='/var/lib/odoo'
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-COMPOSE="docker compose -f ${REPO_ROOT}/docker/docker-compose.yml"
-
 # shellcheck source=scripts/lib/preflight.sh
 . "${REPO_ROOT}/scripts/lib/preflight.sh"
+
+# The -f path goes through compose_cmd so the HOST path is in the form
+# docker can open on Windows (see scripts/lib/preflight.sh).
+COMPOSE="$(compose_cmd "${REPO_ROOT}/docker/docker-compose.yml")"
 
 # Pre-flight: compose mounts config/odoo.runtime.conf (gitignored, absent on a
 # fresh clone). If a compose command ever ran before the file existed, docker

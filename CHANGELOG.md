@@ -4,6 +4,61 @@ All notable changes to SapianERP. Epics per `docs/plan-2026/10-claude-code-roadm
 
 ## [Unreleased]
 
+### Windows ops toolchain unblocked; post-condition ordering ✅ (2026-08-09)
+
+**1. `MSYS2_ARG_CONV_EXCL='*'` blocked every compose call on Windows
+(REGRESSION — backups were down).** The blanket exclusion was added (2026-07-07)
+so CONTAINER paths like `/var/lib/odoo/filestore` reached docker unconverted.
+It also stopped the HOST path passed to `docker compose -f` from being
+converted, so Git Bash handed docker `/c/Users/...`, which docker resolved
+against the current drive as `C:\c\Users\...` → "The system cannot find the
+path specified". `backup.sh`, `restore.sh` and `dress_rehearsal.sh` all
+carried it; `provision_client.sh` did not, which is why provisioning still
+worked and is the clearest evidence that the exclusion — not the absolute
+`-f` — was the fault.
+
+- The exclusion is now **scoped** to `/var/lib/odoo`, and `MSYS_NO_PATHCONV=1`
+  (also blanket) is gone. Container paths stay unconverted; host paths convert.
+- The `-f` host path additionally goes through **`compose_cmd`** (new, in
+  `scripts/lib/preflight.sh`), which runs `cygpath -m` when available so the
+  path does not depend on MSYS heuristics — those differ between
+  Git-for-Windows releases, and this one argument takes the whole toolchain
+  down when it is wrong. No-op off Windows. Absolute `-f` is kept, so the
+  scripts stay runnable from any cwd (cron/Task Scheduler).
+- Applied to all four scripts. `check_backup_freshness.sh` never invokes
+  docker, so it was unaffected.
+
+**The error was also being hidden.** `require_docker_stack` ran the service
+probe with `2>/dev/null`, so a compose failure surfaced as the misleading
+"Compose service 'db' is not running" while the real message was discarded.
+Both probes now REPORT their stderr and name the command that failed; the
+daemon probe uses `docker info --format '{{.ServerVersion}}'` with a
+stderr-only capture, because plain `docker info` prints pages of client output
+even when the daemon is down. Suppressing the stream that carries the reason is
+the same disease as the silent backups.
+
+**On why the scheduled backups succeeded 7/27–8/9 with this construction:** the
+absolute `-f` landed 2026-07-26 (`2caa40b`), *before* every one of those
+successful runs, and the blanket exclusion predates it (2026-07-07) — so the
+code was identical during the successes and during the failure. Nothing in
+compose treats `-f` differently per subcommand, so this is not `ps` vs `exec`.
+That leaves an environment change (a Docker Desktop / compose update altering
+path handling) or a deployed copy that lagged the repo. **This session could not
+settle which** — see the platform-verification note below.
+
+**2. Post-condition logging order.** The migration always ran
+bands → pension → post-condition, but the band summary line was emitted at the
+end of `migrate()`, so the log read as though the assertion ran before the
+correction it asserts on. Each step now logs its own summary and the
+post-condition is called — and logged — last. A test spies the call order and
+asserts the final log record is the post-condition.
+
+**3. Process rule added to CLAUDE.md:** a fix for a platform-specific failure is
+not verified until it is verified on that platform; if the platform is not
+available in the session, the item is reported **UNVERIFIED** rather than
+backed by Linux evidence. Written because item 2 of the previous session was a
+Windows-only failure verified entirely on Linux, and shipped broken.
+
 ### Two silent failures, both made loud ✅ (2026-08-09)
 Both found on a live machine, not by reading code. Same disease: a failure that
 produced no signal.
