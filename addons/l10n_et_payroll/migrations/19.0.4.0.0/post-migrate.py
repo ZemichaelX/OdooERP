@@ -27,8 +27,13 @@ already present, and does nothing.
 import logging
 from datetime import date, timedelta
 
+import base64
+import os
+
 from odoo import SUPERUSER_ID, api
+from odoo.addons.l10n_et_payroll.models import pension_config
 from odoo.addons.l10n_et_payroll.models.payslip_compute import _calc
+from odoo.tools import config as odoo_config
 
 _logger = logging.getLogger(__name__)
 
@@ -156,7 +161,65 @@ def migrate(cr, version):
         len(previous),
     )
 
+    _correct_pension_commencement(env)
     _report_affected_payslips(env, calc, correct_from)
+
+
+def _correct_pension_commencement(env):
+    """Correct the pension config commencement the same way, and for the same
+    reason: the seeded date moved, so an upgraded database must move with it or
+    code and data diverge silently (fresh installs would get 2014-07-08 while
+    upgrades kept 2024-07-01 — exactly how the PAYE defect survived).
+
+    The rates themselves are unchanged (7%/11%), so no payslip computes
+    differently either way; this only stops the records asserting a start date
+    that was never true. Same discipline as the bands: only an untouched,
+    exactly-as-shipped row is corrected.
+    """
+    config_model = env["l10n.et.pension.config"].sudo()
+    correct_from = pension_config.SEED_EFFECTIVE_FROM
+    corrected = 0
+    skipped = []
+
+    for company in env["res.company"].sudo().search([("active", "=", True)]):
+        configs = config_model.with_context(active_test=False).search(
+            [("company_id", "=", company.id)]
+        )
+        misdated = configs.filtered(
+            lambda config: config.effective_from == WRONG_EFFECTIVE_FROM
+        )
+        if not misdated:
+            continue
+        unmodified = (
+            misdated == configs
+            and len(misdated) == 1
+            and not misdated.effective_to
+            and round(misdated.employee_rate, 6)
+            == round(_calc.DEFAULT_PENSION_EMPLOYEE_RATE, 6)
+            and round(misdated.employer_rate, 6)
+            == round(_calc.DEFAULT_PENSION_EMPLOYER_RATE, 6)
+            and not misdated.insurable_cap
+        )
+        if not unmodified:
+            skipped.append(company)
+            continue
+        misdated.write({"effective_from": correct_from})
+        corrected += 1
+
+    if skipped:
+        _logger.warning(
+            "Pension configuration commencement NOT corrected for %d "
+            "company(ies) with customised rates/caps — review by hand "
+            "(Proc 715/2011 art. 57 reaches 7%%/11%% on %s): %s",
+            len(skipped),
+            correct_from,
+            ", ".join(company.display_name for company in skipped),
+        )
+    _logger.info(
+        "Pension configuration: corrected commencement to %s for %d company(ies).",
+        correct_from,
+        corrected,
+    )
 
 
 def _report_affected_payslips(env, calc, correct_from):
@@ -221,4 +284,60 @@ def _report_affected_payslips(env, calc, correct_from):
     lines.append("-" * 78)
     lines.append("%d payslip(s) affected; total PAYE delta %.2f" % (len(rows), total))
     lines.append("=" * 78)
-    _logger.warning("\n".join(lines))
+    report = "\n".join(lines)
+    _logger.warning(report)
+    _persist_report(env, report, correct_from)
+
+
+def _persist_report(env, report, correct_from):
+    """Keep the report after the upgrade log scrolls away.
+
+    This is the only record that a client's posted payroll was computed on the
+    wrong bands, so a log line is not enough: it is written to a CSV-ish text
+    file under the Odoo data directory AND stored as an ir.attachment so it can
+    be retrieved from the UI later. Both locations are logged.
+    """
+    filename = "paye_band_correction_%s.txt" % correct_from.strftime("%Y%m%d")
+    payload = report.encode("utf-8")
+
+    attachment = (
+        env["ir.attachment"]
+        .sudo()
+        .create(
+            {
+                "name": filename,
+                "type": "binary",
+                "datas": base64.b64encode(payload),
+                "mimetype": "text/plain",
+                "description": "PAYE band commencement correction (Proc "
+                "1395/2025, in force %s): payslips computed on the wrong "
+                "generation. Reported only — no payslip was changed." % correct_from,
+            }
+        )
+    )
+
+    path = None
+    try:
+        directory = os.path.join(odoo_config["data_dir"], "l10n_et_payroll")
+        os.makedirs(directory, exist_ok=True)
+        path = os.path.join(directory, filename)
+        with open(path, "wb") as handle:
+            handle.write(payload)
+    except OSError as error:
+        # A read-only data dir must not fail the upgrade: the attachment is
+        # already stored, and that is the retrievable copy that matters.
+        _logger.warning(
+            "PAYE band correction report could not be written to disk (%s); "
+            "it is stored as attachment id %s.",
+            error,
+            attachment.id,
+        )
+        path = None
+
+    _logger.warning(
+        "PAYE band correction report saved%s and as ir.attachment id %s "
+        "(name %r) — retrieve it before the upgrade log is rotated.",
+        (" to %s" % path) if path else "",
+        attachment.id,
+        filename,
+    )

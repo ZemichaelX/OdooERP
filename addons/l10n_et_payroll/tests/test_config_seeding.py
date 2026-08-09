@@ -15,6 +15,8 @@ from datetime import date
 from odoo.exceptions import UserError
 from odoo.tests import TransactionCase, tagged
 
+from ..models.payslip_compute import _calc
+
 
 @tagged("post_install", "-at_install", "l10n_et_payroll")
 class TestPayrollConfigSeeding(TransactionCase):
@@ -32,8 +34,19 @@ class TestPayrollConfigSeeding(TransactionCase):
         company = self.env["res.company"].create({"name": "A1 Seed Co"})
         bands = self.env["l10n.et.paye.band"].search([("company_id", "=", company.id)])
         pension = self.env["l10n.et.pension.config"].search([("company_id", "=", company.id)])
-        self.assertEqual(len(bands), 6, "six seeded PAYE bands")
-        self.assertTrue(bands.filtered("is_top_band"), "the top band is seeded")
+        # Every KNOWN generation is seeded, not just the current one, so the
+        # table can answer "what was the tax in May 2025?" — counted against the
+        # generations rather than a literal, which would have to move again the
+        # next time a proclamation amends the bands.
+        expected_bands = sum(
+            len(generation.bands) for generation in _calc.PAYE_BAND_GENERATIONS
+        )
+        self.assertEqual(len(bands), expected_bands, "every generation is seeded")
+        current = bands.filtered(
+            lambda band: band.effective_from == _calc.PAYE_1395_2025_EFFECTIVE_FROM
+        )
+        self.assertEqual(len(current), len(_calc.PAYE_BANDS_1395_2025))
+        self.assertTrue(current.filtered("is_top_band"), "the top band is seeded")
         self.assertEqual(len(pension), 1, "one seeded pension config")
         self.assertEqual(pension.employee_rate, 0.07)
         self.assertEqual(pension.employer_rate, 0.11)

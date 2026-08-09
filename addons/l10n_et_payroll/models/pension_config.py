@@ -13,14 +13,21 @@ from .payslip_compute import _calc
 # either way — but 2024-07-01 (the old value, copied from the PAYE seed) was
 # still an unsupported assertion about when these rates began.
 #
-# The 7% employee / 11% employer split for private-organisation employees was
-# introduced by the Private Organisation Employees' Pension Proclamation
-# No. 715/2011 and carried forward unchanged by Proclamation No. 1268/2022,
-# which now governs (and which CLAUDE.md cites for the nationality rules).
-# Dating the seed from 715/2011 states only what is supported: these rates have
-# applied continuously since that scheme began.
-# TODO: confirm both commencement dates against the Negarit Gazeta.
-SEED_EFFECTIVE_FROM = date(2011, 7, 1)
+# The Private Organisation Employees' Pension Proclamation No. 715/2011 did NOT
+# introduce 7%/11% outright: Article 57 PHASES the contributions from
+# commencement on 8 July 2011 —
+#     employee  yr1 5%   yr2 6%   yr3+ 7%
+#     employer  yr1 7%   yr2 8%   yr3 9%   yr4+ 11%
+# so 7% and 11% first coincide in year four, from 8 July 2014. That is the
+# earliest date at which the rates we seed were actually the law, and it is
+# what we assert. Proclamation No. 1268/2022 carries the same rates forward and
+# now governs (CLAUDE.md cites it for the nationality rules).
+#
+# The 2011–2014 transitional generations are DELIBERATELY not modelled: they
+# fall outside the supported range, and half-modelling them would assert rate
+# history we have not verified. Asserting less is fine; asserting wrong is not.
+# TODO: confirm the commencement and phase-in dates against the Negarit Gazeta.
+SEED_EFFECTIVE_FROM = date(2014, 7, 8)
 
 
 class L10nEtPensionConfig(models.Model):

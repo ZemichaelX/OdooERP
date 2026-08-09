@@ -49,7 +49,15 @@ class TestBandSelectionByDate:
     def test_commencement_day_is_inclusive(self):
         """8 July 2025 is the first day of the new regime, not the last of the old."""
         assert calc.get_paye_bands(date(2025, 7, 8)) == calc.PAYE_BANDS_1395_2025
+
+    def test_day_before_commencement_is_the_old_regime(self):
+        """The exclusive side: 7 July 2025 is still 979/2016, and a salary that
+        straddles a band boundary is taxed differently one day apart."""
         assert calc.get_paye_bands(date(2025, 7, 7)) == calc.PAYE_BANDS_979_2016
+        seventh = calc.compute_paye(6000.0, bands=calc.get_paye_bands(date(2025, 7, 7)))
+        eighth = calc.compute_paye(6000.0, bands=calc.get_paye_bands(date(2025, 7, 8)))
+        assert seventh == pytest.approx(935.0, abs=0.01)
+        assert eighth == pytest.approx(700.0, abs=0.01)
 
     def test_default_bands_are_the_current_generation(self):
         """DEFAULT_PAYE_BANDS keeps meaning "the bands in force now"."""
