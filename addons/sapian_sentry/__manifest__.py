@@ -9,7 +9,5 @@
     "category": "Technical",
     "license": "LGPL-3",
     "depends": ["base"],
-    "installable": True,
-    "auto_install": False,
 }
 
