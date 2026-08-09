@@ -90,8 +90,12 @@ class L10nEtPensionConfig(models.Model):
         )
 
     @api.model
-    def _l10n_et_seed_all_companies(self):
-        """Data-file/migration hook: seed every active company's pension config."""
+    def _l10n_et_seed_active_companies(self):
+        """Data-file/migration hook: seed every ACTIVE company's pension config.
+
+        Archived companies are deliberately skipped — see the PAYE band seeder
+        for the reasoning and for why the name says "active".
+        """
         for company in self.env["res.company"].search([("active", "=", True)]):
             self._l10n_et_ensure_default(company)
         return True

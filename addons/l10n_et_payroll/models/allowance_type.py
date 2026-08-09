@@ -153,7 +153,7 @@ class L10nEtAllowanceType(models.Model):
         return True
 
     @api.model
-    def _l10n_et_seed_all_companies(self):
+    def _l10n_et_seed_active_companies(self):
         """Data-file hook (install + every upgrade): seed every active company."""
         for company in self.env["res.company"].search([("active", "=", True)]):
             self._l10n_et_ensure_defaults(company)

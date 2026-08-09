@@ -28,6 +28,37 @@ generates a strong per-tenant `admin_passwd` into it (printed once — vault it)
 Secrets never touch the tracked `config/odoo.conf`; `git status` stays clean
 across a provision run.
 
+## Backups — making failure visible
+
+`scripts/backup.sh` writes nothing until the Docker daemon and the `db` service
+answer, works in `<name>.tmp` and only `mv`s a file into its real name after the
+dump verifies. A file with a backup's name therefore always means a good backup.
+
+Two things the operator must actually watch, because a backup that fails
+silently is indistinguishable from one that works until the day you need it
+(seven 0-byte dumps accumulated over two weeks that way):
+
+1. **`<backup_dir>/LAST_BACKUP_STATUS`** — rewritten every run:
+   ```
+   timestamp=2026-08-09 17:25:06
+   database=sapian_prod
+   outcome=OK
+   ```
+   On failure `outcome=FAILED` plus a `reason=` line. The script also exits
+   non-zero, so **Windows Task Scheduler's "Last Run Result" column shows
+   anything other than `0x0`** when a backup fails — check it, or have the task
+   send its exit code somewhere you read.
+
+2. **`scripts/check_backup_freshness.sh <db> <backup_dir> [max_age_hours]`** —
+   exits non-zero if the newest verified backup is older than the limit
+   (default 48h), if there is none, if it is empty, or if the last run reported
+   `FAILED`. Schedule it a few hours after the backup window; its exit code is
+   the alert.
+
+   ```bash
+   ./scripts/check_backup_freshness.sh sapian_prod /path/to/backups 48
+   ```
+
 ## Production hardening — reverse proxy + TLS (deferred to the go-live runbook)
 
 > **A8 (audit finding A8): do this before exposing an instance to the internet.**

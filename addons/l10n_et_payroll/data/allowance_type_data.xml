@@ -3,5 +3,5 @@
     <!-- Runs on install AND every upgrade: seeds the accountant-verified
          (Jul 2026) statutory allowance types for every company that lacks
          them. Existing codes are never overwritten. -->
-    <function model="l10n.et.allowance.type" name="_l10n_et_seed_all_companies"/>
+    <function model="l10n.et.allowance.type" name="_l10n_et_seed_active_companies"/>
 </odoo>

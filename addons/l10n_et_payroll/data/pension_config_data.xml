@@ -4,5 +4,5 @@
          PER COMPANY from the reference calculator, on install and every upgrade
          (A1). Set insurable_cap per client if pensionable earnings are capped;
          existing configs are never overwritten. VERIFY per client. -->
-    <function model="l10n.et.pension.config" name="_l10n_et_seed_all_companies"/>
+    <function model="l10n.et.pension.config" name="_l10n_et_seed_active_companies"/>
 </odoo>

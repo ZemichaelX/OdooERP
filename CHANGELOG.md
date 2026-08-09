@@ -4,6 +4,78 @@ All notable changes to SapianERP. Epics per `docs/plan-2026/10-claude-code-roadm
 
 ## [Unreleased]
 
+### Two silent failures, both made loud ✅ (2026-08-09)
+Both found on a live machine, not by reading code. Same disease: a failure that
+produced no signal.
+
+**1. The PAYE migration could not see archived companies.** `19.0.4.0.0`
+iterated `res.company.search([("active", "=", True)])`, so an archived company
+was never examined — not corrected, and, because the skip-and-warn branch lived
+inside that loop, not warned about either. On `scratch_final` the placeholder
+company archived during demo provisioning kept bands dated 2024-07-01 while the
+migration logged success and said nothing. Reproduced on a scratch database:
+an archived company with legacy rows was left untouched with **zero** log
+output, while an otherwise identical active company was corrected.
+
+- **`19.0.5.0.0`** re-audits from the ROWS, not from a filtered company list,
+  so a misdated row is found regardless of the company's active flag — and an
+  exactly-shipped row set is **corrected** whether its company is archived or
+  not (it is equally safe either way). Skip-and-warn now means only "these
+  bands are customised and I will not touch them", never "I could not see this
+  company". Shipped as a new version so databases already upgraded to
+  `19.0.4.0.0` get re-checked.
+- **Post-condition**: after correcting, the migration asserts that no band or
+  pension row *anywhere* still carries the superseded date, and lists whatever
+  does (company, count, date) at WARNING level. It reports rather than raises —
+  a customised row is a legitimate leftover for a human to decide about, and
+  failing the upgrade would strand the database — but it is never silent.
+- **The seeder keeps its active-only scope, and stops lying about it**:
+  `_l10n_et_seed_all_companies` → `_l10n_et_seed_active_companies` (PAYE bands,
+  pension config, allowance types) with docstrings explaining why. Archived
+  companies run no payroll, and if one is unarchived the missing configuration
+  RAISES (A1) rather than falling back to constants. That covers "rows exist";
+  "rows that exist are right" is the separate invariant the post-condition
+  enforces across every company. This also explains the observed asymmetry —
+  a company archived *after* install has bands, one archived *before* has none.
+
+**2. `scripts/backup.sh` produced seven 0-byte backups over two weeks.** Docker
+Desktop was not running; the dump failed, but `>` had already created the
+destination file, and the cleanup that would have removed it never ran. The
+guard itself is correct — verified on Linux, with the daemon unreachable and
+with the `db` service stopped it exits 1, prints `!!` and leaves nothing. Docker
+writes its connect error to **stderr**, the same stream as `!!`, so its absence
+from the operator's log means the echo never executed rather than being
+filtered; the log's `dofork: child -1 … 0xC000026B` (MSYS2 fork failure) is the
+probable trigger. Killing the script mid-run reproduces the exact artefact:
+valid-looking timestamped files, no error line. The lesson is structural —
+cleanup-after-failure cannot be relied on, because cleanup is precisely what
+does not happen when a process dies.
+
+- **A file bearing a backup's real name now only comes into existence after
+  the backup is complete and verified**: work goes to `<name>.tmp`, is size- and
+  `pg_restore --list`-checked (and the filestore `tar tzf`-checked), then `mv`d
+  into place. An `EXIT` trap removes temp files; even a killed shell leaves only
+  `.tmp`.
+- **Preconditions** (new `scripts/lib/preflight.sh`): the Docker daemon must
+  answer and the `db` service must be running before any artefact is created.
+  Used by `backup.sh` and by **`restore.sh`**, where it matters more — a restore
+  happens under pressure, and discovering the daemon is down *after* odoo is
+  stopped and the database dropped is the worst possible moment.
+- **`<backup_dir>/LAST_BACKUP_STATUS`** records timestamp, database, outcome and
+  the failure reason on every run; the script exits non-zero, so Task
+  Scheduler's "Last Run Result" is a usable alarm.
+- **`scripts/check_backup_freshness.sh <db> <dir> [hours]`** (default 48) exits
+  non-zero when the newest verified backup is too old, missing, empty, or the
+  last run reported FAILED.
+- **Every log line is timestamped** — diagnosing the original fortnight of
+  failures needed guesswork against file mtimes.
+- Runbook section added to `docker/README.md`. `shellcheck -x` clean across
+  `scripts/`; the one suppression (SC2016 in restore.sh) is justified inline.
+
+**TODO, not this session**: `scripts/provision_client.sh` appends `admin_passwd`
+with `>>`, so re-running it would leave two `admin_passwd` lines in the runtime
+conf. Not dangerous (Odoo takes one), but it should write idempotently.
+
 ### PAYE bands: right dates, both generations ✅ (2026-08-09)
 A tax-computation defect, not a UI issue. **No band value changed** — what was
 wrong is the date the values were said to take effect, and the absence of the
