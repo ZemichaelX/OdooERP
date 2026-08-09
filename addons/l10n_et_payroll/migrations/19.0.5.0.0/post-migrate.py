@@ -69,16 +69,22 @@ def migrate(cr, version):
     env = api.Environment(cr, SUPERUSER_ID, {})
     correct_from = _calc.PAYE_1395_2025_EFFECTIVE_FROM
 
+    # ORDER MATTERS, and the LOG must show the order that actually happened.
+    # An earlier version emitted this summary after the post-condition, so the
+    # log read as though the assertion had run before the band correction it
+    # asserts on. It had not — but an assertion that appears to have run first
+    # is worthless as evidence even when it is correct. Every summary line is
+    # therefore emitted by the step that produced it, and the post-condition,
+    # which must be last, is called last.
     corrected, skipped = _correct_bands(env, correct_from)
-    _correct_pension(env)
-    _assert_nothing_left_behind(env, correct_from)
-
     _logger.info(
         "PAYE band re-audit: corrected %d company(ies) (archived included), "
         "skipped %d with customised bands.",
         len(corrected),
         len(skipped),
     )
+    _correct_pension(env)
+    _assert_nothing_left_behind(env, correct_from)
 
 
 def _misdated_companies(env, model_name):

@@ -20,7 +20,12 @@ DB_NAME="${1:?usage: provision_client.sh <db_name> [modules]}"
 MODULES="${2:-sapian_core,l10n_et_base,l10n_et_payroll,l10n_et_reports}"
 COUNTRY_CODE="${SAPIAN_COUNTRY:-et}"   # override for a non-Ethiopian tenant
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-COMPOSE="docker compose -f ${REPO_ROOT}/docker/docker-compose.yml"
+# shellcheck source=scripts/lib/preflight.sh
+. "${REPO_ROOT}/scripts/lib/preflight.sh"
+
+# The -f path goes through compose_cmd so the HOST path is in the form
+# docker can open on Windows (see scripts/lib/preflight.sh).
+COMPOSE="$(compose_cmd "${REPO_ROOT}/docker/docker-compose.yml")"
 ODOO_CONF_TEMPLATE="${REPO_ROOT}/config/odoo.conf"
 ODOO_CONF_RUNTIME="${REPO_ROOT}/config/odoo.runtime.conf"
 

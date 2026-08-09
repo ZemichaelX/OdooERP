@@ -9,11 +9,23 @@
 # Exits non-zero if the reconciliation exam finds any mismatch, so this can
 # gate a release without eyeballing the report.
 set -euo pipefail
-export MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*'
+# Git Bash (Windows) converts POSIX-looking arguments to Windows paths on the
+# way out to native binaries. CONTAINER paths (/var/lib/odoo/...) must NOT be
+# converted — that mangles them into C:/Program Files/Git/... inside docker.
+# The exclusion is SCOPED to those paths: an earlier blanket
+# MSYS2_ARG_CONV_EXCL='*' also stopped the HOST path passed to `docker compose
+# -f` from being converted, so docker resolved /c/Users/... against the current
+# drive as C:\c\Users\... and every compose call failed. No-op off Windows.
+export MSYS2_ARG_CONV_EXCL='/var/lib/odoo'
 
 DB="${1:-scratch_rehearsal}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-COMPOSE="docker compose -f ${REPO_ROOT}/docker/docker-compose.yml"
+# shellcheck source=scripts/lib/preflight.sh
+. "${REPO_ROOT}/scripts/lib/preflight.sh"
+
+# The -f path goes through compose_cmd so the HOST path is in the form
+# docker can open on Windows (see scripts/lib/preflight.sh).
+COMPOSE="$(compose_cmd "${REPO_ROOT}/docker/docker-compose.yml")"
 
 # Pre-flight: compose mounts config/odoo.runtime.conf (gitignored, absent on a
 # fresh clone). If a compose command ever ran before the file existed, docker

@@ -94,6 +94,43 @@ class TestCommencementPostCondition(TransactionCase):
         )
         self.assertEqual(leftovers, [])
 
+    def test_post_condition_runs_and_is_logged_last(self):
+        """Ordering, in execution AND in the log.
+
+        The post-condition must be the final step: an assertion that appears to
+        have run before the thing it asserts on is worthless as evidence even
+        when it is correct. An earlier version emitted the band summary after
+        the post-condition, so the log read in the wrong order.
+        """
+        self._legacy_company("Ordering Test PLC")
+        calls = []
+        real_bands = _migration._correct_bands
+        real_pension = _migration._correct_pension
+        real_assert = _migration._assert_nothing_left_behind
+
+        def spy(name, func):
+            def wrapper(*args, **kwargs):
+                calls.append(name)
+                return func(*args, **kwargs)
+
+            return wrapper
+
+        _migration._correct_bands = spy("bands", real_bands)
+        _migration._correct_pension = spy("pension", real_pension)
+        _migration._assert_nothing_left_behind = spy("postcondition", real_assert)
+        try:
+            with self.assertLogs(_migration._logger, level="INFO") as captured:
+                _migration.migrate(self.env.cr, "19.0.4.0.0")
+        finally:
+            _migration._correct_bands = real_bands
+            _migration._correct_pension = real_pension
+            _migration._assert_nothing_left_behind = real_assert
+
+        self.assertEqual(calls, ["bands", "pension", "postcondition"])
+        self.assertEqual(calls[-1], "postcondition", "the post-condition must run last")
+        # ...and the log must not misrepresent that order.
+        self.assertIn("Post-condition", captured.output[-1], captured.output)
+
     def test_post_condition_reports_a_deliberate_leftover(self):
         """A customised set is legitimately not corrected — but never silent."""
         company = self._legacy_company(
