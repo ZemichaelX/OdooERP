@@ -4,6 +4,75 @@ All notable changes to SapianERP. Epics per `docs/plan-2026/10-claude-code-roadm
 
 ## [Unreleased]
 
+### Demo tenant: building materials, one company, built like a client ✅ (2026-08-09)
+The sales demo is a revenue asset, not a test fixture. Two changes, both in the
+module so every future demo database is correct by construction — no database
+is ever hand-edited.
+
+**1. The tenant builds with Odoo demo data OFF.** `sapian_demo_trader` shipped
+its content in `demo/`, so it only loaded when Odoo demo data was enabled —
+which also loaded Odoo's fixtures: `My Company (San Francisco)`, `My US
+Company`, `My Company (Chicago)`, plus a website bound to the wrong company (the
+crossover failures and the un-loginable database we hit on the last upgrade). A
+prospect must never see a US company list in software sold as Ethiopian.
+
+- The provisioning `<function>` moved `demo/` → `data/`, so the tenant is
+  ordinary module data.
+- `_provision_demo_tenant(..., adopt_existing=False)` gained an **explicit
+  flag**, never a heuristic: `data/` calls `_provision_demo_tenant_on_install`,
+  which passes `adopt_existing=True` out loud; the tests pass nothing and get
+  the create path. Adoption is only taken when the candidate company has no
+  foreign chart — Odoo cannot switch charts afterwards, and a demo silently on
+  `generic_coa` is wrong in a way that stays invisible until an accountant
+  looks. Where adoption cannot be honoured (a database built WITH Odoo demo
+  data, e.g. the CI job) it logs a WARNING and creates a separate company
+  instead of failing the install.
+- **`scripts/build_demo.sh <db> [demo_module]`** is the single documented
+  command. Three phases — base-only DB, set country Ethiopia, install the demo
+  module with `--without-demo=all` — because with demo off the base company is
+  created on `generic_coa` with country US, and the chart cannot be changed
+  later. That is the same dance `provision_client.sh` does for a real client,
+  so **recording the demo is a rehearsal of the actual deployment**. The demo
+  module is an argument, so a pharma pitch is one flag away.
+- **The guard we gave up is replaced, not dropped**: `demo/` was what stopped
+  this module fabricating a company on a client's books.
+  **`scripts/check_no_demo_modules.sh <db>`** fails, naming offenders, if any
+  demo module is installed; `provision_client.sh` now runs it as an acceptance
+  assertion. NOTE: the rest of the provisioning acceptance check (chart is
+  'et', ETB, TIN set, backups scheduled, admin_passwd set) is **outstanding**.
+
+**2. The catalogue is building materials, in the units of the trade.** Ten
+products: three cements (bag), three rebars + binding wire (kg), corrugated
+sheet and HCB (piece), sand (m³), plus two services for the withholding paths.
+Customers are contractors and hardware retailers; suppliers keep the three
+compliance profiles, including the **no-TIN supplier** the 30% demonstration
+needs.
+
+- **The unit pair**: cement is bought by the **quintal** and sold by the
+  **bag**, 1 quintal = 2 bags of 50 kg. Odoo 19 removed UoM *categories* and
+  `uom_po_id` — units now form a tree via `relative_uom_id`/`relative_factor`
+  and a product offers extra units through `uom_ids` — so that is how it is
+  built. Proven: the July purchase of **30 quintals shows 60 bags on hand**.
+  Cement has no opening stock, so that 60 is the conversion and nothing else.
+- Every price is in ONE marked block,
+  `addons/sapian_demo_trader/models/demo_catalogue.py`, tagged `[RANGE]`,
+  `[DERIVED]` or **`[UNVERIFIED]`**. The unverified ones are placeholders
+  nobody has checked — set them before recording.
+- The month's numbers are unchanged, because the demo's value is that it is a
+  real month: VAT 56,000/8,400, WHT 1,560 + 4,500 + 1,200 = 7,260, payroll
+  23,800/3,900/18,374. Opening stock was added for the sold lines so nothing
+  shows negative on camera.
+- Tests updated for the intended renames (`Awash` → `Derba Midroc Cement
+  Depot`, `Habesha` → `Yonas Transport`) plus a new UoM-conversion test.
+  Trader coverage 12 → 16 tests; suite 166 → 167, 0 failed.
+- `docs/11-demo-video-kit.md` is new (no video kit existed); README's demo
+  section now documents the one command.
+
+**`sapian_demo_pharma` has the same `demo/` pattern and is deliberately
+deferred** — out of scope this session. It is not converted, so
+`build_demo.sh demo_pharma sapian_demo_pharma` will not yet produce a
+one-company pharma tenant.
+
 ### Windows ops toolchain unblocked; post-condition ordering ✅ (2026-08-09)
 
 **1. `MSYS2_ARG_CONV_EXCL='*'` blocked every compose call on Windows

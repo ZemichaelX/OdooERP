@@ -22,7 +22,13 @@ All dates are pinned inside July 2026 so every statutory report has one clean
 period window with exact GL tie-outs, independent of the wall clock.
 """
 
+import logging
+
 from odoo import Command, api, models
+
+from . import demo_catalogue as cat
+
+_logger = logging.getLogger(__name__)
 
 DEMO_COMPANY_NAME = "Selam General Trading PLC"
 PERIOD_FROM = "2026-07-01"
@@ -35,6 +41,10 @@ PLACEHOLDER_COMPANY_NAMES = [
     "My Company (Chicago)",
     "My Company (San Francisco)",
     "YourCompany",
+    # The name the base company carries when Odoo demo data is DISABLED — the
+    # build_demo.sh path adopts it instead, but a plain install would leave it
+    # sitting in the company switcher next to the demo tenant.
+    "My Company",
 ]
 
 
@@ -43,13 +53,32 @@ class SapianDemoTrader(models.AbstractModel):
     _description = "SapianERP Demo Trader Provisioning"
 
     @api.model
-    def _provision_demo_tenant(self, company_name=DEMO_COMPANY_NAME):
+    def _provision_demo_tenant_on_install(self):
+        """Entry point for data/demo_trader.xml — ADOPTS the existing company.
+
+        Said out loud here rather than inferred: scripts/build_demo.sh creates
+        the database with `base` only, sets the single company's country to
+        Ethiopia, and only then installs this module, so the 'et' chart loads
+        onto that company and this provisioning configures the same one. The
+        result is a database with exactly ONE company, built by the same path
+        a real client is built by.
+        """
+        return self._provision_demo_tenant(adopt_existing=True)
+
+    @api.model
+    def _provision_demo_tenant(self, company_name=DEMO_COMPANY_NAME, adopt_existing=False):
         """Provision the full demo tenant (idempotent by company name).
 
-        Returns the demo company. Called from demo data at install and reused
-        verbatim by the golden E2E tests (with a different name, inside the
-        test transaction — no module installation happens because this module's
-        dependencies already cover every catalog pick).
+        ``adopt_existing`` — when True, configure the database's single
+        existing company as the demo tenant instead of creating a new one.
+        Deliberately an explicit flag and not a "is there one unconfigured
+        company?" heuristic: a predicate over what "unconfigured" means would
+        drift and surprise somebody later. Both call sites state what they
+        want (data/ passes True via the wrapper above; the tests pass nothing
+        and get the create path).
+
+        Returns the demo company. Idempotent on BOTH paths — data/ means this
+        re-runs on every module upgrade.
         """
         existing = self.env["res.company"].search([("name", "=", company_name)], limit=1)
         if existing:
@@ -58,7 +87,7 @@ class SapianDemoTrader(models.AbstractModel):
                 # still applies the login cleanup — older demo DBs predate it.
                 self._configure_demo_login(existing)
             return existing
-        company = self._onboard_company(company_name)
+        company = self._onboard_company(company_name, adopt_existing=adopt_existing)
         # stock only auto-creates warehouses for new companies in TEST mode
         # (stock/models/res_company.py); at demo-load time we must create it
         # ourselves or SO confirmation finds no delivery rule.
@@ -69,6 +98,7 @@ class SapianDemoTrader(models.AbstractModel):
         demo = env["sapian.demo.trader"].with_company(company)
         products = demo._create_products()
         partners = demo._create_partners()
+        demo._create_opening_stock(products)
         employees = demo._create_employees()
         demo._run_sales_flow(partners, products)
         demo._run_purchase_flow(partners, products)
@@ -138,15 +168,51 @@ class SapianDemoTrader(models.AbstractModel):
             placeholders.sudo().write({"active": False})
 
     @api.model
-    def _onboard_company(self, company_name):
-        """Create a bare company and push it through the onboarding wizard —
-        the wizard applies profile, branding, catalog and Ethiopian defaults.
+    def _onboard_company(self, company_name, adopt_existing=False):
+        """Create (or adopt) a company and push it through the onboarding wizard.
 
+        The wizard applies profile, branding, catalog and Ethiopian defaults.
         No module installation can occur here: this module's dependencies
         already include every standard catalog pick, so the wizard's install
         step is a guaranteed no-op (no registry replacement mid-provision).
+
+        With ``adopt_existing`` the database's single company is reused, which
+        is what yields a one-company demo. It RAISES if that company already
+        carries a chart of accounts that is not the Ethiopian one: Odoo does
+        not allow switching charts afterwards, so silently adopting a
+        generic_coa company would produce a demo tenant on the wrong books —
+        wrong in a way that is invisible until an accountant looks.
         """
-        company = self.env["res.company"].create({"name": company_name})
+        company = False
+        if adopt_existing:
+            candidate = self.env["res.company"].search([], order="id", limit=1)
+            # Adoption is only safe on a company that has NOT already taken a
+            # foreign chart: Odoo does not allow switching charts afterwards,
+            # so adopting a generic_coa company would produce a demo tenant on
+            # the wrong books — wrong in a way that stays invisible until an
+            # accountant looks. scripts/build_demo.sh sets the country to
+            # Ethiopia before the accounting modules install, which is what
+            # makes adoption safe there.
+            #
+            # Anywhere else (a database built WITH Odoo demo data, e.g. the CI
+            # integration job) the request cannot be honoured. That is not a
+            # reason to fail the install: fall back to creating a separate
+            # company, but SAY SO — a silent fallback is how you end up with a
+            # demo on the wrong chart and no idea why.
+            if candidate and candidate.chart_template in (False, "et"):
+                candidate.write({"name": company_name})
+                company = candidate
+            else:
+                _logger.warning(
+                    "sapian_demo_trader: cannot adopt company %s (chart %r); "
+                    "creating a separate demo company instead. For a "
+                    "one-company demo build with scripts/build_demo.sh, which "
+                    "sets the country BEFORE the accounting modules install.",
+                    candidate.display_name if candidate else "<none>",
+                    candidate.chart_template if candidate else None,
+                )
+        if not company:
+            company = self.env["res.company"].create({"name": company_name})
         catalog = self.env["sapian.module.catalog"]._ensure_default_catalog(company)
         wizard = (
             self.env["sapian.onboarding.wizard"]
@@ -167,13 +233,37 @@ class SapianDemoTrader(models.AbstractModel):
         wizard.action_apply()
         return company
 
-    def _create_products(self):
-        """ETB-priced local products (bilingual names) + an ETB pricelist.
+    def _create_uoms(self):
+        """The cement unit pair: 1 quintal = 2 bags of 50 kg.
 
-        The three physical goods are storable (is_storable) so on-hand
-        quantities are tracked and the delivery flows move real stock — a
-        trading demo should show inventory, not untracked consumables.
-        Consulting stays a service."""
+        Odoo 19 has no UoM *categories* — units form a tree through
+        ``relative_uom_id``/``relative_factor`` (a Dozen is 12 Units the same
+        way), and a product offers additional units via ``uom_ids``. So the
+        BAG is the stock unit and the QUINTAL is a related unit worth two of
+        them: a purchase line for 30 quintals lands as 60 bags in stock, which
+        is the conversion a materials trader checks first.
+        """
+        uom_model = self.env["uom.uom"].sudo()
+        bag = uom_model.search([("name", "=", cat.UOM_BAG_NAME)], limit=1)
+        if not bag:
+            bag = uom_model.create({"name": cat.UOM_BAG_NAME, "relative_factor": 1.0})
+        quintal = uom_model.search([("name", "=", cat.UOM_QUINTAL_NAME)], limit=1)
+        if not quintal:
+            quintal = uom_model.create(
+                {
+                    "name": cat.UOM_QUINTAL_NAME,
+                    "relative_uom_id": bag.id,
+                    "relative_factor": cat.BAGS_PER_QUINTAL,
+                }
+            )
+        return bag, quintal
+
+    def _create_products(self):
+        """The building-materials catalogue, in the units of the trade.
+
+        Names, units and every price live in demo_catalogue.py so they can be
+        checked against the market without reading this file.
+        """
         self.env["product.pricelist"].create(
             {
                 "name": "ETB Retail Pricelist",
@@ -181,72 +271,68 @@ class SapianDemoTrader(models.AbstractModel):
                 "company_id": self.env.company.id,
             }
         )
-        product_model = self.env["product.product"]
-        return {
-            "teff": product_model.create(
-                {
-                    "name": "Teff Flour 25kg — የጤፍ ዱቄት",
-                    "type": "consu",
-                    "is_storable": True,
-                    "list_price": 3200,
-                    "standard_price": 2600,
-                }
-            ),
-            "coffee": product_model.create(
-                {
-                    "name": "Ethiopian Coffee Beans 5kg — የቡና ፍሬ",
-                    "type": "consu",
-                    "is_storable": True,
-                    "list_price": 4500,
-                    "standard_price": 3600,
-                }
-            ),
-            "oil": product_model.create(
-                {
-                    "name": "Sunflower Cooking Oil 20L",
-                    "type": "consu",
-                    "is_storable": True,
-                    "list_price": 5800,
-                    "standard_price": 5000,
-                }
-            ),
-            "consulting": product_model.create(
-                {
-                    "name": "Business Consulting — የንግድ ምክር",
-                    "type": "service",
-                    "list_price": 15000,
-                }
-            ),
+        bag, quintal = self._create_uoms()
+        unit_by_key = {
+            "kg": self.env.ref("uom.product_uom_kgm"),
+            "piece": self.env.ref("uom.product_uom_unit"),
+            "m3": self.env.ref("uom.product_uom_cubic_meter"),
         }
+        product_model = self.env["product.product"]
+        products = {}
+        for key, name, amharic, unit, sale, cost in cat.PRODUCTS:
+            label = f"{name} — {amharic}" if amharic else name
+            vals = {
+                "name": label,
+                "list_price": sale,
+                "standard_price": cost,
+            }
+            if unit == "service":
+                vals["type"] = "service"
+            else:
+                vals.update({"type": "consu", "is_storable": True})
+                if unit == "bag":
+                    # Sold in bags, bought in quintals — both offered on lines.
+                    vals["uom_id"] = bag.id
+                    vals["uom_ids"] = [Command.set([bag.id, quintal.id])]
+                else:
+                    vals["uom_id"] = unit_by_key[unit].id
+            products[key] = product_model.create(vals)
+        return products
 
     def _create_partners(self):
-        """Customers + the three supplier compliance profiles."""
+        """Customers + the three supplier compliance profiles.
+
+        Names come from demo_catalogue.py. The compliance SHAPES are load
+        bearing and must not change: one supplier with TIN + licence (3%), one
+        domestic supplier with NO TIN (30% punitive — the strongest moment in
+        the demo), one foreign digital provider (15%).
+        """
         partner_model = self.env["res.partner"]
         ethiopia = self.env.ref("base.et")
         return {
-            "fasika": partner_model.create(
+            "mebrat": partner_model.create(
                 {
-                    "name": "Fasika Supermarket — ፋሲካ ሱፐርማርኬት",
+                    "name": cat.CUSTOMER_MEBRAT,
                     "is_company": True,
                     "country_id": ethiopia.id,
                     "city": "Addis Ababa",
                     "l10n_et_tin": "0022334455",
-                    "l10n_et_name_amharic": "ፋሲካ ሱፐርማርኬት",
+                    "l10n_et_name_amharic": "መብራት ኮንስትራክሽን",
                 }
             ),
-            "zemen": partner_model.create(
+            "abyssinia": partner_model.create(
                 {
-                    "name": "Zemen Distribution PLC — ዘመን ዲስትሪቢውሽን",
+                    "name": cat.CUSTOMER_ABYSSINIA,
                     "is_company": True,
                     "country_id": ethiopia.id,
                     "city": "Adama",
                     "l10n_et_tin": "0033445566",
                 }
             ),
-            # Compliant supplier: TIN + valid licence → standard 3% WHT.
-            "awash": partner_model.create(
+            # Compliant supplier: TIN + valid licence -> standard 3% WHT.
+            "depot": partner_model.create(
                 {
-                    "name": "Awash Agro Industry PLC — አዋሽ አግሮ",
+                    "name": cat.SUPPLIER_COMPLIANT,
                     "is_company": True,
                     "country_id": ethiopia.id,
                     "l10n_et_tin": "0011223344",
@@ -254,18 +340,19 @@ class SapianDemoTrader(models.AbstractModel):
                     "l10n_et_business_licence_expiry": "2030-06-30",
                 }
             ),
-            # Domestic supplier WITHOUT a TIN → punitive 30% + MISSING row.
-            "habesha": partner_model.create(
+            # Domestic supplier WITHOUT a TIN -> punitive 30% + MISSING row.
+            # Keep this profile: it is the withholding demonstration.
+            "yonas": partner_model.create(
                 {
-                    "name": "Habesha General Services — ሐበሻ አገልግሎት",
+                    "name": cat.SUPPLIER_NO_TIN,
                     "is_company": True,
                     "country_id": ethiopia.id,
                 }
             ),
-            # Foreign digital provider → 15% WHT, "N/A (foreign)" TIN column.
-            "cloudserve": partner_model.create(
+            # Foreign digital provider -> 15% WHT, "N/A (foreign)" TIN column.
+            "buildsoft": partner_model.create(
                 {
-                    "name": "CloudServe Digital Inc.",
+                    "name": cat.SUPPLIER_FOREIGN,
                     "is_company": True,
                     "country_id": self.env.ref("base.us").id,
                     "l10n_et_is_foreign_digital": True,
@@ -341,10 +428,36 @@ class SapianDemoTrader(models.AbstractModel):
                 move.picked = True
             picking.button_validate()
 
-    def _run_sales_flow(self, partners, products):
-        """Two quotation → delivery → invoice flows with 15% VAT.
+    def _create_opening_stock(self, products):
+        """Opening stock for what the month sells.
 
-        Output VAT golden: 32,000 + 24,000 = 56,000 base → 8,400 VAT.
+        Without it the July deliveries drive on-hand negative, which is the
+        first thing a materials trader looks at. Cement is deliberately LEFT
+        OUT: its only movement is the 30-quintal purchase, so the 60 bags that
+        land in stock are unambiguously the quintal->bag conversion.
+        """
+        quant_model = self.env["stock.quant"].sudo()
+        warehouse = self.env["stock.warehouse"].search(
+            [("company_id", "=", self.env.company.id)], limit=1
+        )
+        opening = {"sheet_g32": 120, "rebar_12": 400, "hcb_20": 2000}
+        for key, quantity in opening.items():
+            quant_model.with_context(inventory_mode=True).create(
+                {
+                    "product_id": products[key].id,
+                    "location_id": warehouse.lot_stock_id.id,
+                    "inventory_quantity": quantity,
+                }
+            )._apply_inventory()
+
+    def _run_sales_flow(self, partners, products):
+        """Two quotation -> delivery -> invoice flows with 15% VAT.
+
+        Output VAT golden (unchanged, the month's numbers are the demo's
+        value): 32,000 + 24,000 = 56,000 base -> 8,400 VAT.
+          Mebrat:    40 sheets G32 @ 800            = 32,000
+          Abyssinia: 100 kg rebar 12 @ 170 = 17,000
+                     + 500 HCB @ 14        =  7,000 = 24,000
         Orders use the ETB pricelist so the invoices are priced and reported
         in the company currency, not Odoo's default USD pricelist.
         """
@@ -356,46 +469,44 @@ class SapianDemoTrader(models.AbstractModel):
             ],
             limit=1,
         )
-        # Fasika: 10 × Teff @ 3,200 = 32,000 + 4,800 VAT = 36,800.
-        order_fasika = order_model.create(
+        order_mebrat = order_model.create(
             {
-                "partner_id": partners["fasika"].id,
+                "partner_id": partners["mebrat"].id,
                 "pricelist_id": pricelist.id,
                 "order_line": [
                     Command.create(
                         {
-                            "product_id": products["teff"].id,
-                            "product_uom_qty": 10,
-                            "price_unit": 3200,
+                            "product_id": products["sheet_g32"].id,
+                            "product_uom_qty": 40,
+                            "price_unit": cat.PRICES["sheet_sale"],
                         }
                     )
                 ],
             }
         )
-        # Zemen: consulting 15,000 + 2 × coffee @ 4,500 = 24,000 + 3,600 VAT.
-        order_zemen = order_model.create(
+        order_abyssinia = order_model.create(
             {
-                "partner_id": partners["zemen"].id,
+                "partner_id": partners["abyssinia"].id,
                 "pricelist_id": pricelist.id,
                 "order_line": [
                     Command.create(
                         {
-                            "product_id": products["consulting"].id,
-                            "product_uom_qty": 1,
-                            "price_unit": 15000,
+                            "product_id": products["rebar_12"].id,
+                            "product_uom_qty": 100,
+                            "price_unit": cat.PRICES["rebar_sale"],
                         }
                     ),
                     Command.create(
                         {
-                            "product_id": products["coffee"].id,
-                            "product_uom_qty": 2,
-                            "price_unit": 4500,
+                            "product_id": products["hcb_20"].id,
+                            "product_uom_qty": 500,
+                            "price_unit": cat.PRICES["hcb_sale"],
                         }
                     ),
                 ],
             }
         )
-        for order in order_fasika | order_zemen:
+        for order in order_mebrat | order_abyssinia:
             order.action_confirm()
             self._validate_pickings(order.picking_ids)
             invoices = order._create_invoices()
@@ -406,19 +517,37 @@ class SapianDemoTrader(models.AbstractModel):
             invoices.action_post()
 
     def _run_purchase_flow(self, partners, products):
-        """PO → receipt → vendor bill: 20 × Teff @ 2,600 = 52,000 from the
-        compliant supplier → 3% WHT 1,560 + 7,800 input VAT."""
+        """PO -> receipt -> vendor bill from the COMPLIANT supplier.
+
+        THE UNIT MOMENT: cement is ordered in QUINTALS and lands in stock as
+        BAGS, 30 -> 60. Nothing else moves cement, so the 60 bags on hand are
+        the conversion and nothing else.
+
+        Total stays 52,000 so the 3% WHT golden (1,560) and the 7,800 input
+        VAT are unchanged:
+            30 quintals cement @ 1,450 = 43,500
+            50 kg rebar 8 mm   @   170 =  8,500
+        """
+        quintal = self.env["uom.uom"].search([("name", "=", cat.UOM_QUINTAL_NAME)], limit=1)
         order = self.env["purchase.order"].create(
             {
-                "partner_id": partners["awash"].id,
+                "partner_id": partners["depot"].id,
                 "order_line": [
                     Command.create(
                         {
-                            "product_id": products["teff"].id,
-                            "product_qty": 20,
-                            "price_unit": 2600,
+                            "product_id": products["cement_dangote"].id,
+                            "product_qty": 30,
+                            "product_uom_id": quintal.id,
+                            "price_unit": cat.PRICES["cement_quintal_cost"],
                         }
-                    )
+                    ),
+                    Command.create(
+                        {
+                            "product_id": products["rebar_8"].id,
+                            "product_qty": 50,
+                            "price_unit": cat.PRICES["rebar_cost"],
+                        }
+                    ),
                 ],
             }
         )
@@ -432,13 +561,14 @@ class SapianDemoTrader(models.AbstractModel):
     def _create_direct_bills(self, partners, products):
         """Two direct vendor bills: the punitive-WHT and foreign-digital paths.
 
-        Habesha (no TIN), services 15,000 → 30% WHT 4,500 + 2,250 input VAT.
-        CloudServe (foreign digital), 8,000 → 15% WHT 1,200 + 1,200 input VAT.
+        Yonas Transport (no TIN), 15,000 -> 30% WHT 4,500 + 2,250 input VAT.
+        BuildSoft (foreign digital), 8,000 -> 15% WHT 1,200 + 1,200 input VAT.
+        Amounts unchanged; only who is billed and for what.
         """
         move_model = self.env["account.move"]
-        for partner, price, date in (
-            (partners["habesha"], 15000, "2026-07-18"),
-            (partners["cloudserve"], 8000, "2026-07-20"),
+        for partner, product, price, date in (
+            (partners["yonas"], products["delivery"], 15000, "2026-07-18"),
+            (partners["buildsoft"], products["software"], 8000, "2026-07-20"),
         ):
             bill = move_model.create(
                 {
@@ -449,7 +579,7 @@ class SapianDemoTrader(models.AbstractModel):
                     "invoice_line_ids": [
                         Command.create(
                             {
-                                "product_id": products["consulting"].id,
+                                "product_id": product.id,
                                 "quantity": 1,
                                 "price_unit": price,
                             }

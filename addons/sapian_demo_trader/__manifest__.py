@@ -15,9 +15,9 @@
     # hands the onboarding wizard the FULL catalog, and the wizard installs
     # whatever is still uninstalled. Module installation is forbidden while
     # demo data loads (and inside tests), so every pick has to be installed
-    # already by the time demo/demo_trader.xml runs — then the wizard's install
+    # already by the time data/demo_trader.xml runs — then the wizard's install
     # step is a no-op. Adding a catalog entry without adding it here re-breaks
-    # `-i sapian_demo_trader --with-demo`.
+    # the demo build (scripts/build_demo.sh).
     "depends": [
         "sale_management",
         "purchase",
@@ -37,7 +37,9 @@
         "maintenance",
         "website_sale",
     ],
-    "demo": [
-        "demo/demo_trader.xml",
+    # data/, not demo/: see data/demo_trader.xml for why, and build with
+    # scripts/build_demo.sh (Odoo demo data OFF).
+    "data": [
+        "data/demo_trader.xml",
     ],
 }

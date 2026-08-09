@@ -31,12 +31,25 @@ playbook, customization guide). Operating rules: `CLAUDE.md`.
 4. Open http://localhost:8069.
 
 ## The demo (sales demo + local testing)
-The demo tenant lives in the local database **`scratch_final`**:
-- Log in with `admin` / `admin` → you land directly in
-  **Selam General Trading PLC** (Ethiopian chart, ETB, July-2026 data with
-  every compliance feature firing; company switcher shows only real companies).
-- To rebuild it from scratch on any database:
-  `docker compose -f docker/docker-compose.yml run --rm odoo odoo -d <db> -i sapian_demo_trader --with-demo --stop-after-init`
+Build the sales-demo database **from nothing**, with Odoo's own demo data OFF:
+
+```bash
+./scripts/build_demo.sh demo_materials
+```
+
+Result: exactly ONE company — **Selam General Trading PLC**, a building-materials
+and hardware trader on the Ethiopian chart, with a full July-2026 month (VAT,
+3%/30%/15% withholding, payroll). Log in with `admin` / `admin`.
+
+The command takes the demo module as a second argument
+(`./scripts/build_demo.sh demo_pharma sapian_demo_pharma`) once that module is
+converted to the same pattern.
+
+Prices live in one marked block —
+`addons/sapian_demo_trader/models/demo_catalogue.py` — and several are
+**unverified placeholders**. Check them before recording anything.
+
+Full recording guide: `docs/11-demo-video-kit.md`.
 
 ## Tests
 - Fast reference goldens (no Odoo): `pytest tests_fast/`

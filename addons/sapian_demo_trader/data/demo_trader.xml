@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- In data/, NOT demo/, deliberately. Odoo only loads demo/ when demo
+         data is enabled, and enabling it also loads Odoo's own fixtures — the
+         US placeholder companies, and a website bound to the wrong company.
+         A sales demo cannot show a US company list in software sold as
+         Ethiopian, so the tenant ships as ordinary module data and the
+         database is built with demo data OFF (scripts/build_demo.sh).
+
+         Consequence accepted knowingly: this module can now create its company
+         on any database it is installed on. Nothing depends on it and it is
+         not in the onboarding catalog, and scripts/check_no_demo_modules.sh
+         fails a client provisioning that has any demo module installed.
+
+         The provisioning is idempotent, which matters here: data/ re-runs on
+         every module upgrade. -->
+    <function model="sapian.demo.trader" name="_provision_demo_tenant_on_install"/>
+</odoo>
