@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<odoo>
-    <!-- The whole tenant is provisioned in python (guarded + idempotent): the
-         company goes through the real onboarding wizard, then one July-2026
-         month of transactions exercises every compliance path we sell. -->
-    <function model="sapian.demo.trader" name="_provision_demo_tenant"/>
-</odoo>

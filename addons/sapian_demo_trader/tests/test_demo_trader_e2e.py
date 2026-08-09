@@ -6,10 +6,11 @@ Provisions a tenant through the REAL onboarding wizard and REAL business flows
 asserts every hand-computed month total and that all four statutory reports
 tie out to the GL. Numbers (July 2026):
 
-- Sales: 32,000 (Fasika, teff) + 24,000 (Zemen, consulting+coffee) = 56,000
+- Sales: 32,000 (Mebrat, 40 sheets G32) + 24,000 (Abyssinia, rebar+HCB) = 56,000
   → output VAT 8,400
-- Purchases: 52,000 (Awash, 3% WHT 1,560) + 15,000 (Habesha no-TIN, 30% WHT
-  4,500) + 8,000 (CloudServe foreign digital, 15% WHT 1,200) = 75,000
+- Purchases: 52,000 (Derba depot: 30 quintals cement + rebar, 3% WHT 1,560)
+  + 15,000 (Yonas Transport, no TIN, 30% WHT
+  4,500) + 8,000 (BuildSoft foreign digital, 15% WHT 1,200) = 75,000
   → input VAT 11,250; WHT grand total 7,260
 - Net VAT: 8,400 − 11,250 = −2,850 (credit carried forward)
 - Payroll: gross 23,800; PAYE 3,900; pension 1,526 EE / 2,398 ER; net 18,374;
@@ -116,7 +117,8 @@ class TestDemoTraderE2E(TransactionCase):
             [
                 ("company_id", "=", self.company.id),
                 ("move_type", "=", "in_invoice"),
-                ("partner_id.name", "like", "Awash"),
+                # The compliant supplier (TIN + licence) -> 3% WHT.
+                ("partner_id.name", "like", "Derba Midroc"),
             ]
         )
         self.assertEqual(bill.state, "posted")
@@ -135,7 +137,7 @@ class TestDemoTraderE2E(TransactionCase):
         self.assertTrue(all(p.state == "done" for p in receipts))
 
     def test_punitive_and_foreign_digital_bills(self):
-        """Habesha (no TIN) → 30% = 4,500; CloudServe → 15% = 1,200."""
+        """Yonas Transport (no TIN) → 30% = 4,500; BuildSoft → 15% = 1,200."""
         bills = self.env["account.move"].search(
             [
                 ("company_id", "=", self.company.id),
@@ -189,7 +191,7 @@ class TestDemoTraderE2E(TransactionCase):
         self.assertEqual(data["grand_total"], 7260.0)
         self.assertTrue(data["tie_out_ok"], data["tie_out"])
         self.assertEqual(len(data["missing_tin"]), 1)
-        self.assertIn("Habesha", data["missing_tin"][0])
+        self.assertIn("Yonas Transport", data["missing_tin"][0])
 
     def test_statutory_reports_render(self):
         """All four statutory documents render with the expected markers."""
@@ -256,3 +258,41 @@ class TestDemoTraderE2E(TransactionCase):
             ),
             1,
         )
+
+    def test_cement_is_sold_in_bags_and_bought_in_quintals(self):
+        """The unit moment: 30 quintals purchased -> 60 bags on hand.
+
+        Odoo 19 has no UoM categories; the quintal is a related unit worth two
+        bags (relative_uom_id/relative_factor) and the product offers both
+        through uom_ids. Cement has no opening stock, so the on-hand quantity
+        IS the conversion.
+        """
+        # Start from THIS company's purchase line: products are global, and
+        # with the tenant now shipping in data/ the database also holds the
+        # install-time Selam company's identically-named products.
+        line = self.env["purchase.order.line"].search(
+            [
+                ("order_id.company_id", "=", self.company.id),
+                ("product_id.name", "like", "Dangote"),
+            ],
+            limit=1,
+        )
+        self.assertTrue(line, "this company bought Dangote cement")
+        cement = line.product_id
+        self.assertEqual(cement.uom_id.name, "Bag (50 kg)")
+        quintal = self.env["uom.uom"].search([("name", "=", "Quintal (100 kg)")], limit=1)
+        self.assertTrue(quintal, "the quintal unit exists")
+        self.assertEqual(quintal.relative_uom_id, cement.uom_id)
+        self.assertEqual(quintal.relative_factor, 2.0)
+        self.assertIn(quintal, cement.uom_ids, "the quintal is offered on lines")
+
+        self.assertEqual(line.product_uom_id, quintal, "purchased in quintals")
+        self.assertEqual(line.product_qty, 30.0)
+
+        on_hand = self.env["stock.quant"]._get_available_quantity(
+            cement,
+            self.env["stock.warehouse"]
+            .search([("company_id", "=", self.company.id)], limit=1)
+            .lot_stock_id,
+        )
+        self.assertEqual(on_hand, 60.0, "30 quintals in = 60 bags on hand")

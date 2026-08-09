@@ -15,9 +15,9 @@
     # hands the onboarding wizard the FULL catalog, and the wizard installs
     # whatever is still uninstalled. Module installation is forbidden while
     # demo data loads (and inside tests), so every pick has to be installed
-    # already by the time demo/demo_trader.xml runs — then the wizard's install
+    # already installed when the provisioner runs — then the wizard's install
     # step is a no-op. Adding a catalog entry without adding it here re-breaks
-    # `-i sapian_demo_trader --with-demo`.
+    # the demo build (scripts/build_demo.sh).
     "depends": [
         "sale_management",
         "purchase",
@@ -37,7 +37,15 @@
         "maintenance",
         "website_sale",
     ],
-    "demo": [
-        "demo/demo_trader.xml",
-    ],
+    # NO data/ or demo/ entry, deliberately. The tenant used to load from
+    # demo/, which meant it only appeared when Odoo demo data was enabled —
+    # and that also loaded Odoo's US placeholder companies and a website bound
+    # to the wrong company. Moving it to data/ removed that, but introduced a
+    # worse fault: module data loads MID-INSTALL, so the wizard charted the new
+    # company and account's end-of-load _auto_install_template hook then tried
+    # to load the chart again ("Account codes must be unique ... 230100").
+    # So provisioning is not triggered by installation at all: it is a plain
+    # model method that scripts/build_demo.sh calls once the install is
+    # finished. Everything still lives in the module — the build command is
+    # the documented path, and the next demo database is identical.
 }

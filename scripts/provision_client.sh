@@ -82,6 +82,13 @@ echo ">> [3/3] Installing modules (chart auto-loads for the country)..."
 $COMPOSE run --rm odoo \
   odoo -d "${DB_NAME}" -i "${MODULES}" --without-demo=all --stop-after-init
 
+# Acceptance: a client database must carry no demo content. This replaces the
+# implicit guard that existed while the demo tenant shipped in demo/ (see
+# scripts/check_no_demo_modules.sh). The rest of the acceptance check is
+# still outstanding.
+echo ">> Acceptance check: no demo modules on the new database..."
+"${REPO_ROOT}/scripts/check_no_demo_modules.sh" "${DB_NAME}"
+
 echo ">> Done. The company is on the '${COUNTRY_CODE}' chart of accounts."
 echo ">> Next: configure company profile/branding/roles via the onboarding wizard,"
 echo ">>       set the fiscal year + TIN, import master data from data-templates/,"
