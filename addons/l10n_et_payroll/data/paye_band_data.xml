@@ -1,10 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
     <!--
-      Ethiopian monthly PAYE bands (2024/25 reform: tax-free <= 2,000; top 35%
-      above 14,000) are CONFIGURATION DATA seeded PER COMPANY from the reference
-      calculator's DEFAULT_PAYE_BANDS (the single source of truth the fast
-      goldens test). This runs on install AND every upgrade, so every company —
+      Ethiopian monthly PAYE bands are CONFIGURATION DATA seeded PER COMPANY
+      from the reference calculator's PAYE_BAND_GENERATIONS (the single source
+      of truth the fast goldens test). BOTH generations are seeded:
+      Proclamation 979/2016, and Income Tax (Amendment) Proclamation 1395/2025
+      (tax-free <= 2,000; top 35% above 14,000) in force from 8 July 2025 —
+      the 2025 reform, not "2024/25" as this comment previously said, and the
+      reason a payslip dated before that boundary must not use these bands.
+      This runs on install AND every upgrade, so every company —
       not just the one active at install (A1) — owns real, effective-dated band
       records. Existing rows are never touched, so a client's tuned bands and
       historical generations are preserved. VERIFY against the Ministry of

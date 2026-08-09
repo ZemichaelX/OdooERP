@@ -4,6 +4,80 @@ All notable changes to SapianERP. Epics per `docs/plan-2026/10-claude-code-roadm
 
 ## [Unreleased]
 
+### PAYE bands: right dates, both generations ✅ (2026-08-09)
+A tax-computation defect, not a UI issue. **No band value changed** — what was
+wrong is the date the values were said to take effect, and the absence of the
+regime that preceded them.
+
+The bands we ship (0/15/20/25/30/35%, exempt to 2,000, top above 14,000) are
+those of **Income Tax (Amendment) Proclamation No. 1395/2025, in force 8 July
+2025**. They were seeded as effective **2024-07-01** — twelve months before the
+proclamation existed. Consequences:
+
+1. every payslip dated 2024-07-01 → 2025-07-07 computed PAYE on bands more
+   generous than the law of the day, so tax was **UNDERSTATED** — the
+   employer's liability at assessment. Worked example, hand-checked: gross
+   6,000 → under 979/2016 it sits in 5,251–7,800 (25%, deduction 565) = **935**;
+   under 1395/2025 it sits in 4,001–7,000 (20%, deduction 500) = **700**. A
+   June-2025 payslip on a real database stored 700.
+2. the preceding regime, **Proclamation No. 979/2016**, had no records at all,
+   leaving the table unable to answer "what was the tax in May 2025?" — one
+   rate set with a date column, not an effective-dated table.
+
+Both are live concerns: migrating a year of historical payroll, a back-pay
+correction and reissuing last year's payslip are all first-month tasks.
+
+- **Reference calculator** carries both generations — `PAYE_BANDS_979_2016`,
+  `PAYE_BANDS_1395_2025`, `PAYE_BAND_GENERATIONS` (commencement + citation per
+  schedule) and `get_paye_bands(on_date)`, commencement inclusive. Still pure
+  Python, no Odoo import. `DEFAULT_PAYE_BANDS` still means "in force now".
+- **Seeder** writes every generation per company, each closed the day before
+  the next commences.
+- **Pension commencement corrected too**, and for a subtler reason than PAYE.
+  The rates (7%/11%) are unchanged across the transition so nothing computes
+  differently — but Proc 715/2011 **art. 57 phases** contributions from
+  commencement on 8 July 2011 (employee 5/6/7%, employer 7/8/9/11%), so 7% and
+  11% first coincide in **year four, 8 July 2014**. Seeding 2011-07-01 asserted
+  a rate that did not apply for three years and predated commencement by a
+  week; the seed is now `2014-07-08`. The 2011–2014 transitional generations
+  are deliberately NOT modelled — they fall outside the supported range, and
+  half-modelling them would assert rate history we have not verified.
+- **Citations** beside each constant, with `TODO: confirm against gazette` on
+  the 979/2016 commencement (secondary sources only: EY/Chambers/KPMG on
+  1395/2025, the standard published 979/2016 schedule). The boundary that
+  matters and is well-supported is 8 July 2025.
+- `data/paye_band_data.xml` said "the 2024/25 reform". It is the **2025**
+  reform; corrected so the next reader does not inherit the wrong model.
+- **Migration `19.0.4.0.0`** for databases already in use. It corrects
+  `effective_from` **only** where the company's bands are its entire set, match
+  the shipped 1395/2025 signature exactly and carry no closing date; seeds the
+  979/2016 generation for those; and applies the same discipline to the pension
+  row (so upgraded databases cannot silently keep 2024-07-01 while fresh
+  installs get the new date — that divergence is how this defect survived).
+  Customised configuration is skipped whole and **named in a warning**.
+  It **reports** every pre-boundary payslip whose PAYE would now differ
+  (employee, period, old, new, delta) and **changes none of them** — posted
+  payroll is not something a migration rewrites on its own authority. The
+  report is persisted to `<data_dir>/l10n_et_payroll/` **and** as an
+  `ir.attachment`, with both locations logged, because a log line scrolls past
+  and is gone. The file name is scoped to the **database and the run time**
+  (`paye_band_correction_<dbname>_<YYYYMMDDHHMMSS>.txt`): only `filestore/` is
+  per-database — the rest of `data_dir` is shared by every database on the
+  instance — so a name without the dbname meant upgrading the second tenant
+  silently destroyed the first tenant's report, and a name built from the
+  boundary constant collided with repeated runs on one database. Same-second
+  runs get a numeric suffix; the attachment carries the name the file got.
+
+Verified on a database seeded the old way, carrying one exactly-shipped company
+and one with a deliberately customised deduction: matched company corrected to
+2025-07-08 + 979 generation seeded (7 rows, closed 2025-07-07); customised
+company untouched at 2024-07-01, deduction still 555, **no** 979 rows, named in
+the warning; both pension rows corrected to 2014-07-08; payslips still 700.00,
+unrewritten; report attachment persisted. Second forced run: identical row
+counts, no duplicates. Goldens written FIRST and watched fail — 17 fast tests
+plus 6 Odoo tests covering June-2025 → 979, August-2025 → 1395, and both sides
+of the 8 July 2025 boundary.
+
 ### Ethiopian tax engines fail LOUD, not open ✅ (2026-07-26)
 The WHT and cash-cap configurations were seeded **only** when chart 'et'
 loaded (`template_et._post_load_data`), and both engines read "no
