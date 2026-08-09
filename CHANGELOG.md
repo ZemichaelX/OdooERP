@@ -16,8 +16,14 @@ Company`, `My Company (Chicago)`, plus a website bound to the wrong company (the
 crossover failures and the un-loginable database we hit on the last upgrade). A
 prospect must never see a US company list in software sold as Ethiopian.
 
-- The provisioning `<function>` moved `demo/` → `data/`, so the tenant is
-  ordinary module data.
+- Provisioning is no longer triggered by installation at all. `demo/` was
+  wrong (it loads only with Odoo demo data on, which drags in the US
+  placeholder companies); `data/` turned out to be worse — module data loads
+  MID-install, so the wizard charted the company and `account`'s end-of-load
+  `_auto_install_template` hook then re-loaded the chart (`Account codes must
+  be unique … 230100`), which CI caught and a local run had not. It is now a
+  plain model method that `build_demo.sh` calls once the install has finished.
+  Everything still lives in the module.
 - `_provision_demo_tenant(..., adopt_existing=False)` gained an **explicit
   flag**, never a heuristic: `data/` calls `_provision_demo_tenant_on_install`,
   which passes `adopt_existing=True` out loud; the tests pass nothing and get

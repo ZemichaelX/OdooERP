@@ -24,8 +24,10 @@ pattern:
 Odoo's own demo data ships US placeholder companies (`My Company (San
 Francisco)`, `My US Company`, `My Company (Chicago)`) and a website bound to the
 wrong company. A prospect must never see a US company list in software sold as
-Ethiopian. So Odoo demo data stays **off** and the tenant ships as ordinary
-module data. But with demo off the single company is created on `generic_coa`
+Ethiopian. So Odoo demo data stays **off**, and the tenant is provisioned by the
+build script once the install has finished — never during it, because module
+data loads mid-install and collides with Odoo's end-of-load chart auto-install.
+But with demo off the single company is created on `generic_coa`
 with country US, and Odoo does not allow switching charts afterwards — so the
 country is set to Ethiopia *before* the accounting modules install. That is the
 same two-phase dance `scripts/provision_client.sh` performs for a real client,

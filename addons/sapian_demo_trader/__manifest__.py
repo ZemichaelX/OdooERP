@@ -15,7 +15,7 @@
     # hands the onboarding wizard the FULL catalog, and the wizard installs
     # whatever is still uninstalled. Module installation is forbidden while
     # demo data loads (and inside tests), so every pick has to be installed
-    # already by the time data/demo_trader.xml runs — then the wizard's install
+    # already installed when the provisioner runs — then the wizard's install
     # step is a no-op. Adding a catalog entry without adding it here re-breaks
     # the demo build (scripts/build_demo.sh).
     "depends": [
