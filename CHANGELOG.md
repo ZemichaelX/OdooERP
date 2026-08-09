@@ -60,7 +60,13 @@ correction and reissuing last year's payslip are all first-month tasks.
   payroll is not something a migration rewrites on its own authority. The
   report is persisted to `<data_dir>/l10n_et_payroll/` **and** as an
   `ir.attachment`, with both locations logged, because a log line scrolls past
-  and is gone.
+  and is gone. The file name is scoped to the **database and the run time**
+  (`paye_band_correction_<dbname>_<YYYYMMDDHHMMSS>.txt`): only `filestore/` is
+  per-database — the rest of `data_dir` is shared by every database on the
+  instance — so a name without the dbname meant upgrading the second tenant
+  silently destroyed the first tenant's report, and a name built from the
+  boundary constant collided with repeated runs on one database. Same-second
+  runs get a numeric suffix; the attachment carries the name the file got.
 
 Verified on a database seeded the old way, carrying one exactly-shipped company
 and one with a deliberately customised deduction: matched company corrected to

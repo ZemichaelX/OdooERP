@@ -5,3 +5,4 @@ from . import test_payroll_reports
 from . import test_allowance_pension_rules
 from . import test_review_regressions
 from . import test_paye_generations
+from . import test_migration_report

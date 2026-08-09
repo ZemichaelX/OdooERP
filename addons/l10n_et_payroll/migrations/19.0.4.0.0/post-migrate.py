@@ -25,7 +25,7 @@ already present, and does nothing.
 """
 
 import logging
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 import base64
 import os
@@ -289,16 +289,55 @@ def _report_affected_payslips(env, calc, correct_from):
     _persist_report(env, report, correct_from)
 
 
+def _report_filename(env):
+    """``paye_band_correction_<dbname>_<YYYYMMDDHHMMSS>.txt``.
+
+    Scoped to the DATABASE and to the RUN TIME, both deliberately: only
+    ``filestore/`` under the Odoo data directory is per-database — the rest of
+    ``data_dir`` is shared by every database on the instance — so a name
+    without the dbname means upgrading the second tenant silently overwrites
+    the first tenant's report, and that report is the only surviving record
+    that a tenant's posted payroll was computed on the wrong bands. The
+    timestamp is the run time (an earlier version used the boundary constant,
+    so repeated runs on one database collided with each other too).
+    """
+    stamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    return "paye_band_correction_%s_%s.txt" % (env.cr.dbname, stamp)
+
+
 def _persist_report(env, report, correct_from):
     """Keep the report after the upgrade log scrolls away.
 
     This is the only record that a client's posted payroll was computed on the
-    wrong bands, so a log line is not enough: it is written to a CSV-ish text
-    file under the Odoo data directory AND stored as an ir.attachment so it can
-    be retrieved from the UI later. Both locations are logged.
+    wrong bands, so a log line is not enough: it is written to a text file
+    under the Odoo data directory AND stored as an ir.attachment (per database
+    already) so it can be retrieved from the UI later. Both locations are
+    logged, and the file name never overwrites an earlier report.
     """
-    filename = "paye_band_correction_%s.txt" % correct_from.strftime("%Y%m%d")
+    filename = _report_filename(env)
     payload = report.encode("utf-8")
+
+    # Disk first, so the attachment can carry the name the file actually got.
+    path = None
+    write_error = None
+    try:
+        directory = os.path.join(odoo_config["data_dir"], "l10n_et_payroll")
+        os.makedirs(directory, exist_ok=True)
+        path = os.path.join(directory, filename)
+        # Two runs inside the same second would still collide on a
+        # second-resolution stamp; never overwrite an existing report.
+        suffix = 2
+        while os.path.exists(path):
+            path = os.path.join(directory, "%s_%d.txt" % (filename[: -len(".txt")], suffix))
+            suffix += 1
+        with open(path, "wb") as handle:
+            handle.write(payload)
+        filename = os.path.basename(path)
+    except OSError as error:
+        # A read-only data dir must not fail the upgrade: the attachment below
+        # is the retrievable copy that matters.
+        write_error = error
+        path = None
 
     attachment = (
         env["ir.attachment"]
@@ -316,24 +355,14 @@ def _persist_report(env, report, correct_from):
         )
     )
 
-    path = None
-    try:
-        directory = os.path.join(odoo_config["data_dir"], "l10n_et_payroll")
-        os.makedirs(directory, exist_ok=True)
-        path = os.path.join(directory, filename)
-        with open(path, "wb") as handle:
-            handle.write(payload)
-    except OSError as error:
-        # A read-only data dir must not fail the upgrade: the attachment is
-        # already stored, and that is the retrievable copy that matters.
+    if write_error is not None:
         _logger.warning(
             "PAYE band correction report could not be written to disk (%s); "
-            "it is stored as attachment id %s.",
-            error,
+            "it is stored as attachment id %s (name %r).",
+            write_error,
             attachment.id,
+            filename,
         )
-        path = None
-
     _logger.warning(
         "PAYE band correction report saved%s and as ir.attachment id %s "
         "(name %r) — retrieve it before the upgrade log is rotated.",
@@ -341,3 +370,4 @@ def _persist_report(env, report, correct_from):
         attachment.id,
         filename,
     )
+    return path, attachment
