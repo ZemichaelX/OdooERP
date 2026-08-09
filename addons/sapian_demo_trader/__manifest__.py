@@ -37,9 +37,15 @@
         "maintenance",
         "website_sale",
     ],
-    # data/, not demo/: see data/demo_trader.xml for why, and build with
-    # scripts/build_demo.sh (Odoo demo data OFF).
-    "data": [
-        "data/demo_trader.xml",
-    ],
+    # NO data/ or demo/ entry, deliberately. The tenant used to load from
+    # demo/, which meant it only appeared when Odoo demo data was enabled —
+    # and that also loaded Odoo's US placeholder companies and a website bound
+    # to the wrong company. Moving it to data/ removed that, but introduced a
+    # worse fault: module data loads MID-INSTALL, so the wizard charted the new
+    # company and account's end-of-load _auto_install_template hook then tried
+    # to load the chart again ("Account codes must be unique ... 230100").
+    # So provisioning is not triggered by installation at all: it is a plain
+    # model method that scripts/build_demo.sh calls once the install is
+    # finished. Everything still lives in the module — the build command is
+    # the documented path, and the next demo database is identical.
 }

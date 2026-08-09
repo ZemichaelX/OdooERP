@@ -21,6 +21,12 @@ export MSYS2_ARG_CONV_EXCL='/var/lib/odoo'
 
 DB_NAME="${1:?usage: build_demo.sh <db_name> [demo_module]}"
 DEMO_MODULE="${2:-sapian_demo_trader}"
+# The provisioning model each demo module exposes.
+case "${DEMO_MODULE}" in
+  sapian_demo_trader) DEMO_MODEL="sapian.demo.trader" ;;
+  sapian_demo_pharma) DEMO_MODEL="sapian.demo.pharma" ;;
+  *) echo "!! Unknown demo module '${DEMO_MODULE}'." >&2; exit 1 ;;
+esac
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=scripts/lib/preflight.sh
 . "${REPO_ROOT}/scripts/lib/preflight.sh"
@@ -49,9 +55,19 @@ printf "%s\n" \
   "print('>> country set to', company.country_id.code)" \
   | ${COMPOSE} run --rm -T odoo odoo shell -d "${DB_NAME}" --no-http
 
-log_line ">> [3/3] Installing ${DEMO_MODULE} (the 'et' chart loads onto that company)..."
+log_line ">> [3/4] Installing ${DEMO_MODULE} (the 'et' chart loads onto that company)..."
 ${COMPOSE} run --rm odoo odoo -d "${DB_NAME}" -i "${DEMO_MODULE}" \
   --without-demo=all --stop-after-init
+
+# Provisioning runs AFTER the install completes, never during it: module data
+# loads mid-install, and a company charted at that point collides with the
+# account module's end-of-load chart auto-install hook.
+log_line ">> [4/4] Provisioning the tenant (adopting the existing company)..."
+printf "%s\n" \
+  "company = env['${DEMO_MODEL}']._provision_demo_tenant(adopt_existing=True)" \
+  "env.cr.commit()" \
+  "print('>> provisioned:', company.name, '| chart:', company.chart_template)" \
+  | ${COMPOSE} run --rm -T odoo odoo shell -d "${DB_NAME}" --no-http
 
 log_line ">> Done. Demo database '${DB_NAME}' is ready."
 log_line ">>   Log in with admin / admin — deliberate for a local demo."
