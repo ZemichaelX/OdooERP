@@ -100,7 +100,13 @@ class ResCompany(models.Model):
 
         Returns the drifted companies so a caller can act on a number.
         """
-        companies = self.sudo().with_context(active_test=False).search([])
+        # Only companies we have marked can ever be ours, so the domain is
+        # both narrower and more correct than scanning every company.
+        companies = (
+            self.sudo()
+            .with_context(active_test=False)
+            .search([("sapian_brand_applied", "!=", False)])
+        )
         stale = companies._sapian_is_ours_and_stale()
         if stale:
             primary, secondary = self._sapian_brand_pair()
@@ -137,7 +143,10 @@ class ResCompany(models.Model):
         """
         primary, secondary = self._sapian_brand_pair()
         stale = (
-            self.sudo().with_context(active_test=False).search([])._sapian_is_ours_and_stale()
+            self.sudo()
+            .with_context(active_test=False)
+            .search([("sapian_brand_applied", "!=", False)])
+            ._sapian_is_ours_and_stale()
         )
         names = ", ".join("%s (%s)" % (c.name, c.primary_color) for c in stale)
         if not stale:
