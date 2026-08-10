@@ -19,6 +19,33 @@ jobs:
       - name: Install tooling
         run: pip install --quiet ruff black pylint pylint-odoo pytest python-dateutil
 
+      - name: Assert there is something to lint
+        # Every check in this job PASSES ON AN EMPTY TREE. Measured, not assumed:
+        #   black --check addons        -> exit 0, "No Python files ... Nothing to do"
+        #   ruff check addons tests_fast-> exit 0, "warning: No Python files found"
+        #   the XML/CSV/manifest step   -> prints "OK" having validated nothing
+        # So a renamed, moved or half-checked-out addons/ sails through the whole
+        # job green. (pytest is the exception: it exits 5 on zero collected.)
+        # Floors are well under the real counts — they catch "the tree is gone",
+        # not "someone deleted a file".
+        run: |
+          set -euo pipefail
+          MIN_PY_FILES=80      # 114 at this commit
+          MIN_XML_FILES=30     # 46
+          MIN_CSV_FILES=5      # 9
+          MIN_MANIFESTS=5      # 9
+          py=$(find addons tests_fast -name '*.py' | wc -l)
+          xml=$(find addons -name '*.xml' | wc -l)
+          csv=$(find addons -name '*.csv' | wc -l)
+          man=$(find addons -maxdepth 2 -name '__manifest__.py' | wc -l)
+          echo "py=${py} (floor ${MIN_PY_FILES})  xml=${xml} (${MIN_XML_FILES})  csv=${csv} (${MIN_CSV_FILES})  manifests=${man} (${MIN_MANIFESTS})"
+          fail=0
+          [ "${py}"  -ge "${MIN_PY_FILES}"   ] || { echo "::error::Only ${py} Python files found — the source tree is missing, so every lint step below would pass by checking nothing."; fail=1; }
+          [ "${xml}" -ge "${MIN_XML_FILES}"  ] || { echo "::error::Only ${xml} XML files found — the validator would report OK having parsed nothing."; fail=1; }
+          [ "${csv}" -ge "${MIN_CSV_FILES}"  ] || { echo "::error::Only ${csv} CSV files found — same."; fail=1; }
+          [ "${man}" -ge "${MIN_MANIFESTS}"  ] || { echo "::error::Only ${man} manifests found — same."; fail=1; }
+          [ "${fail}" -eq 0 ]
+
       - name: Ruff
         run: ruff check addons tests_fast
 
@@ -29,7 +56,21 @@ jobs:
         run: pylint addons
 
       - name: Reference calculator golden tests (no Odoo needed)
-        run: pytest tests_fast/ -q
+        # pytest exits 5 when it collects NOTHING, so the total-wipe case is
+        # already covered. The floor catches the partial one: a renamed test
+        # module or a broken import taking most of the suite with it still
+        # reports "12 passed" and exits 0.
+        run: |
+          set -euo pipefail
+          MIN_FAST_TESTS=100   # 107 at this commit
+          pytest tests_fast/ -q | tee /tmp/fast-tests.log
+          passed=$(grep -oE '[0-9]+ passed' /tmp/fast-tests.log | tail -1 | grep -oE '^[0-9]+' || true)
+          passed=${passed:-0}
+          echo "Fast golden tests passed: ${passed} (floor ${MIN_FAST_TESTS})"
+          if [ "${passed}" -lt "${MIN_FAST_TESTS}" ]; then
+            echo "::error::Only ${passed} fast tests passed, expected at least ${MIN_FAST_TESTS}. The suite did not run — this is a failure, not a pass."
+            exit 1
+          fi
 
       - name: Validate XML, CSV and manifests
         run: |
@@ -39,15 +80,33 @@ jobs:
           import glob
           import xml.etree.ElementTree as ET
 
+          # Count what was actually validated and report it. "OK" printed after
+          # looping over an empty glob is a success signal produced by doing
+          # nothing — the exact shape this repo keeps getting caught by.
+          MIN_XML, MIN_CSV, MIN_MANIFESTS = 30, 5, 5   # 46 / 9 / 9 at this commit
+
+          xml_count = 0
           for path in glob.glob("addons/**/*.xml", recursive=True):
               ET.parse(path)
+              xml_count += 1
+          csv_count = 0
           for path in glob.glob("addons/**/*.csv", recursive=True):
               with open(path, newline="", encoding="utf-8") as handle:
                   widths = {len(row) for row in csv.reader(handle)}
                   assert len(widths) == 1, f"ragged CSV: {path}"
+              csv_count += 1
+          manifest_count = 0
           for path in glob.glob("addons/*/__manifest__.py"):
               with open(path, encoding="utf-8") as handle:
                   ast.literal_eval(handle.read())
+              manifest_count += 1
+
+          print(f"validated {xml_count} XML, {csv_count} CSV, {manifest_count} manifests")
+          assert xml_count >= MIN_XML, f"only {xml_count} XML files validated (floor {MIN_XML})"
+          assert csv_count >= MIN_CSV, f"only {csv_count} CSV files validated (floor {MIN_CSV})"
+          assert manifest_count >= MIN_MANIFESTS, (
+              f"only {manifest_count} manifests validated (floor {MIN_MANIFESTS})"
+          )
           print("XML/CSV/manifests OK")
           EOF
 
@@ -105,5 +164,34 @@ jobs:
           # but not the clean "0 failed, 0 error(s)").
           if grep -qE "tests\.result: ([1-9][0-9]* failed|0 failed, [1-9][0-9]* error)" /tmp/odoo-test.log; then
             echo "::error::Odoo integration tests reported failures"
+            exit 1
+          fi
+
+          # A GREEN EXIT CODE IS NOT PROOF THAT ANYTHING RAN.
+          # Every check above this line asks "did a test fail?" — and a run that
+          # executes ZERO tests answers "no" to all of them. That is not a
+          # hypothetical: it happened locally, where a failed database drop left
+          # the modules already installed, so `-i` was a no-op, `--test-enable`
+          # had nothing to select, 10 tests ran instead of 222, and the command
+          # exited 0. The only tell was an empty stats block. In CI the same
+          # shape can come from a renamed module, a typo in --test-tags, or an
+          # install that silently does nothing.
+          #
+          # So assert the positive: the runner reported, and it ran a full suite.
+          if ! grep -q "odoo\.tests\.result:" /tmp/odoo-test.log; then
+            echo "::error::The Odoo test runner never reported a result line — no tests were executed. A suite that runs nothing must not report success."
+            exit 1
+          fi
+          # MIN_EXPECTED_TESTS is a FLOOR, not the exact count (222 at this
+          # commit). Raise it as the suite grows. Only ever lower it in a commit
+          # that says which tests went away and why — lowering it to make CI
+          # pass is how this guard gets quietly disabled.
+          MIN_EXPECTED_TESTS=200
+          EXECUTED=$(grep -oE "odoo\.tests\.stats: [A-Za-z0-9_]+: [0-9]+ tests" /tmp/odoo-test.log \
+                     | awk '$4 == "tests" { total += $3 } END { print total + 0 }')
+          echo "Executed ${EXECUTED} tests (floor ${MIN_EXPECTED_TESTS}):"
+          grep -oE "odoo\.tests\.stats: [A-Za-z0-9_]+: [0-9]+ tests" /tmp/odoo-test.log | sed 's/^/  /'
+          if [ "${EXECUTED}" -lt "${MIN_EXPECTED_TESTS}" ]; then
+            echo "::error::Only ${EXECUTED} tests executed, expected at least ${MIN_EXPECTED_TESTS}. The suite did not run — this is a failure, not a pass."
             exit 1
           fi
