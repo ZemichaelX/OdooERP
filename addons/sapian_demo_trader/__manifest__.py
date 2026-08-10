@@ -11,13 +11,21 @@
     "website": "https://sapiantech.com",
     "category": "Localization/Ethiopia",
     "license": "LGPL-3",
-    # Every app in sapian_core's STANDARD_CATALOG must be listed here: the demo
-    # hands the onboarding wizard the FULL catalog, and the wizard installs
-    # whatever is still uninstalled. Module installation is forbidden while
-    # demo data loads (and inside tests), so every pick has to be installed
-    # already installed when the provisioner runs — then the wizard's install
-    # step is a no-op. Adding a catalog entry without adding it here re-breaks
-    # the demo build (scripts/build_demo.sh).
+    # Exactly what the demo demonstrates, and nothing else. Every catalog entry
+    # the provisioner PICKS (the core and common tiers — see DEMO_CATALOG_TIERS
+    # in models/sapian_demo_trader.py) must be listed here, because module
+    # installation is forbidden while the registry is loading and inside tests,
+    # so the wizard's install step has to be a no-op. Adding a core/common
+    # catalog entry without adding it here breaks the demo build
+    # (scripts/build_demo.sh); test_catalog_dependencies pins that.
+    #
+    # The catalog's `optional` tier — crm, mrp, project, mass_mailing, fleet,
+    # repair, maintenance, website_sale — is deliberately ABSENT. None of them
+    # is touched by the demo data; they were listed only because the wizard used
+    # to be handed the whole catalog. Installing them put Manufacturing,
+    # Project, Fleet, Repair, Maintenance and Website in the main menu bar of a
+    # tenant built for a 2–5 person hardware shop. They remain in the catalog,
+    # listed and not enabled.
     "depends": [
         "sale_management",
         "purchase",
@@ -26,16 +34,6 @@
         "l10n_et_base",
         "l10n_et_payroll",
         "l10n_et_reports",
-        # Standard Odoo Community apps offered by the catalog (no Ethiopian
-        # layer yet) — dependencies purely so the demo can pre-install them.
-        "crm",
-        "mrp",
-        "project",
-        "mass_mailing",
-        "fleet",
-        "repair",
-        "maintenance",
-        "website_sale",
     ],
     # NO data/ or demo/ entry, deliberately. The tenant used to load from
     # demo/, which meant it only appeared when Odoo demo data was enabled —

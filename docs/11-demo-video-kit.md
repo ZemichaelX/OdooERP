@@ -90,6 +90,8 @@ so the fix-before-filing banner shows.
 ## 3. Suggested beats
 
 1. **Company switcher** — one Ethiopian company. Nothing foreign, nothing fake.
+   Note what is *not* in the menu bar: no Manufacturing, Fleet, Repair, Project
+   or Website. The tenant installs only what it demonstrates.
 2. **Product list** — cement in bags, rebar in kg, sand in m³. His trade.
 3. **The quintal→bag conversion** — open the July purchase order: 30 quintals
    ordered, 60 bags received. This is the thirty-second credibility test.
@@ -99,6 +101,10 @@ so the fix-before-filing banner shows.
 5. **VAT declaration and WHT summary** — live from posted entries, tied to the
    general ledger.
 6. **Payroll** — PAYE and pension computed from effective-dated bands.
+7. **The Module Catalog** — 7 enabled, 8 available. Use it when someone asks
+   "so it does manufacturing?": yes, and it is off because you are not paying
+   for it today. Better than the apps being absent, and better than them
+   cluttering the menu bar of a hardware shop.
 
 ## 4. Rebuilding mid-session
 
