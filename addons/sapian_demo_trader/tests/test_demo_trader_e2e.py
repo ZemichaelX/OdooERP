@@ -259,6 +259,27 @@ class TestDemoTraderE2E(TransactionCase):
             1,
         )
 
+    def test_multi_uom_setting_is_enabled(self):
+        """The units are VISIBLE, not just present.
+
+        Odoo hides every UoM field unless "Units of Measure & Packagings" is
+        on, so without this the quintal/bag pair below is data no prospect can
+        see: no unit on the product form, no unit column on the purchase line.
+        Asked the way the settings screen asks it — read back through
+        res.config.settings — rather than by re-stating the write.
+        """
+        settings = self.env["res.config.settings"].default_get(["group_uom"])
+        self.assertTrue(
+            settings["group_uom"],
+            "Settings > Inventory > 'Units of Measure & Packagings' is off, so "
+            "the demo's quintal/bag conversion is invisible on screen",
+        )
+        # And the mechanism behind it, since that is what a view actually tests.
+        self.assertIn(
+            self.env.ref("uom.group_uom"),
+            self.env.ref("base.group_user").all_implied_ids,
+        )
+
     def test_cement_is_sold_in_bags_and_bought_in_quintals(self):
         """The unit moment: 30 quintals purchased -> 60 bags on hand.
 

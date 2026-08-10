@@ -4,6 +4,38 @@ All notable changes to SapianERP. Epics per `docs/plan-2026/10-claude-code-roadm
 
 ## [Unreleased]
 
+### Demo: the units are now visible, and the build asserts it ✅ (2026-08-10)
+The quintal/bag pair was created correctly — 30 quintals in, 60 bags on hand,
+verified on a fresh build — and shown to nobody. Odoo gates every UoM field on
+`uom.group_uom` ("Units of Measure & Packagings"), the provisioner never
+enabled it, so on a freshly built demo database the product form showed no unit
+and the purchase order had no unit column. The demo's headline moment was data
+with no way to see it: the same fault class as seeding a catalog nothing calls.
+
+- `_enable_multi_uom()` links `uom.group_uom` into `base.group_user` — exactly
+  what `res.config.settings` does for a `group_` field, done directly because
+  `execute()` also installs/uninstalls modules from its `module_` fields, which
+  must never happen mid-provision. Called before the idempotency early-return,
+  so demo databases built before this pick it up on their next run.
+- `test_multi_uom_setting_is_enabled` asserts it the way the settings screen
+  asks it (`res.config.settings.default_get`), not by re-stating the write.
+- **`build_demo.sh` gained a verification phase** that asserts rather than
+  suggests. The one-company check used to be a printed hint at the end; it is
+  now `CHECK companies=1`, `CHECK charts=et` and `CHECK group_uom=True`, each
+  with an explanation of what breaks, and the build exits non-zero if any
+  fails. Both of these properties have regressed silently before — a demo that
+  fails now fails on the command line instead of on camera.
+
+Noted, not changed: `sapian_demo_trader` depends on `crm`, `mrp`, `project`,
+`mass_mailing`, `fleet`, `repair`, `maintenance` and `website_sale`, and **none
+of them is used by the demo data** — the transitive closure of the seven real
+dependencies is 35 modules and contains none of the eight. They are there only
+because `_onboard_company` hands the onboarding wizard the entire 15-entry
+`STANDARD_CATALOG` and the wizard's install step must be a no-op mid-provision.
+The visible cost is Manufacturing/Fleet/Repair/Project/Website in the demo's
+menu bar. Fix, when wanted: pick the `core`/`common` tiers instead of the whole
+catalog, and relax `test_catalog_dependencies` to "picked entries ⊆ deps".
+
 ### Demo tenant: building materials, one company, built like a client ✅ (2026-08-09)
 The sales demo is a revenue asset, not a test fixture. Two changes, both in the
 module so every future demo database is correct by construction — no database
