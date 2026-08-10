@@ -6,15 +6,20 @@ Provisions a tenant through the REAL onboarding wizard and REAL business flows
 asserts every hand-computed month total and that all four statutory reports
 tie out to the GL. Numbers (July 2026):
 
-- Sales: 32,000 (Mebrat, 40 sheets G32) + 24,000 (Abyssinia, rebar+HCB) = 56,000
-  → output VAT 8,400
-- Purchases: 52,000 (Derba depot: 30 quintals cement + rebar, 3% WHT 1,560)
+- Sales: 35,200 (Mebrat, 40 sheets G32) + 80,100 (Abyssinia, rebar+HCB) = 115,300
+  → output VAT 17,295
+- Purchases: 68,800 (Derba depot: 30 quintals cement + rebar, 3% WHT 2,064)
   + 15,000 (Yonas Transport, no TIN, 30% WHT
-  4,500) + 8,000 (BuildSoft foreign digital, 15% WHT 1,200) = 75,000
-  → input VAT 11,250; WHT grand total 7,260
-- Net VAT: 8,400 − 11,250 = −2,850 (credit carried forward)
+  4,500) + 8,000 (BuildSoft foreign digital, 15% WHT 1,200) = 91,800
+  → input VAT 13,770; WHT grand total 7,764
+- Net VAT: 17,295 − 13,770 = +3,525 PAYABLE (a normal trading month)
 - Payroll: gross 23,800; PAYE 3,900; pension 1,526 EE / 2,398 ER; net 18,374;
   journal 26,198 balanced
+
+Every trading figure here is DOWNSTREAM of demo_catalogue.py — order lines take
+their price_unit from cat.PRICES. When a sourced price changes these are
+recomputed; they are not an independent golden the prices must be bent to match.
+The payroll figures are independent of the catalogue and do not move with it.
 """
 
 from odoo.tests import TransactionCase, tagged
@@ -80,7 +85,7 @@ class TestDemoTraderE2E(TransactionCase):
         self.assertEqual(catalog.filtered("enabled"), expected_enabled)
 
     def test_sales_invoices_vat(self):
-        """Both customer invoices posted with 15% VAT: 36,800 and 27,600."""
+        """Both customer invoices posted with 15% VAT: 40,480 and 92,115."""
         invoices = self.env["account.move"].search(
             [
                 ("company_id", "=", self.company.id),
@@ -89,8 +94,8 @@ class TestDemoTraderE2E(TransactionCase):
             ]
         )
         self.assertEqual(len(invoices), 2)
-        self.assertEqual(sum(invoices.mapped("amount_untaxed")), 56000.0)
-        self.assertEqual(sum(invoices.mapped("amount_tax")), 8400.0)
+        self.assertEqual(sum(invoices.mapped("amount_untaxed")), 115300.0)
+        self.assertEqual(sum(invoices.mapped("amount_tax")), 17295.0)
         # Demo-data review regressions: invoices are in ETB (not the default
         # USD pricelist), and the due date is never before the issue date.
         etb = self.env.ref("base.ETB")
@@ -112,7 +117,7 @@ class TestDemoTraderE2E(TransactionCase):
         self.assertTrue(all(p.state == "done" for p in deliveries))
 
     def test_purchase_bill_wht_and_receipt(self):
-        """The PO bill carries 3% WHT 1,560 on 52,000 and the receipt is done."""
+        """The PO bill carries 3% WHT 2,064 on 68,800 and the receipt is done."""
         bill = self.env["account.move"].search(
             [
                 ("company_id", "=", self.company.id),
@@ -122,12 +127,12 @@ class TestDemoTraderE2E(TransactionCase):
             ]
         )
         self.assertEqual(bill.state, "posted")
-        self.assertEqual(bill.amount_untaxed, 52000.0)
+        self.assertEqual(bill.amount_untaxed, 68800.0)
         wht_lines = bill.line_ids.filtered(lambda line: line.tax_line_id.l10n_et_wht_kind)
         self.assertEqual(wht_lines.tax_line_id.l10n_et_wht_kind, "goods")
-        self.assertEqual(wht_lines.credit, 1560.0)
-        # total = 52,000 + 7,800 VAT − 1,560 WHT
-        self.assertEqual(bill.amount_total, 58240.0)
+        self.assertEqual(wht_lines.credit, 2064.0)
+        # total = 68,800 + 10,320 VAT − 2,064 WHT
+        self.assertEqual(bill.amount_total, 77056.0)
         receipts = self.env["stock.picking"].search(
             [
                 ("company_id", "=", self.company.id),
@@ -150,7 +155,7 @@ class TestDemoTraderE2E(TransactionCase):
             wht_by_kind[line.tax_line_id.l10n_et_wht_kind] = line.credit
         self.assertEqual(
             wht_by_kind,
-            {"goods": 1560.0, "punitive": 4500.0, "foreign_digital": 1200.0},
+            {"goods": 2064.0, "punitive": 4500.0, "foreign_digital": 1200.0},
         )
 
     def test_payroll_posted_golden(self):
@@ -172,23 +177,25 @@ class TestDemoTraderE2E(TransactionCase):
         self.assertTrue(run.bank_export_file)
 
     def test_vat_declaration_golden_and_tie_out(self):
-        """Output 8,400 / input 11,250 / net −2,850 credit; both tie-outs OK."""
+        """Output 17,295 / input 13,770 / net +3,525 payable; both tie-outs OK."""
         declaration = self._report("l10n.et.vat.declaration")
         data = declaration._get_report_data()
-        self.assertEqual(data["output_total_base"], 56000.0)
-        self.assertEqual(data["output_total_tax"], 8400.0)
-        self.assertEqual(data["input_total_base"], 75000.0)
-        self.assertEqual(data["input_total_tax"], 11250.0)
-        self.assertEqual(data["net_vat"], -2850.0)
-        self.assertFalse(data["is_payable"])
+        self.assertEqual(data["output_total_base"], 115300.0)
+        self.assertEqual(data["output_total_tax"], 17295.0)
+        self.assertEqual(data["input_total_base"], 91800.0)
+        self.assertEqual(data["input_total_tax"], 13770.0)
+        # July is a normal trading month for a materials retailer: stock bought is
+        # sold within weeks, so output exceeds input and the month is PAYABLE.
+        self.assertEqual(data["net_vat"], 3525.0)
+        self.assertTrue(data["is_payable"])
         self.assertTrue(data["tie_out_ok"], data["tie_out"])
 
     def test_wht_summary_golden_and_warnings(self):
-        """WHT rows tie to GL at 7,260; Habesha flagged MISSING, CloudServe not."""
+        """WHT rows tie to GL at 7,764; Yonas flagged MISSING, BuildSoft not."""
         summary = self._report("l10n.et.wht.summary")
         data = summary._get_report_data()
-        self.assertEqual(data["totals_by_rate"], {3.0: 1560.0, 15.0: 1200.0, 30.0: 4500.0})
-        self.assertEqual(data["grand_total"], 7260.0)
+        self.assertEqual(data["totals_by_rate"], {3.0: 2064.0, 15.0: 1200.0, 30.0: 4500.0})
+        self.assertEqual(data["grand_total"], 7764.0)
         self.assertTrue(data["tie_out_ok"], data["tie_out"])
         self.assertEqual(len(data["missing_tin"]), 1)
         self.assertIn("Yonas Transport", data["missing_tin"][0])
@@ -198,14 +205,14 @@ class TestDemoTraderE2E(TransactionCase):
         render = self.env["ir.actions.report"]._render_qweb_html
         declaration = self._report("l10n.et.vat.declaration")
         html = render("l10n_et_reports.report_vat_declaration", declaration.ids)[0].decode()
-        self.assertIn("8400.00", html)
+        self.assertIn("17295.00", html)
         self.assertNotIn("MISMATCH", html)
 
         summary = self._report("l10n.et.wht.summary")
         html = render("l10n_et_reports.report_wht_summary", summary.ids)[0].decode()
         self.assertIn("MISSING", html)
         self.assertIn("N/A (foreign)", html)
-        self.assertIn("7260.00", html)
+        self.assertIn("7764.00", html)
 
         run = self.env["l10n.et.payroll.run"].search([("company_id", "=", self.company.id)])
         html = render("l10n_et_payroll.report_paye_declaration", run.ids)[0].decode()
