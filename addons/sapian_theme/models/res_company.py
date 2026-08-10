@@ -4,15 +4,71 @@
 Odoo's external report layouts read ``primary_color``/``secondary_color`` off
 the company as data. We set the house brand as the DEFAULT for companies that
 have expressed no preference, and never touch one that has.
+
+The hard part is what happens LATER. A company row stores a *copy* of the
+colour, so after a re-brand an old house colour and a client's deliberate
+choice look identical — both are "a colour that is not the current brand".
+``sapian_brand_applied`` is the marker that tells them apart: it holds
+the pair we last wrote, so drift can be detected without guessing.
 """
 
-from odoo import api, models
+import logging
+
+from odoo import api, fields, models
 
 from .. import brand
+
+_logger = logging.getLogger(__name__)
 
 
 class ResCompany(models.Model):
     _inherit = "res.company"
+
+    sapian_brand_applied = fields.Char(
+        string="SapianERP Brand Applied",
+        copy=False,
+        help="The exact primary/secondary pair SapianERP last wrote to this "
+        "company, as 'primary|secondary'. Empty means the colours were chosen "
+        "by someone else and must never be touched. Comparing this against the "
+        "live fields is how a stale house colour is told apart from a "
+        "deliberate client colour — the two are otherwise identical.",
+    )
+
+    # ---- helpers ---------------------------------------------------------
+
+    @api.model
+    def _sapian_brand_pair(self):
+        """The current house pair, from the one palette file."""
+        return (brand.brand_primary(), brand.brand_secondary())
+
+    def _sapian_marker(self, primary, secondary):
+        return "%s|%s" % (primary, secondary)
+
+    def _sapian_is_ours_and_stale(self):
+        """Companies still wearing a house brand we have since changed.
+
+        BOTH colours must still match what we wrote. A company whose primary
+        was edited by hand but whose secondary was not is NOT ours to rewrite —
+        somebody has taken ownership of the pair, and guessing which half they
+        meant is how a document ends up in two brands.
+        """
+        primary, secondary = self._sapian_brand_pair()
+        current = self._sapian_marker(primary, secondary)
+        stale = self.browse()
+        for company in self:
+            if not company.sapian_brand_applied:
+                continue
+            if company.sapian_brand_applied == current:
+                continue  # already on the current brand
+            was_primary, _, was_secondary = company.sapian_brand_applied.partition("|")
+            if (
+                company.primary_color == was_primary
+                and company.secondary_color == was_secondary
+            ):
+                stale |= company
+        return stale
+
+    # ---- create ----------------------------------------------------------
 
     @api.model_create_multi
     def create(self, vals_list):
@@ -20,12 +76,106 @@ class ResCompany(models.Model):
 
         ``setdefault`` and not an assignment: a caller that passes its own
         colour — the onboarding wizard, a data file, a client who picked one —
-        keeps it. This is the only reason a white-label deployment works.
+        keeps it, and gets no marker, so we will never rewrite it later.
         """
+        primary, secondary = self._sapian_brand_pair()
         for vals in vals_list:
-            vals.setdefault("primary_color", brand.brand_primary())
-            vals.setdefault("secondary_color", brand.brand_secondary())
+            ours = "primary_color" not in vals and "secondary_color" not in vals
+            vals.setdefault("primary_color", primary)
+            vals.setdefault("secondary_color", secondary)
+            if ours:
+                vals.setdefault("sapian_brand_applied", self._sapian_marker(primary, secondary))
         return super().create(vals_list)
+
+    # ---- drift detection: WARN ONLY, never writes -------------------------
+
+    @api.model
+    def _sapian_detect_brand_drift(self):
+        """Report companies still on a superseded house colour. Changes nothing.
+
+        Called on module update. It deliberately does NOT fix anything: a code
+        change that silently rewrites client-facing document colours on upgrade
+        is the same class of fault as a migration that quietly skips a company —
+        it works until the day it is wrong, and nobody is watching when it is.
+
+        Returns the drifted companies so a caller can act on a number.
+        """
+        companies = self.sudo().with_context(active_test=False).search([])
+        stale = companies._sapian_is_ours_and_stale()
+        if stale:
+            primary, secondary = self._sapian_brand_pair()
+            _logger.warning(
+                "sapian_theme: %d compan%s still carr%s a superseded SapianERP "
+                "brand and will keep printing it on documents: %s. The house "
+                "brand is now %s / %s. NOTHING HAS BEEN CHANGED — run "
+                "env['res.company']._sapian_apply_brand(dry_run=False) to "
+                "apply it, or leave them as they are.",
+                len(stale),
+                "y" if len(stale) == 1 else "ies",
+                "ies" if len(stale) == 1 else "y",
+                ", ".join("%s (%s)" % (c.name, c.primary_color) for c in stale),
+                primary,
+                secondary,
+            )
+        return stale
+
+    # ---- the explicit command --------------------------------------------
+
+    @api.model
+    def _sapian_apply_brand(self, dry_run=True):
+        """Move companies on a superseded house colour onto the current one.
+
+        Never runs by itself — an operator has to ask for it. Defaults to
+        ``dry_run=True`` so the accident is a report, not a rewrite.
+
+        Both halves of the pair move together or neither does: a document in
+        two brands is worse than a document in the old one.
+
+        Returns the affected companies either way, and logs what it actually
+        did, so a run that changed nothing is distinguishable from a run that
+        worked.
+        """
+        primary, secondary = self._sapian_brand_pair()
+        stale = (
+            self.sudo().with_context(active_test=False).search([])._sapian_is_ours_and_stale()
+        )
+        names = ", ".join("%s (%s)" % (c.name, c.primary_color) for c in stale)
+        if not stale:
+            _logger.info(
+                "sapian_theme: no company is on a superseded SapianERP brand; "
+                "nothing to apply. (Companies with a colour of their own are "
+                "not counted and are never touched.)"
+            )
+            return stale
+        if dry_run:
+            _logger.info(
+                "sapian_theme: DRY RUN — %d compan%s would move to %s / %s: %s. "
+                "Nothing was written. Re-run with dry_run=False to apply.",
+                len(stale),
+                "y" if len(stale) == 1 else "ies",
+                primary,
+                secondary,
+                names,
+            )
+            return stale
+        stale.write(
+            {
+                "primary_color": primary,
+                "secondary_color": secondary,
+                "sapian_brand_applied": self._sapian_marker(primary, secondary),
+            }
+        )
+        _logger.info(
+            "sapian_theme: APPLIED the current brand %s / %s to %d compan%s: %s",
+            primary,
+            secondary,
+            len(stale),
+            "y" if len(stale) == 1 else "ies",
+            names,
+        )
+        return stale
+
+    # ---- install-time backfill -------------------------------------------
 
     @api.model
     def _sapian_apply_brand_defaults(self):
@@ -39,6 +189,7 @@ class ResCompany(models.Model):
         Returns the companies it actually changed, so the caller can log a
         number rather than assume the work happened.
         """
+        primary, secondary = self._sapian_brand_pair()
         untouched = (
             self.sudo()
             .with_context(active_test=False)
@@ -48,10 +199,14 @@ class ResCompany(models.Model):
         for company in untouched:
             vals = {}
             if not company.primary_color:
-                vals["primary_color"] = brand.brand_primary()
+                vals["primary_color"] = primary
             if not company.secondary_color:
-                vals["secondary_color"] = brand.brand_secondary()
+                vals["secondary_color"] = secondary
             if vals:
+                # Marked only when WE supplied the whole pair. A company that
+                # had one colour of its own keeps ownership of both.
+                if len(vals) == 2:
+                    vals["sapian_brand_applied"] = self._sapian_marker(primary, secondary)
                 company.write(vals)
                 changed |= company
         return changed

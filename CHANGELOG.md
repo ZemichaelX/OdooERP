@@ -54,6 +54,53 @@ module (0 leftover views); 11 module tests; a company with a pre-set colour was
 untouched (`#1a7f5a` before and after, hook reported "0 companies") while a new
 company got the brand; two real invoice PDFs rendered and inspected.
 
+**Re-brand drift, option (c).** A company row stores a *copy* of the colour, so
+after a re-brand an old house colour and a client's deliberate choice look
+identical. `res.company.sapian_brand_applied` holds the exact pair we last
+wrote, so the two can be told apart. **Detection never writes**: on module
+update the theme logs a warning naming the drifted companies and changes
+nothing — rewriting client-facing document colours as a side effect of an
+upgrade is the same class of fault as a migration that silently skips a
+company. Applying is explicit and dry-run by default
+(`_sapian_apply_brand()` reports; `_sapian_apply_brand(dry_run=False)`
+applies), and both halves of the pair move together or neither does. A
+half-edited pair is left alone entirely. Accepted edge case, documented in the
+README: a client who picks a colour identical to ours is indistinguishable from
+an untouched default.
+
+**Only two of Odoo's seven report layouts use the colour at all** — measured by
+grepping every `external_layout_*` template and by rendering the same invoice
+through each. standard (the default), boxed, bold, striped and folder reference
+it **zero** times and produced byte-identical 40,048-byte PDFs; only wave
+(40,571) and bubble (40,519) differ, and there the colour is purely decorative —
+two SVG shapes at `fill-opacity=".1"`, ~20% and ~16% of the page. No coloured
+rules, headings or totals in any layout. Choosing a default layout is still
+open, and the MoR-required invoice elements outrank the aesthetics.
+
+### List-view sums and status badges ✅ (2026-08-10)
+Eight `sum=` totals added, all `fields.Monetary`, all in the owning module:
+payroll run's payslip list (basic salary, gross, PAYE, pension EE/ER, other
+deductions, net — the batch totals checked before filing), payslip input lines
+(`amount`), the VAT declaration list (output/input/net) and the WHT summary
+(`total_wht`).
+
+Rejected, deliberately: PAYE band `rate`, pension `employee_rate`/
+`employer_rate` and the three WHT config rates (percentages — summing tax rates
+is meaningless and they already render as `percentage`); cash-cap and allowance
+`cap_amount` (effective-dated configuration thresholds — a column of caps summed
+would not merely be meaningless, it would read like a policy figure and someone
+would eventually quote it); payslip input `taxable` (Boolean); pharma quantities
+(mixed units — the quintal/bag work exists because they do not add up).
+
+Verified in our own install rather than inferred: core already sums
+`account.move`, `purchase.order` **and all three `sale.order` list views**
+(`view_order_tree`, `view_quotation_tree`, `view_quotation_tree_with_onboarding`
+— `amount_untaxed`, `amount_tax`, `amount_total`), so no core inheritance is
+needed. Badge decorations were also already in place on all four status columns
+including `stock.lot.pharma_state` (success/warning/danger, monotonic); the one
+real gap was the import dossier's status badge on the **form**, which was
+undecorated while the list version was colour-coded.
+
 ### Demo: the units are now visible, and the build asserts it ✅ (2026-08-10)
 The quintal/bag pair was created correctly — 30 quintals in, 60 bags on hand,
 verified on a fresh build — and shown to nobody. Odoo gates every UoM field on

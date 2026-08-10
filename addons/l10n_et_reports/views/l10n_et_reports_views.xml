@@ -8,9 +8,9 @@
                 <field name="name"/>
                 <field name="date_from"/>
                 <field name="date_to"/>
-                <field name="output_vat_total"/>
-                <field name="input_vat_total"/>
-                <field name="net_vat"/>
+                <field name="output_vat_total" sum="Total"/>
+                <field name="input_vat_total" sum="Total"/>
+                <field name="net_vat" sum="Total"/>
                 <field name="company_id" groups="base.group_multi_company"/>
             </list>
         </field>
@@ -65,7 +65,7 @@
                 <field name="name"/>
                 <field name="date_from"/>
                 <field name="date_to"/>
-                <field name="total_wht"/>
+                <field name="total_wht" sum="Total"/>
                 <field name="company_id" groups="base.group_multi_company"/>
             </list>
         </field>

@@ -53,7 +53,7 @@
                                            optional="show"/>
                                     <field name="taxable"
                                            readonly="allowance_type_id"/>
-                                    <field name="amount"/>
+                                    <field name="amount" sum="Total"/>
                                 </list>
                             </field>
                         </page>

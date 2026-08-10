@@ -38,7 +38,10 @@
                         <group>
                             <field name="supplier_id"/>
                             <field name="eta_date"/>
-                            <field name="status" widget="badge"/>
+                            <field name="status" widget="badge"
+                                   decoration-info="status == 'in_transit'"
+                                   decoration-warning="status == 'customs'"
+                                   decoration-success="status == 'received'"/>
                         </group>
                         <group>
                             <field name="currency_id" invisible="1"/>

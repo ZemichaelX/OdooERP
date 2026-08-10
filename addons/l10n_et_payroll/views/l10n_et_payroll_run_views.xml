@@ -76,13 +76,13 @@
                             <field name="payslip_ids" readonly="1">
                                 <list>
                                     <field name="employee_id"/>
-                                    <field name="basic_salary"/>
-                                    <field name="gross"/>
-                                    <field name="paye"/>
-                                    <field name="pension_employee"/>
-                                    <field name="pension_employer"/>
-                                    <field name="other_deductions"/>
-                                    <field name="net_pay"/>
+                                    <field name="basic_salary" sum="Total"/>
+                                    <field name="gross" sum="Total"/>
+                                    <field name="paye" sum="Total"/>
+                                    <field name="pension_employee" sum="Total"/>
+                                    <field name="pension_employer" sum="Total"/>
+                                    <field name="other_deductions" sum="Total"/>
+                                    <field name="net_pay" sum="Total"/>
                                 </list>
                             </field>
                         </page>

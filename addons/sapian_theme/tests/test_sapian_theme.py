@@ -131,6 +131,71 @@ class TestSapianTheme(TransactionCase):
         self.assertEqual(company.primary_color, "#0057B8")
         self.assertEqual(company.secondary_color, "#003C7E")
 
+    # ---- re-brand drift: detect loudly, change nothing ---------------------
+
+    def _fake_old_brand(self, company, primary="#0B6E4F", secondary="#095E43"):
+        """Put a company in the state a PAST re-brand would have left it in."""
+        company.write(
+            {
+                "primary_color": primary,
+                "secondary_color": secondary,
+                "sapian_brand_applied": "%s|%s" % (primary, secondary),
+            }
+        )
+        return company
+
+    def test_drift_is_detected_but_nothing_is_written(self):
+        """Update-time detection must be read-only. This is the whole point."""
+        company = self._fake_old_brand(
+            self.env["res.company"].create({"name": "Stale Brand Co"})
+        )
+        drifted = self.env["res.company"]._sapian_detect_brand_drift()
+        self.assertIn(company, drifted)
+        self.assertEqual(
+            company.primary_color, "#0B6E4F", "detection must never rewrite a colour"
+        )
+        self.assertEqual(company.secondary_color, "#095E43")
+
+    def test_dry_run_is_the_default_and_writes_nothing(self):
+        company = self._fake_old_brand(self.env["res.company"].create({"name": "Dry Run Co"}))
+        affected = self.env["res.company"]._sapian_apply_brand()  # no argument
+        self.assertIn(company, affected, "a dry run still reports what it would do")
+        self.assertEqual(company.primary_color, "#0B6E4F", "dry run must not write")
+
+    def test_explicit_apply_moves_both_halves_together(self):
+        company = self._fake_old_brand(self.env["res.company"].create({"name": "Apply Co"}))
+        self.env["res.company"]._sapian_apply_brand(dry_run=False)
+        self.assertEqual(company.primary_color, brand.brand_primary())
+        self.assertEqual(company.secondary_color, brand.brand_secondary())
+        self.assertEqual(
+            company.sapian_brand_applied,
+            "%s|%s" % (brand.brand_primary(), brand.brand_secondary()),
+        )
+        # Idempotent: a second run finds nothing left to do.
+        self.assertFalse(self.env["res.company"]._sapian_apply_brand(dry_run=False))
+
+    def test_a_client_colour_is_never_seen_as_drift(self):
+        """No marker means not ours — the case the marker exists to protect."""
+        company = self.env["res.company"].create(
+            {"name": "Chose Their Own Co", "primary_color": "#0057B8"}
+        )
+        self.assertFalse(company.sapian_brand_applied, "a supplied colour must carry no marker")
+        self.assertNotIn(company, self.env["res.company"]._sapian_detect_brand_drift())
+        self.env["res.company"]._sapian_apply_brand(dry_run=False)
+        self.assertEqual(company.primary_color, "#0057B8")
+
+    def test_a_half_edited_pair_is_left_alone(self):
+        """Somebody has taken ownership; guessing which half they meant is how
+        a document ends up in two brands."""
+        company = self._fake_old_brand(
+            self.env["res.company"].create({"name": "Half Edited Co"})
+        )
+        company.primary_color = "#0057B8"  # hand-edited, secondary untouched
+        self.assertNotIn(company, self.env["res.company"]._sapian_detect_brand_drift())
+        self.env["res.company"]._sapian_apply_brand(dry_run=False)
+        self.assertEqual(company.primary_color, "#0057B8", "must not be rewritten")
+        self.assertEqual(company.secondary_color, "#095E43", "must not be half-synced")
+
     def test_backfill_only_fills_empties_and_reports_what_it_did(self):
         """A do-nothing run must be distinguishable from a working one."""
         company = self.env["res.company"].create({"name": "Colourless Co"})

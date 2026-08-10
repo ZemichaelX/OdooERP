@@ -153,9 +153,9 @@ jobs:
             --data-dir=/tmp/odoo-data \
             --addons-path="${GITHUB_WORKSPACE}/addons,/usr/lib/python3/dist-packages/odoo/addons" \
             -d ci_test \
-            -i sapian_demo_trader,sapian_demo_pharma \
+            -i sapian_demo_trader,sapian_demo_pharma,sapian_theme \
             --test-enable \
-            --test-tags '/sapian_core,/l10n_et_base,/l10n_et_payroll,/l10n_et_reports,/vertical_pharma,/sapian_demo_trader,/sapian_demo_pharma' \
+            --test-tags '/sapian_core,/l10n_et_base,/l10n_et_payroll,/l10n_et_reports,/vertical_pharma,/sapian_demo_trader,/sapian_demo_pharma,/sapian_theme' \
             --workers=0 --max-cron-threads=0 \
             --stop-after-init --log-level=test 2>&1 | tee /tmp/odoo-test.log
           # `set -o pipefail` already makes a non-zero odoo exit fail this step.
@@ -182,11 +182,11 @@ jobs:
             echo "::error::The Odoo test runner never reported a result line — no tests were executed. A suite that runs nothing must not report success."
             exit 1
           fi
-          # MIN_EXPECTED_TESTS is a FLOOR, not the exact count (222 at this
-          # commit). Raise it as the suite grows. Only ever lower it in a commit
+          # MIN_EXPECTED_TESTS is a FLOOR, not the exact count (242 at this
+          # commit, after sapian_theme). Raise it as the suite grows. Only ever lower it in a commit
           # that says which tests went away and why — lowering it to make CI
           # pass is how this guard gets quietly disabled.
-          MIN_EXPECTED_TESTS=200
+          MIN_EXPECTED_TESTS=220
           EXECUTED=$(grep -oE "odoo\.tests\.stats: [A-Za-z0-9_]+: [0-9]+ tests" /tmp/odoo-test.log \
                      | awk '$4 == "tests" { total += $3 } END { print total + 0 }')
           echo "Executed ${EXECUTED} tests (floor ${MIN_EXPECTED_TESTS}):"

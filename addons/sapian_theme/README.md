@@ -38,14 +38,37 @@ Verified: changing the value once moved `web.assets_backend` (160 occurrences),
 `web.assets_frontend` (12) and `web.report_assets_common` (81) together, plus
 the colour handed to newly created companies.
 
-### The one thing a re-brand does NOT move
+### After a re-brand: existing companies
 
-Companies that **already exist** keep the colour stored on their record. That is
-deliberate — it is the same rule that stops us overwriting a white-label
-client's own colour — but it means an old house colour and a new one are
-indistinguishable once stored, and the previous brand keeps printing on those
-companies' documents. After a re-brand, existing companies need an explicit
-pass. See CHANGELOG for the open decision on making this automatic.
+Companies that **already exist** keep the colour stored on their record — the
+same rule that protects a white-label client's colour also protects a stale
+house colour. `sapian_brand_applied` tells the two apart: it stores the exact
+pair we last wrote, so a company is "ours and stale" only when **both** colours
+still match what we wrote.
+
+**Nothing is ever rewritten automatically.** On every module update the theme
+only *detects* drift and logs a warning naming the companies. Fixing colours on
+a client's invoices as a side effect of an upgrade is the same class of fault as
+a migration that silently skips a company: it works until the day it is wrong,
+and nobody is watching when it is.
+
+```python
+# 1. see what would change — this is the DEFAULT, it writes nothing
+env['res.company']._sapian_apply_brand()
+
+# 2. apply, only when you mean it
+env['res.company']._sapian_apply_brand(dry_run=False)
+```
+
+Both log what they did, including "nothing to apply", so a run that changed
+nothing is distinguishable from a run that worked.
+
+**Edge case, accepted and not solved:** a client who chooses a colour *identical*
+to our house brand is indistinguishable from an untouched default, and will be
+re-branded by a later `_sapian_apply_brand`. Their colour and ours are the same
+value; nothing in the data can separate them. Also note a company whose pair was
+half-edited by hand is left alone entirely — syncing one half would produce a
+document in two brands.
 
 ## The two colour systems
 
@@ -59,11 +82,22 @@ Both reach a printed PDF and they are independent:
 They never fight over the same pixel, but they can disagree about what the brand
 *is*, which is why Python reads the SCSS rather than restating the value.
 
-**Odoo's default report layout ignores the colour entirely.** `web.external_layout`
-falls back to `external_layout_standard` when a company has chosen no layout
-(`web/views/report_templates.xml:830`), and that template never reads
-`primary_color`. Only **Wave, Bubble, Bold, Boxed and Striped** use it. A client
-left on the default gets a monochrome document no matter what colour is set.
+**Only two of Odoo's seven layouts use the colour at all.** Measured, by
+grepping every `external_layout_*` template and by rendering the same invoice
+through each:
+
+| Layout | colour refs | rendered PDF |
+|---|---|---|
+| standard (the default), boxed, bold, striped, folder | **0** | byte-identical, 40,048 |
+| wave | 2 | 40,571 |
+| bubble | 2 | 40,519 |
+
+`web.external_layout` falls back to `external_layout_standard` when a company has
+chosen no layout (`report_templates.xml:830`). So a client on the default — or on
+Boxed, Bold or Striped — gets a **monochrome document no matter what colour is
+set**. And in Wave and Bubble the colour is purely **decorative**: two SVG
+background shapes at `fill-opacity=".1"`, roughly 20% and 16% of the page. It is
+never structural — no coloured rules, headings, table headers or totals.
 
 ## Contrast — measured, not assumed
 

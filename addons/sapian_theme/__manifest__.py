@@ -15,6 +15,9 @@
     "depends": ["base", "web"],
     "data": [
         "views/login_templates.xml",
+        # Last: a drift check that only warns. See the file for why it never
+        # fixes anything on its own.
+        "data/brand_drift_check.xml",
     ],
     "assets": {
         # PREPEND, not append: primary_variables.scss declares $o-brand-primary
