@@ -99,6 +99,28 @@ set**. And in Wave and Bubble the colour is purely **decorative**: two SVG
 background shapes at `fill-opacity=".1"`, roughly 20% and 16% of the page. It is
 never structural — no coloured rules, headings, table headers or totals.
 
+*(Method note: the layouts do all render differently. An earlier version of this
+file claimed Boxed, Bold and Striped produced byte-identical PDFs; they produce
+different documents that coincidentally share a byte length of 40,048. Compare
+hashes, not sizes.)*
+
+### The default report layout
+
+New companies get **Boxed** (`web.external_layout_boxed`): conservative
+structure that suits documents carrying many required fields, and it survives
+photocopying and mono printing — which is what actually happens to an Ethiopian
+invoice, rather than being admired on a screen.
+
+Set through the **same marker machinery as the colour**, for the same reason:
+`sapian_layout_applied` records that we chose it, so a company that picked its
+own layout is never touched, and a future change of house default can tell ours
+from theirs. **New companies only** — nothing back-fills a layout onto an
+existing company, and `test_existing_companies_keep_their_layout` enforces that.
+
+**Treat as temporary.** Boxed does not use the brand colour at all. The
+MoR-required invoice elements are a separate task that outranks the aesthetics
+and will likely produce a custom layout that moots this choice.
+
 ## Contrast — measured, not assumed
 
 | Pair | Ratio | WCAG AA (normal text) |

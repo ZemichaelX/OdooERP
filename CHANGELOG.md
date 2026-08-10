@@ -101,6 +101,25 @@ including `stock.lot.pharma_state` (success/warning/danger, monotonic); the one
 real gap was the import dossier's status badge on the **form**, which was
 undecorated while the list version was colour-coded.
 
+### Default report layout: Boxed, for new companies only ✅ (2026-08-10)
+`web.external_layout_boxed` is set on companies at creation, through the same
+marker machinery as the colour (`sapian_layout_applied`): a company that chose
+its own layout is never touched, and nothing back-fills a layout onto an
+existing company. Temporary by intent — Boxed uses no brand colour, and the
+MoR-required invoice elements task will likely produce a custom layout.
+
+**Correction to the previous entry.** It reported that Boxed, Bold, Striped and
+Standard produced byte-identical PDFs and inferred a partial render failure.
+That was wrong, and wrong in a way worth recording: the comparison used
+`len(pdf)`, and three genuinely different documents share a byte length of
+40,048. Hashing them gives three distinct SHA-256 values; reading
+`external_report_layout_id` back at render time confirms each layout was in
+effect; the HTML differs for all five (lengths 27,915–29,206);
+`attachment_use=False` with zero stored PDFs rules out caching. The layouts are
+real and structurally distinct — only their *colour* usage is nil for five of
+seven. Comparing sizes instead of contents is the same weak-check pattern this
+repo keeps having to remove.
+
 ### Demo: the units are now visible, and the build asserts it ✅ (2026-08-10)
 The quintal/bag pair was created correctly — 30 quintals in, 60 bags on hand,
 verified on a fresh build — and shown to nobody. Odoo gates every UoM field on
