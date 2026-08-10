@@ -54,6 +54,34 @@ Run Odoo module tests:
 Run the fast pure-Python payroll tests (no Odoo needed):
     pytest addons/l10n_et_payroll/reference/
 
+## A success signal that can be produced by doing nothing is not a success signal
+Four failures in two days shared one shape: the happy path and the do-nothing
+path were indistinguishable.
+
+- `backup.sh` wrote seven **0-byte** files that looked like backups.
+- the catalog sync reported **success on an empty table**.
+- the PAYE migration **skipped an archived company** and said nothing.
+- the Odoo suite **exited 0 having run 10 tests instead of 222**, because a
+  failed database drop made `-i` a no-op. Nothing failed, so nothing failed.
+
+Before trusting any check, ask: *if the work had not happened at all, would this
+still be green?* If yes, the check is decoration. Fix it by asserting the
+positive and the size, never the absence of an error:
+
+- assert a MINIMUM (tests executed, rows migrated, bytes written) — zero and
+  "nearly zero" must both be failures.
+- assert the operation REPORTED (a result line, a status file), not merely that
+  no error appeared.
+- make preconditions HARD: if a database drop, a container start, or a file
+  removal fails, abort — do not continue against whatever was already there.
+- prove a new guard **discriminates**: make the bad thing happen on purpose and
+  watch the check go red. An untested guard is another thing that passes by
+  doing nothing.
+
+Enforced in CI at `.github/workflows/ci.yml` (`MIN_EXPECTED_TESTS`), in
+`scripts/backup.sh` (size + `pg_restore --list` + `tar tzf`, and a written
+`LAST_BACKUP_STATUS`), and in `scripts/build_demo.sh` (the `CHECK` block).
+
 ## Platform-specific fixes must be verified on that platform
 A fix for a platform-specific failure is NOT verified until it is verified on
 that platform. Linux evidence is not proof for a Windows bug.
