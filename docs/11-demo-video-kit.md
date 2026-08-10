@@ -20,7 +20,7 @@ pattern:
 ./scripts/build_demo.sh demo_pharma sapian_demo_pharma   # not yet converted
 ```
 
-**Why it is three phases, and why not `-i sapian_demo_trader --with-demo`:**
+**Why it is phased, and why not `-i sapian_demo_trader --with-demo`:**
 Odoo's own demo data ships US placeholder companies (`My Company (San
 Francisco)`, `My US Company`, `My Company (Chicago)`) and a website bound to the
 wrong company. A prospect must never see a US company list in software sold as
@@ -33,19 +33,22 @@ country is set to Ethiopia *before* the accounting modules install. That is the
 same two-phase dance `scripts/provision_client.sh` performs for a real client,
 which means recording the demo is a rehearsal of the actual deployment.
 
-### Verify before recording
+### Verification is part of the build
 
-```bash
-# exactly one company, on the Ethiopian chart
-docker compose -f docker/docker-compose.yml exec -T db \
-  psql -U odoo -d demo_materials -c "SELECT name, chart_template FROM res_company;"
+The last phase asserts the three things that have to be true before you point a
+camera at it, and exits non-zero if any fails:
+
 ```
-Expected — and nothing else:
+CHECK companies=1
+CHECK charts=et
+CHECK group_uom=True
 ```
-           name            | chart_template
----------------------------+----------------
- Selam General Trading PLC | et
-```
+
+Exactly one company, on the Ethiopian chart, with **Units of Measure &
+Packagings** switched on. That last one is not cosmetic: Odoo hides every unit
+field unless it is enabled, so with it off the product form shows no unit and
+the purchase order has no unit column — the quintal→bag conversion below is
+data nobody can see. If the build says FAILED, do not record it.
 
 Log in with `admin` / `admin` (deliberate for a local demo).
 

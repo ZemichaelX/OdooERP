@@ -80,6 +80,9 @@ class SapianDemoTrader(models.AbstractModel):
         Returns the demo company. Idempotent on BOTH paths — data/ means this
         re-runs on every module upgrade.
         """
+        # Before the early return, so a demo database provisioned before this
+        # existed picks the setting up on its next run.
+        self._enable_multi_uom()
         existing = self.env["res.company"].search([("name", "=", company_name)], limit=1)
         if existing:
             if company_name == DEMO_COMPANY_NAME:
@@ -108,6 +111,30 @@ class SapianDemoTrader(models.AbstractModel):
         if company_name == DEMO_COMPANY_NAME:
             self._configure_demo_login(company)
         return company
+
+    @api.model
+    def _enable_multi_uom(self):
+        """Turn ON Settings → Inventory → "Units of Measure & Packagings".
+
+        The quintal/bag pair is the demo's headline moment, and Odoo gates
+        every UoM field on ``uom.group_uom``: with the setting off the product
+        form shows no unit at all and the purchase line has no unit column, so
+        the conversion the whole re-theme was built around is data nobody can
+        see. Creating it without enabling its display is the same fault class
+        as seeding a catalog nothing ever calls.
+
+        This is exactly what ``res.config.settings`` does for a ``group_``
+        field — link the implied group into ``base.group_user``
+        (product/models/res_config_settings.py: ``group_uom =
+        fields.Boolean(..., implied_group='uom.group_uom')``, and a group field
+        with no ``group=`` attribute applies to ``base.group_user``). Done
+        directly rather than through ``res.config.settings.execute()`` because
+        that method also installs and uninstalls modules from its ``module_``
+        fields, which must never happen during provisioning. Idempotent:
+        ``_apply_group`` skips groups that already imply it.
+        """
+        # sudo: group administration, same as the rest of provisioning.
+        self.env.ref("base.group_user").sudo()._apply_group(self.env.ref("uom.group_uom"))
 
     @api.model
     def _configure_demo_login(self, company):
