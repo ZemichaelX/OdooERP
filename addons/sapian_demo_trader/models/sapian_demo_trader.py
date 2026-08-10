@@ -14,9 +14,16 @@ feature visibly firing:
 - payroll with a taxable-overtime case and one employee missing a POESSA
   pension ID (fix-before-filing banner on the pension schedule)
 
-Hand-computed month totals (tests enforce): output VAT 8,400 on 56,000; input
-VAT 11,250 on 75,000; net VAT −2,850 credit; WHT 1,560 + 4,500 + 1,200 = 7,260;
+Hand-computed month totals (tests enforce): output VAT 17,295 on 115,300; input
+VAT 13,770 on 91,800; net VAT +3,525 PAYABLE; WHT 2,064 + 4,500 + 1,200 = 7,764;
 payroll gross 23,800, PAYE 3,900, pension 1,526/2,398, net 18,374.
+
+These follow from demo_catalogue.py: every order line takes its price_unit from
+cat.PRICES, so the month's totals are DOWNSTREAM of the catalogue, not an
+independent golden. Change a price and these move — recompute them, do not
+"fix" the prices to match. July deliberately ends in a VAT PAYABLE: a materials
+retailer buys stock and turns it within weeks, so a normal month has output
+above input; a credit only happens in a heavy stocking-up month.
 
 All dates are pinned inside July 2026 so every statutory report has one clean
 period window with exact GL tie-outs, independent of the wall clock.
@@ -492,11 +499,15 @@ class SapianDemoTrader(models.AbstractModel):
     def _run_sales_flow(self, partners, products):
         """Two quotation -> delivery -> invoice flows with 15% VAT.
 
-        Output VAT golden (unchanged, the month's numbers are the demo's
-        value): 32,000 + 24,000 = 56,000 base -> 8,400 VAT.
-          Mebrat:    40 sheets G32 @ 800            = 32,000
-          Abyssinia: 100 kg rebar 12 @ 170 = 17,000
-                     + 500 HCB @ 14        =  7,000 = 24,000
+        Output VAT golden: 35,200 + 80,100 = 115,300 base -> 17,295 VAT.
+          Mebrat:    40 sheets G32 @ 880             = 35,200
+          Abyssinia: 100 kg rebar 12 @ 193 = 19,300
+                     + 800 HCB @ 76        = 60,800 = 80,100
+
+        The 800-block line is the one demo QUANTITY tuned to the month's shape
+        rather than to a product: it puts output VAT comfortably above input so
+        July reads as a normal trading month (payable), not a stocking-up one.
+        It is 40% of the 2,000-block opening stock, so nothing goes negative.
         Orders use the ETB pricelist so the invoices are priced and reported
         in the company currency, not Odoo's default USD pricelist.
         """
@@ -538,7 +549,7 @@ class SapianDemoTrader(models.AbstractModel):
                     Command.create(
                         {
                             "product_id": products["hcb_20"].id,
-                            "product_uom_qty": 500,
+                            "product_uom_qty": 800,
                             "price_unit": cat.PRICES["hcb_sale"],
                         }
                     ),
@@ -562,10 +573,12 @@ class SapianDemoTrader(models.AbstractModel):
         BAGS, 30 -> 60. Nothing else moves cement, so the 60 bags on hand are
         the conversion and nothing else.
 
-        Total stays 52,000 so the 3% WHT golden (1,560) and the 7,800 input
-        VAT are unchanged:
-            30 quintals cement @ 1,450 = 43,500
-            50 kg rebar 8 mm   @   170 =  8,500
+        Base 68,800 -> 3% WHT 2,064, input VAT 10,320:
+            30 quintals cement OPC @ 2,000 = 60,000
+            50 kg rebar 8 mm       @   176 =  8,800
+
+        The 30 quintals are load-bearing and must not be reduced to make a
+        rounder WHT figure: they are what produces the 60 bags on hand.
         """
         quintal = self.env["uom.uom"].search([("name", "=", cat.UOM_QUINTAL_NAME)], limit=1)
         order = self.env["purchase.order"].create(
@@ -577,7 +590,7 @@ class SapianDemoTrader(models.AbstractModel):
                             "product_id": products["cement_dangote"].id,
                             "product_qty": 30,
                             "product_uom_id": quintal.id,
-                            "price_unit": cat.PRICES["cement_quintal_cost"],
+                            "price_unit": cat.PRICES["cement_opc_quintal_cost"],
                         }
                     ),
                     Command.create(
