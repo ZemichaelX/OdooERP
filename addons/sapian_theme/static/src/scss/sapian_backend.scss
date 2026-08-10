@@ -1,0 +1,68 @@
+// =============================================================================
+// Backend brand application — COLOUR ONLY.
+//
+// No layout, no spacing, no typography. Every value here derives from
+// $sapian-brand in sapian_variables.scss; there is no hex in this file.
+//
+// Primary buttons, badges, links and focus rings are NOT here: they come free
+// from $o-brand-primary -> $primary -> Bootstrap $theme-colors. Only the three
+// things Odoo deliberately keeps neutral need help.
+// =============================================================================
+
+// ---- 1. Form statusbar: the ACTIVE stage only ---------------------------
+// Odoo sources the statusbar from $-btn-secondary-design (a private map) via
+// the custom properties declared in
+// web/static/src/views/fields/statusbar/statusbar_field.scss:14-16.
+// Overriding the custom property is safer than a selector override: if Odoo
+// renames it, this declaration is simply ignored and the statusbar falls back
+// to Odoo's grey. That is a feature — the page stays usable and correct, it
+// just stops being branded. See "Check these on upgrade" in README.md.
+//
+// Only the active stage is branded. The rest stay neutral on purpose: a
+// magenta bar across every form makes the loudest element on screen the one
+// carrying the least information.
+.o_field_statusbar > .o_statusbar_status {
+    --o-statusbar-background-active: #{$sapian-brand};
+    --o-statusbar-border-active: #{$sapian-brand-hover};
+
+    // White on brand is 4.77:1 — passes AA for normal text.
+    > .o_arrow_button.o_arrow_button_current {
+        color: $white;
+    }
+}
+
+// ---- 2. Active notebook tab indicator -----------------------------------
+// This is the one genuinely fragile rule in the module: a class-based selector
+// override. Bootstrap sets $nav-tabs-link-active-bg to $white
+// (bootstrap_overridden.scss:226) and Odoo does not expose a variable for the
+// indicator. If .o_notebook / .nav-link change in a future version this rule
+// stops matching and the tab reverts to Odoo's default underline — no
+// breakage, but a silent loss of branding. Item 1 on the upgrade checklist.
+.o_notebook .nav-tabs .nav-link.active {
+    border-bottom-color: $sapian-brand;
+    color: $sapian-brand-hover;
+}
+
+// ---- 3. List-view selection ---------------------------------------------
+// Odoo's list marks selected rows with Bootstrap's .table-active
+// (web/static/src/views/list/list_renderer.scss:92). $table-active-bg is a
+// standard Bootstrap 5 variable, so this is the most upgrade-stable rule here.
+// The tint is the same one badges use, which keeps selection and status
+// reading as one family.
+.o_list_renderer .o_list_table {
+    > tbody > tr.o_data_row.table-active,
+    > tbody > tr.o_data_row.o_data_row_selected {
+        background-color: $sapian-brand-tint;
+    }
+}
+
+// ---- 4. Status badges ----------------------------------------------------
+// Used by the list-view state columns (item 3 of the kickoff). Brand-on-tint
+// measures 4.08:1 and FAILS AA for normal text, so the ink is the shade
+// ($sapian-brand-ink-on-tint, 5.30:1), never the raw brand. Both derive from
+// the one variable, so a re-brand keeps the pair in step.
+.o_field_badge.o_sapian_badge_brand > .badge,
+.badge.o_sapian_badge_brand {
+    background-color: $sapian-brand-tint;
+    color: $sapian-brand-ink-on-tint;
+}

@@ -4,6 +4,103 @@ All notable changes to SapianERP. Epics per `docs/plan-2026/10-claude-code-roadm
 
 ## [Unreleased]
 
+### SapianERP house identity — `sapian_theme` (2026-08-10)
+First UI work in the repo. One brand colour (`#C416D3`, provisional) driving the
+backend, the login page and printed documents, from a single file:
+`addons/sapian_theme/static/src/scss/sapian_variables.scss`.
+
+**One edit, proven.** Changing `$sapian-brand` once and rebuilding moved
+`web.assets_backend` (160 occurrences), `web.assets_frontend` (12) and
+`web.report_assets_common` (81) together, plus the colour handed to new
+companies. The hook is the SCSS variable chain — `$o-brand-primary` →
+`$primary` → Bootstrap `$theme-colors` — prepended into
+`web._assets_primary_variables`. **Odoo 19 has no CSS-custom-property input for
+backend colour**: `var(--primary)` appears in 0 files under `web/static/src`;
+the `--primary` properties that exist are Bootstrap's generated *outputs*.
+Everything else derives with `shade-color()` / `tint-color()`; a test fails the
+build if a colour literal appears anywhere else in the module.
+
+**Two colour systems reach a PDF, and a re-brand can leave them disagreeing.**
+Assets come from the SCSS; the document itself comes from
+`res.company.primary_color` as data. Python reads the SCSS so the *default*
+cannot drift — but a company row stores a copy, and the rule that protects a
+white-label client's colour also protects a stale house colour. Verified: after
+a re-brand the report CSS still carried the old value in `.o_company_1_layout`.
+**OPEN DECISION**: record which colour we set, so a later re-brand can tell
+"ours, stale" from "theirs, chosen". Until then, existing companies need an
+explicit pass after a re-brand.
+
+**Also found:** Odoo's default report layout ignores the colour completely —
+`web.external_layout` falls back to `external_layout_standard`
+(`report_templates.xml:830`), which never reads `primary_color`. Only Wave,
+Bubble, Bold, Boxed and Striped use it. A client on the default gets a
+monochrome document whatever colour is set.
+
+**Dark mode: none shipped, deliberately.** Odoo 19 Community hardcodes
+`color_scheme() -> "light"` (`web/models/ir_http.py:72`) with no override
+anywhere and no `web_enterprise`, so the dark bundle compiles and is never
+served. The brand fails WCAG AA as ink on every plausible dark surface
+(3.23:1 on `$gray-900`, 2.41:1 on `$gray-800`) — but white on a brand *fill* is
+4.77:1 either way, so it is brand-as-ink that would break, not buttons. The
+assumption is encoded in `test_color_scheme_is_light_on_this_stack`, not left as
+prose: when dark becomes reachable the test fails and points at the README
+recipe (`color.scale($sapian-brand, $lightness: 30%)`).
+
+**Accessibility:** brand-on-tint measures 4.08:1 and FAILS AA for normal text,
+so badge ink uses the derived shade (5.30:1) and never the raw brand.
+
+Verified: installs and uninstalls cleanly on a database carrying no other sapian
+module (0 leftover views); 11 module tests; a company with a pre-set colour was
+untouched (`#1a7f5a` before and after, hook reported "0 companies") while a new
+company got the brand; two real invoice PDFs rendered and inspected.
+
+**Re-brand drift, option (c).** A company row stores a *copy* of the colour, so
+after a re-brand an old house colour and a client's deliberate choice look
+identical. `res.company.sapian_brand_applied` holds the exact pair we last
+wrote, so the two can be told apart. **Detection never writes**: on module
+update the theme logs a warning naming the drifted companies and changes
+nothing — rewriting client-facing document colours as a side effect of an
+upgrade is the same class of fault as a migration that silently skips a
+company. Applying is explicit and dry-run by default
+(`_sapian_apply_brand()` reports; `_sapian_apply_brand(dry_run=False)`
+applies), and both halves of the pair move together or neither does. A
+half-edited pair is left alone entirely. Accepted edge case, documented in the
+README: a client who picks a colour identical to ours is indistinguishable from
+an untouched default.
+
+**Only two of Odoo's seven report layouts use the colour at all** — measured by
+grepping every `external_layout_*` template and by rendering the same invoice
+through each. standard (the default), boxed, bold, striped and folder reference
+it **zero** times and produced byte-identical 40,048-byte PDFs; only wave
+(40,571) and bubble (40,519) differ, and there the colour is purely decorative —
+two SVG shapes at `fill-opacity=".1"`, ~20% and ~16% of the page. No coloured
+rules, headings or totals in any layout. Choosing a default layout is still
+open, and the MoR-required invoice elements outrank the aesthetics.
+
+### List-view sums and status badges ✅ (2026-08-10)
+Eight `sum=` totals added, all `fields.Monetary`, all in the owning module:
+payroll run's payslip list (basic salary, gross, PAYE, pension EE/ER, other
+deductions, net — the batch totals checked before filing), payslip input lines
+(`amount`), the VAT declaration list (output/input/net) and the WHT summary
+(`total_wht`).
+
+Rejected, deliberately: PAYE band `rate`, pension `employee_rate`/
+`employer_rate` and the three WHT config rates (percentages — summing tax rates
+is meaningless and they already render as `percentage`); cash-cap and allowance
+`cap_amount` (effective-dated configuration thresholds — a column of caps summed
+would not merely be meaningless, it would read like a policy figure and someone
+would eventually quote it); payslip input `taxable` (Boolean); pharma quantities
+(mixed units — the quintal/bag work exists because they do not add up).
+
+Verified in our own install rather than inferred: core already sums
+`account.move`, `purchase.order` **and all three `sale.order` list views**
+(`view_order_tree`, `view_quotation_tree`, `view_quotation_tree_with_onboarding`
+— `amount_untaxed`, `amount_tax`, `amount_total`), so no core inheritance is
+needed. Badge decorations were also already in place on all four status columns
+including `stock.lot.pharma_state` (success/warning/danger, monotonic); the one
+real gap was the import dossier's status badge on the **form**, which was
+undecorated while the list version was colour-coded.
+
 ### Demo: the units are now visible, and the build asserts it ✅ (2026-08-10)
 The quintal/bag pair was created correctly — 30 quintals in, 60 bags on hand,
 verified on a fresh build — and shown to nobody. Odoo gates every UoM field on

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Runs on every install AND every module update.
+
+         It only LOOKS. Detecting drift on upgrade is safe; fixing it on upgrade
+         is not — a code change that silently rewrites the colours on a client's
+         invoices is the same class of fault as a migration that quietly skips a
+         company. It works until the day it is wrong, and nobody is watching
+         when it is.
+
+         The warning names the companies. Applying is a separate, explicit
+         command that defaults to a dry run. -->
+    <function model="res.company" name="_sapian_detect_brand_drift"/>
+</odoo>
