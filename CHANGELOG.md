@@ -26,15 +26,54 @@ with no way to see it: the same fault class as seeding a catalog nothing calls.
   fails. Both of these properties have regressed silently before — a demo that
   fails now fails on the command line instead of on camera.
 
-Noted, not changed: `sapian_demo_trader` depends on `crm`, `mrp`, `project`,
-`mass_mailing`, `fleet`, `repair`, `maintenance` and `website_sale`, and **none
-of them is used by the demo data** — the transitive closure of the seven real
-dependencies is 35 modules and contains none of the eight. They are there only
-because `_onboard_company` hands the onboarding wizard the entire 15-entry
-`STANDARD_CATALOG` and the wizard's install step must be a no-op mid-provision.
-The visible cost is Manufacturing/Fleet/Repair/Project/Website in the demo's
-menu bar. Fix, when wanted: pick the `core`/`common` tiers instead of the whole
-catalog, and relax `test_catalog_dependencies` to "picked entries ⊆ deps".
+### Demo installs only what it demonstrates ✅ (2026-08-10)
+`sapian_demo_trader` depended on `crm`, `mrp`, `project`, `mass_mailing`,
+`fleet`, `repair`, `maintenance` and `website_sale`, and **none of them was
+touched by the demo data** — the transitive closure of the seven real
+dependencies is 35 modules and contains none of the eight. They were listed
+only because `_onboard_company` handed the wizard the entire 15-entry
+`STANDARD_CATALOG` and the wizard's install step has to be a no-op
+mid-provision. The cost was the **main menu bar** of a tenant built for a 2–5
+person hardware shop, which is in every frame of a screen recording.
+
+**This is two changes, and either alone does nothing** — picking fewer catalog
+entries only unblocks the removal; the manifest is what installs a module.
+
+1. `_onboard_company` hands the wizard `DEMO_CATALOG_TIERS` (core + common).
+2. The eight are gone from the manifest.
+3. `test_catalog_dependencies` relaxed to "picked entries ⊆ deps", **plus its
+   converse**: `test_unpicked_catalog_apps_are_not_dependencies` fails if an
+   optional app creeps back into the dependency list. That is the regression
+   that would otherwise be silent — it reappears in the menu bar while every
+   other test still passes. Proved to discriminate: run against a database
+   built with the old manifest it reports all eight as leaked.
+
+Menu bar, from `load_menus()` (what the web client renders, not a record
+search), on databases built from nothing with `build_demo.sh`:
+
+```
+BEFORE  SapianERP | Discuss | Calendar | To-do | Contacts | CRM | Sales |
+        Dashboards | Invoicing | Project | Website | Email Marketing | Purchase |
+        Inventory | Manufacturing | Maintenance | Repairs | Employees | Fleet |
+        Apps | Settings
+AFTER   SapianERP | Discuss | Sales | Dashboards | Invoicing | Purchase |
+        Inventory | Employees | Apps | Settings
+```
+
+21 → 10. Calendar, To-do and Contacts went too — they rode in on `crm`/`project`.
+
+The eight are **not hidden**: all 15 catalog entries are still seeded, so the
+catalog reads 7 enabled / 8 available. "Here is what you are buying, here is
+what is there when you want it" is a better answer to "so it does
+manufacturing?" than pretending the apps do not exist.
+
+The `env.get("website")` reassignment in `_configure_demo_login` went with
+`website_sale`: it existed only because installing that module creates a website
+owned by the base company (`website/data/website_data.xml`, module data — so it
+applied even with Odoo demo data off), which then blocks archiving it. Residual
+case, accepted: installing `website` separately and *then* this module would
+make that archive raise. Unsupported (`check_no_demo_modules.sh` keeps demo
+modules off client databases) and exercised by nothing.
 
 ### Demo tenant: building materials, one company, built like a client ✅ (2026-08-09)
 The sales demo is a revenue asset, not a test fixture. Two changes, both in the
