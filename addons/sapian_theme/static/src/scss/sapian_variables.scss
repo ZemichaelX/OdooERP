@@ -1,0 +1,48 @@
+// =============================================================================
+// THE SAPIAN PALETTE — THIS IS THE ONLY FILE TO EDIT TO RE-BRAND.
+//
+// Change $sapian-brand below and rebuild assets. That single edit moves the
+// backend, the login page and the printed PDFs together, because all three
+// bundles resolve from this file:
+//
+//   web.assets_backend        -> web._assets_helpers -> web._assets_primary_variables
+//   web.assets_frontend       -> web._assets_helpers -> web._assets_primary_variables  (login)
+//   web.report_assets_common  -> web._assets_primary_variables                          (PDF)
+//
+// Python reads the same value straight out of THIS FILE (see brand.py), so the
+// company record default for res.company.primary_color cannot drift from the
+// CSS. There is no second place to change.
+//
+// NOTHING ELSE IN THIS MODULE MAY CONTAIN A RAW HEX VALUE.
+// test_no_raw_hex_outside_palette enforces that — it fails the build, not a
+// code review.
+//
+// Every other colour here is DERIVED with Bootstrap's own colour functions,
+// which are available at this point in the bundle because
+// web._assets_helpers loads bootstrap/scss/_functions.scss before including
+// web._assets_primary_variables.
+// =============================================================================
+
+// ---- The one value -----------------------------------------------------
+// Provisional. Expected to change.
+$sapian-brand: #C416D3;
+
+// ---- Derived ------------------------------------------------------------
+// Hover / active: 15% toward black.  shade-color($sapian-brand, 15%)
+// Light tint for badges and subtle backgrounds: 10% brand on white.
+//   tint-color($sapian-brand, 90%)
+// Ink on that tint: the brand itself measures 4.08:1 on the tint and FAILS
+// WCAG AA for normal text. The shade measures 5.30:1 and passes. So badge
+// text uses the shade, never the raw brand. See README.md.
+$sapian-brand-hover: shade-color($sapian-brand, 15%);
+$sapian-brand-tint: tint-color($sapian-brand, 90%);
+$sapian-brand-ink-on-tint: $sapian-brand-hover;
+
+// ---- Feed Odoo ----------------------------------------------------------
+// Both are `!default` in web/static/src/scss/primary_variables.scss (lines 77
+// and 78), and $primary derives from $o-brand-primary in
+// bootstrap_overridden.scss:31. Setting them here therefore reaches
+// Bootstrap's $theme-colors, and so every .btn-primary, badge, link and focus
+// ring, with no selector override at all.
+$o-brand-primary: $sapian-brand;
+$o-brand-odoo: $sapian-brand;

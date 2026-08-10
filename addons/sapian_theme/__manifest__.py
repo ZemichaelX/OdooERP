@@ -1,0 +1,34 @@
+# -*- coding: utf-8 -*-
+{
+    "name": "SapianERP Theme",
+    "version": "19.0.1.0.0",
+    "summary": "SapianERP house identity: one brand colour driving the backend, "
+    "the login page and printed documents. Horizontal — no client and no "
+    "sector styling. Re-brand by editing one value in "
+    "static/src/scss/sapian_variables.scss.",
+    "author": "Sapian Technologies PLC",
+    "website": "https://sapiantech.com",
+    "category": "Localization/Ethiopia",
+    "license": "LGPL-3",
+    # base + web only. This module must install on a database that carries no
+    # other sapian module, and must not drag product modules in behind it.
+    "depends": ["base", "web"],
+    "data": [
+        "views/login_templates.xml",
+    ],
+    "assets": {
+        # PREPEND, not append: primary_variables.scss declares $o-brand-primary
+        # with !default, so ours only wins if it is compiled first.
+        # This one bundle is reached by the backend, the login page and the
+        # report/PDF bundle alike — see the header of sapian_variables.scss.
+        "web._assets_primary_variables": [
+            ("prepend", "sapian_theme/static/src/scss/sapian_variables.scss"),
+        ],
+        "web.assets_backend": [
+            "sapian_theme/static/src/scss/sapian_backend.scss",
+        ],
+    },
+    "post_init_hook": "post_init_hook",
+    "installable": True,
+    "application": False,
+}
