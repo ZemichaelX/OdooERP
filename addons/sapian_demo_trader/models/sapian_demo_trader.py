@@ -34,6 +34,23 @@ DEMO_COMPANY_NAME = "Selam General Trading PLC"
 PERIOD_FROM = "2026-07-01"
 PERIOD_TO = "2026-07-31"
 
+# The catalog tiers the demo tenant actually installs. The `optional` tier —
+# CRM, Manufacturing, Project, Email Marketing, Fleet, Repair, Maintenance,
+# Website & eCommerce — is deliberately left OUT, and the manifest does not
+# depend on those modules either. Both halves are required: picking fewer
+# entries here only unblocks the removal, the manifest is what installs them.
+#
+# The reason is the main menu bar, not the catalog page. Installing those apps
+# puts Manufacturing, Project, Fleet, Repair, Maintenance and Website in the
+# menu of a tenant built for a 2–5 person hardware shop, and the menu bar is in
+# every frame of a screen recording.
+#
+# They are NOT hidden: all 15 entries are still seeded, so the catalog shows 7
+# enabled and 8 available. "Here is what you are buying, here is what is there
+# when you want it" is a better answer to "so it does manufacturing?" than
+# pretending the apps do not exist.
+DEMO_CATALOG_TIERS = ("core", "common")
+
 # Odoo default/demo placeholder companies: a demo DB's company switcher must
 # only show real companies, and a fresh login must land in the real one.
 PLACEHOLDER_COMPANY_NAMES = [
@@ -183,15 +200,6 @@ class SapianDemoTrader(models.AbstractModel):
                 }
             )
         if placeholders:
-            # website_sale (a catalog app, so a dependency here) creates a
-            # demo website owned by the placeholder company, and Odoo refuses
-            # to archive a company that still owns one. Move any such website
-            # to the demo company first.
-            website = self.env.get("website")
-            if website is not None:
-                website.sudo().search([("company_id", "in", placeholders.ids)]).write(
-                    {"company_id": company.id}
-                )
             placeholders.sudo().write({"active": False})
 
     @api.model
@@ -199,9 +207,12 @@ class SapianDemoTrader(models.AbstractModel):
         """Create (or adopt) a company and push it through the onboarding wizard.
 
         The wizard applies profile, branding, catalog and Ethiopian defaults.
-        No module installation can occur here: this module's dependencies
-        already include every standard catalog pick, so the wizard's install
-        step is a guaranteed no-op (no registry replacement mid-provision).
+        No module installation can occur here: the wizard is handed the
+        ``DEMO_CATALOG_TIERS`` entries only, and every one of those is a
+        manifest dependency of this module, so the wizard's install step is a
+        guaranteed no-op (no registry replacement mid-provision). The
+        `optional` tier is seeded into the catalog but not picked, so it shows
+        as available-and-not-enabled — see DEMO_CATALOG_TIERS.
 
         With ``adopt_existing`` the database's single company is reused, which
         is what yields a one-company demo. It RAISES if that company already
@@ -241,6 +252,7 @@ class SapianDemoTrader(models.AbstractModel):
         if not company:
             company = self.env["res.company"].create({"name": company_name})
         catalog = self.env["sapian.module.catalog"]._ensure_default_catalog(company)
+        picks = catalog.filtered(lambda entry: entry.tier in DEMO_CATALOG_TIERS)
         wizard = (
             self.env["sapian.onboarding.wizard"]
             .with_company(company)
@@ -253,7 +265,7 @@ class SapianDemoTrader(models.AbstractModel):
                     "city": "Addis Ababa",
                     "fiscal_year": "ethiopian",
                     "primary_color": "#1a7f5a",
-                    "module_catalog_ids": [Command.set(catalog.ids)],
+                    "module_catalog_ids": [Command.set(picks.ids)],
                 }
             )
         )
