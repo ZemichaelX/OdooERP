@@ -30,6 +30,11 @@
         "web.assets_backend": [
             "sapian_theme/static/src/scss/sapian_backend.scss",
         ],
+        # The login page needs its own rule: the frontend bundle never consults
+        # $o-brand-primary. See the header of sapian_frontend.scss.
+        "web.assets_frontend": [
+            "sapian_theme/static/src/scss/sapian_frontend.scss",
+        ],
     },
     "post_init_hook": "post_init_hook",
 }

@@ -364,3 +364,56 @@ class TestReportAssetGuard(HttpCase):
         self.env["ir.config_parameter"].sudo().set_param("web.base.url", "")
         with self.assertRaises(ReportAssetsUnreachable):
             assert_report_assets_reachable(self.env, timeout=2)
+
+
+@tagged("post_install", "-at_install")
+class TestLoginPageIsActuallyBranded(HttpCase):
+    """Assert what the BROWSER RECEIVES, not what the SCSS source says.
+
+    The gap between those two is exactly where this defect hid. The palette
+    file said teal, `web.assets_frontend` contained the string "#14454F" seven
+    times, and the login button still rendered Odoo purple — because
+    `.btn-primary` is generated from Bootstrap's $theme-colors MAP, which
+    `html_editor` (auto_install:True) rebuilds from the website editor's
+    palette in web._assets_frontend_helpers. $o-brand-primary is never
+    consulted on the frontend at all.
+
+    A source-file assertion would have passed throughout. This one fetches the
+    login page, follows its stylesheet link, and looks at the rule that styles
+    the button.
+    """
+
+    def _served_login_css(self):
+        page = self.url_open("/web/login")
+        self.assertEqual(page.status_code, 200)
+        hrefs = re.findall(r'href="([^"]+web\.assets_frontend[^"]*\.css)"', page.text)
+        self.assertTrue(hrefs, "the login page must link a frontend stylesheet")
+        css = self.url_open(hrefs[0])
+        self.assertEqual(css.status_code, 200, "the login stylesheet must be served")
+        self.assertGreater(len(css.text), 1024, "an empty stylesheet styles nothing")
+        return css.text
+
+    def test_served_login_stylesheet_brands_the_sign_in_button(self):
+        css = self._served_login_css()
+        primary = brand.brand_primary()
+        rules = re.findall(r"\.oe_login_form \.btn-primary\{[^}]*\}", css)
+        self.assertTrue(
+            rules,
+            "no .oe_login_form .btn-primary rule in the served CSS — the login "
+            "button is falling back to Odoo's own palette. See "
+            "sapian_theme/static/src/scss/sapian_frontend.scss for why this "
+            "rule is needed and cannot come from $o-brand-primary.",
+        )
+        joined = " ".join(rules)
+        self.assertIn(
+            primary.upper(),
+            joined.upper(),
+            "the sign-in button is not the brand colour in the CSS the browser "
+            "is actually served: %s" % joined[:200],
+        )
+
+    def test_served_login_stylesheet_uses_the_derived_hover(self):
+        """The hover must move with the brand, from the same single source."""
+        css = self._served_login_css()
+        rules = " ".join(re.findall(r"\.oe_login_form \.btn-primary\{[^}]*\}", css))
+        self.assertIn(brand.brand_secondary().upper(), rules.upper())

@@ -69,3 +69,8 @@ $sapian-brand-ink-on-tint: if(
 // ring, with no selector override at all.
 $o-brand-primary: $sapian-brand;
 $o-brand-odoo: $sapian-brand;
+
+// NOTE: this reaches the BACKEND and the REPORT bundle, but NOT the login
+// page. The frontend never consults $o-brand-primary — see sapian_frontend.scss
+// for what the login page needs and why.
+
