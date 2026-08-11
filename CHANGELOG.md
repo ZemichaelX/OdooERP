@@ -101,6 +101,31 @@ including `stock.lot.pharma_state` (success/warning/danger, monotonic); the one
 real gap was the import dossier's status badge on the **form**, which was
 undecorated while the list version was colour-coded.
 
+### Brand colour: deep teal, and a guard for report verification ✅ (2026-08-11)
+**Primary is now `#14454F`**, from the logo. `#C416D3` was a placeholder chosen
+before the logo existed and appears nowhere in the brand. Not a hex swap: the
+hover/tint recipe was derived for a mid-tone colour and `shade-color(15%)` on a
+dark primary moves HSL lightness by only −2.9pp — a hover that reads as
+*disabled*. The derivation is now luminance-aware (`$sapian-brand-is-dark`):
+dark brands lighten, light brands darken. It is a general rule, not a teal
+special case — for the old magenta it reproduces exactly the previously
+approved `#A713B3`, which a test pins. White on the new primary is 10.53:1
+against the old 4.77:1. Full palette, contrast table and the amber
+(`#E39A42`) fill-only rule now live in `brand/README.md`, together with the
+four-petal pinwheel motif and the rule that module icons reuse the same blade
+in a different palette colour.
+
+**`report_render.py` — the harness hole becomes a guard.** wkhtmltopdf fetches
+the report stylesheet over HTTP from `web.base.url`; when it cannot, it renders
+the document unstyled and says nothing — valid PDF, exit 0, and every layout
+identical. `render_pdf_checked()` GETs the exact stylesheet URL the document
+links and raises `ReportAssetsUnreachable`, naming the cause and the fix, rather
+than returning a document that merely looks right. Proved to discriminate: it
+passes against a live server, fails against a dead port, and it caught a real
+404 during this very change — a palette upgrade invalidates the compiled
+bundles and an already-running server keeps serving the old asset hash, so the
+re-brand procedure now includes a server restart.
+
 ### Default report layout: Boxed, for new companies only ✅ (2026-08-10)
 `web.external_layout_boxed` is set on companies at creation, through the same
 marker machinery as the colour (`sapian_layout_applied`): a company that chose

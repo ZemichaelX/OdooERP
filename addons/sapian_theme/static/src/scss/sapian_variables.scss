@@ -24,19 +24,42 @@
 // =============================================================================
 
 // ---- The one value -----------------------------------------------------
-// Provisional. Expected to change.
-$sapian-brand: #C416D3;
+// Deep teal, from the Sapian logo (see brand/README.md for the full four-colour
+// palette and which colour is allowed where).
+$sapian-brand: #14454F;
 
 // ---- Derived ------------------------------------------------------------
-// Hover / active: 15% toward black.  shade-color($sapian-brand, 15%)
+// The derivation is LUMINANCE-AWARE, and has to be. Darkening is the
+// conventional hover treatment, but on an already-dark brand it is nearly
+// invisible and reads as *disabled* rather than hovered: on #14454F,
+// shade-color(15%) moves HSL lightness by only -2.9pp (19.4% -> 16.5%).
+// Lightening the same amount moves it +12.0pp and is unmistakable.
+//
+// So a dark brand lightens on hover and a light one darkens. This is not a
+// special case for teal — it is the rule that keeps ONE editable value correct
+// across any future re-brand. Sanity check: for the previous magenta
+// (#C416D3, lightness 45.7%) it takes the shade branch and reproduces exactly
+// the value that was in use, #A713B3.
+$sapian-brand-is-dark: lightness($sapian-brand) < 40%;
+
+$sapian-brand-hover: if(
+    $sapian-brand-is-dark,
+    tint-color($sapian-brand, 15%),
+    shade-color($sapian-brand, 15%)
+);
+
 // Light tint for badges and subtle backgrounds: 10% brand on white.
-//   tint-color($sapian-brand, 90%)
-// Ink on that tint: the brand itself measures 4.08:1 on the tint and FAILS
-// WCAG AA for normal text. The shade measures 5.30:1 and passes. So badge
-// text uses the shade, never the raw brand. See README.md.
-$sapian-brand-hover: shade-color($sapian-brand, 15%);
 $sapian-brand-tint: tint-color($sapian-brand, 90%);
-$sapian-brand-ink-on-tint: $sapian-brand-hover;
+
+// Ink on that tint. A dark brand is already legible on its own tint
+// (#14454F on #E8ECED = 8.85:1); a mid-tone one is not — the old magenta
+// measured 4.08:1 and FAILED AA, which is why the shade was used instead.
+// Same predicate, so both cases stay right without a second hardcoded colour.
+$sapian-brand-ink-on-tint: if(
+    $sapian-brand-is-dark,
+    $sapian-brand,
+    $sapian-brand-hover
+);
 
 // ---- Feed Odoo ----------------------------------------------------------
 // Both are `!default` in web/static/src/scss/primary_variables.scss (lines 77
