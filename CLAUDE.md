@@ -19,7 +19,9 @@ in a future multi-tenant SaaS (no hard-coded company assumptions; respect `compa
    config models / data files with effective dates — NEVER hard-coded in business logic.
    Changing a future rate must never alter historical payslips/entries.
 5. Money uses Odoo currency rounding utilities, never naive floats.
-6. Secrets (SMTP, Telebirr keys, DB creds) come from environment variables, never committed.
+6. Secrets (SMTP, Telebirr keys, DB creds) come from environment variables or a
+   gitignored runtime file, never committed. See also "A secret in a transcript is a
+   published secret" below.
 7. All user-facing strings use Odoo translation (`_()`), so Amharic can be added.
 8. Least privilege: define security groups + `ir.model.access.csv` (+ record rules where
    multi-company/portal-exposed) for every new model.
@@ -55,6 +57,35 @@ Run Odoo module tests:
 
 Run the fast pure-Python payroll tests (no Odoo needed):
     pytest addons/l10n_et_payroll/reference/
+
+## A secret in a transcript is a published secret
+A generated secret is written to its gitignored destination and **never echoed**.
+Not to stdout, not into a report, not into a PR body, not into a commit message,
+not into a log file. Say WHERE it lives, never WHAT it is.
+
+This rule was missing, and its absence burned a password within minutes of that
+password being created: the master password was rotated correctly into
+`config/odoo.runtime.conf` — and then printed in plain text in a handover report,
+which is a chat log, which is storage. Rotating a secret and then publishing it
+is not rotation. The second password had to be rotated too.
+
+Concretely:
+- Generate straight into the destination file. `python3 - >/dev/null` or a
+  redirect, so the value has no path to a terminal.
+- Report the SHAPE only: "master password regenerated in
+  `config/odoo.runtime.conf`, 40 characters". That is enough for the operator to
+  confirm the work happened.
+- The operator reads it from the file. That is the handover channel.
+- After any rotation, grep the tracked tree, the full history, commit messages,
+  the PR body and the scratch directory for the old value, and say where you
+  looked.
+- The same applies to anything a scanner would flag: API tokens, DSNs, dumps
+  containing customer data. If you would not commit it, do not type it.
+
+`scripts/lib/preflight.sh::ensure_runtime_conf` deliberately prints the password
+it generates — that is an OPERATOR-facing terminal, run by the person who needs
+the value, and it is the documented handover for provisioning. An agent report is
+not that terminal.
 
 ## A success signal that can be produced by doing nothing is not a success signal
 Four failures in two days shared one shape: the happy path and the do-nothing
