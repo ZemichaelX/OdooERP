@@ -34,12 +34,42 @@ class ResCompany(models.Model):
         "deliberate client colour — the two are otherwise identical.",
     )
 
+    sapian_layout_applied = fields.Char(
+        string="SapianERP Layout Applied",
+        copy=False,
+        help="The report layout key SapianERP set on this company. Same purpose "
+        "as sapian_brand_applied and the same rule: empty means somebody else "
+        "chose the layout, so it is never ours to change. A separate field "
+        "rather than a third part of the colour marker, because the layout and "
+        "the colour pair change independently.",
+    )
+
     # ---- helpers ---------------------------------------------------------
 
     @api.model
     def _sapian_brand_pair(self):
         """The current house pair, from the one palette file."""
         return (brand.brand_primary(), brand.brand_secondary())
+
+    @api.model
+    def _sapian_default_layout(self):
+        """The house report layout, or an empty recordset if unavailable.
+
+        Boxed: conservative structure that suits documents carrying many
+        required fields, and it survives photocopying and mono printing —
+        which is what actually happens to an Ethiopian invoice. It is also one
+        of the five layouts that do NOT use company_primary/secondary_color
+        (only wave and bubble do), so the brand does not reach the page through
+        it. That is a deliberate, separable decision: colour and layout are
+        independent here.
+
+        TREAT AS TEMPORARY. The MoR-required invoice elements are their own
+        task and will likely produce a custom layout that moots this choice.
+        """
+        return (
+            self.env.ref("web.external_layout_boxed", raise_if_not_found=False)
+            or self.env["ir.ui.view"]
+        )
 
     def _sapian_marker(self, primary, secondary):
         return "%s|%s" % (primary, secondary)
@@ -79,12 +109,19 @@ class ResCompany(models.Model):
         keeps it, and gets no marker, so we will never rewrite it later.
         """
         primary, secondary = self._sapian_brand_pair()
+        layout = self._sapian_default_layout()
         for vals in vals_list:
             ours = "primary_color" not in vals and "secondary_color" not in vals
             vals.setdefault("primary_color", primary)
             vals.setdefault("secondary_color", secondary)
             if ours:
                 vals.setdefault("sapian_brand_applied", self._sapian_marker(primary, secondary))
+            # The layout is marked independently of the colour: a caller may
+            # supply one and not the other, and each is only ever ours to
+            # change if we were the one who set it.
+            if layout and "external_report_layout_id" not in vals:
+                vals["external_report_layout_id"] = layout.id
+                vals.setdefault("sapian_layout_applied", layout.key)
         return super().create(vals_list)
 
     # ---- drift detection: WARN ONLY, never writes -------------------------

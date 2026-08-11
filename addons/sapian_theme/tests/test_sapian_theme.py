@@ -131,6 +131,42 @@ class TestSapianTheme(TransactionCase):
         self.assertEqual(company.primary_color, "#0057B8")
         self.assertEqual(company.secondary_color, "#003C7E")
 
+    # ---- the default report layout ---------------------------------------
+
+    def test_new_company_gets_the_house_layout_and_is_marked(self):
+        company = self.env["res.company"].create({"name": "Layout Default Co"})
+        self.assertEqual(company.external_report_layout_id.key, "web.external_layout_boxed")
+        self.assertEqual(company.sapian_layout_applied, "web.external_layout_boxed")
+
+    def test_a_chosen_layout_is_never_overridden_and_carries_no_marker(self):
+        """Same rule as the colour: supplied means theirs, and unmarked."""
+        wave = self.env.ref("web.external_layout_wave")
+        company = self.env["res.company"].create(
+            {"name": "Own Layout Co", "external_report_layout_id": wave.id}
+        )
+        self.assertEqual(company.external_report_layout_id, wave)
+        self.assertFalse(
+            company.sapian_layout_applied,
+            "a layout we did not choose must not be marked as ours",
+        )
+
+    def test_existing_companies_keep_their_layout(self):
+        """The default is for NEW companies only — nothing back-fills a layout.
+
+        Nothing in this module writes external_report_layout_id outside create(),
+        so a company that predates the theme keeps whatever it had, including
+        no layout at all.
+        """
+        company = self.env["res.company"].create({"name": "Pre-existing Co"})
+        company.write({"external_report_layout_id": False, "sapian_layout_applied": False})
+        self.env["res.company"]._sapian_detect_brand_drift()
+        self.env["res.company"]._sapian_apply_brand(dry_run=False)
+        self.env["res.company"]._sapian_apply_brand_defaults()
+        self.assertFalse(
+            company.external_report_layout_id,
+            "no code path may set a layout on an existing company",
+        )
+
     # ---- re-brand drift: detect loudly, change nothing ---------------------
 
     def _fake_old_brand(self, company, primary="#0B6E4F", secondary="#095E43"):
