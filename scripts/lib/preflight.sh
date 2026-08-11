@@ -89,3 +89,82 @@ require_docker_stack() {
   done
   return 0
 }
+
+# ensure_runtime_conf <repo-root>
+#
+# Guarantee config/odoo.runtime.conf exists AND carries a real master password.
+# Returns 1 on any problem; callers must abort.
+#
+# compose mounts config/odoo.runtime.conf, which is gitignored and therefore
+# absent on a fresh clone. If a compose command ever ran before the file
+# existed, docker created that path as a DIRECTORY — both cases are detected
+# here so the documented path can't strand the operator on a mount error.
+#
+# The password part is not decoration. config/odoo.conf.example is TRACKED, so
+# it ships the placeholder `admin_passwd = CHANGEME`. A plain copy would
+# therefore produce a runtime config that HAS an admin_passwd line — which is
+# exactly what the old "already set, leaving it unchanged" test looked for — and
+# every instance would silently run with the master password `CHANGEME`. That is
+# the do-nothing-and-pass shape: the guard would be green precisely because the
+# work had not happened. So the placeholder is treated as UNSET, a secret is
+# generated, and the function fails hard if CHANGEME survives.
+ensure_runtime_conf() {
+  local repo_root="$1"
+  local runtime="${repo_root}/config/odoo.runtime.conf"
+  local template="${repo_root}/config/odoo.conf.example"
+
+  if [ -d "${runtime}" ]; then
+    log_error "!! ${runtime} is a DIRECTORY (docker created it before the file existed)."
+    log_error "!! Remove it (rm -rf config/odoo.runtime.conf) and re-run — it will be recreated from config/odoo.conf.example."
+    return 1
+  fi
+
+  if [ ! -f "${template}" ]; then
+    log_error "!! Template ${template} is missing — cannot create the runtime config."
+    return 1
+  fi
+
+  if [ ! -f "${runtime}" ]; then
+    log_line ">> Creating config/odoo.runtime.conf from config/odoo.conf.example."
+    cp "${template}" "${runtime}" || {
+      log_error "!! Could not copy ${template} to ${runtime}."
+      return 1
+    }
+  fi
+
+  # A placeholder or an empty value both count as "no password set".
+  if grep -qE '^[[:space:]]*admin_passwd[[:space:]]*=[[:space:]]*(CHANGEME)?[[:space:]]*$' "${runtime}"; then
+    local pw
+    pw="$(head -c 48 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | cut -c1-40)"
+    if [ "${#pw}" -lt 32 ]; then
+      log_error "!! Could not generate a 32+ character master password (got ${#pw})."
+      return 1
+    fi
+    # sed -i differs between GNU and BSD; rewrite via a temp file so the script
+    # behaves the same on Git Bash, macOS and Linux.
+    local tmp="${runtime}.tmp.$$"
+    sed "s|^[[:space:]]*admin_passwd[[:space:]]*=.*$|admin_passwd = ${pw}|" "${runtime}" > "${tmp}" \
+      && mv "${tmp}" "${runtime}" || {
+      rm -f "${tmp}"
+      log_error "!! Could not write the generated master password into ${runtime}."
+      return 1
+    }
+    log_line "============================================================"
+    log_line ">> Generated database master password (admin_passwd) for this instance:"
+    log_line ">>     ${pw}"
+    log_line ">> Written to config/odoo.runtime.conf. STORE IT IN YOUR VAULT NOW — shown once."
+    log_line "============================================================"
+  fi
+
+  # Assert the positive: a real value is present. Never trust the absence of an
+  # error above.
+  if ! grep -qE '^[[:space:]]*admin_passwd[[:space:]]*=[[:space:]]*[^[:space:]]{16,}[[:space:]]*$' "${runtime}"; then
+    log_error "!! ${runtime} has no usable admin_passwd (needs 16+ non-blank characters)."
+    return 1
+  fi
+  if grep -qE '^[[:space:]]*admin_passwd[[:space:]]*=[[:space:]]*CHANGEME[[:space:]]*$' "${runtime}"; then
+    log_error "!! ${runtime} still carries the CHANGEME placeholder as its master password."
+    return 1
+  fi
+  return 0
+}

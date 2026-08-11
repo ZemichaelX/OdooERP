@@ -19,6 +19,97 @@ jobs:
       - name: Install tooling
         run: pip install --quiet ruff black pylint pylint-odoo pytest python-dateutil
 
+      - name: Install gitleaks
+        # Pinned by version AND checksum: this step's whole job is to detect
+        # secrets, so silently fetching a different binary defeats it.
+        env:
+          GITLEAKS_VERSION: "8.28.0"
+          GITLEAKS_SHA256: "a65b5253807a68ac0cafa4414031fd740aeb55f54fb7e55f386acb52e6a840eb"
+        run: |
+          set -euo pipefail
+          url="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -sSL -o /tmp/gitleaks.tar.gz "${url}"
+          echo "${GITLEAKS_SHA256}  /tmp/gitleaks.tar.gz" | sha256sum -c -
+          tar xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
+          sudo install -m 0755 /tmp/gitleaks /usr/local/bin/gitleaks
+          gitleaks version
+
+      - name: Prove the secret scanner discriminates
+        # An untested guard is another thing that passes by doing nothing. Plant
+        # the exact shape of the leak we actually had and require gitleaks to
+        # report it. If this step passes, the scan below means something; if the
+        # binary, the config or the rule ever breaks, this fails first and says
+        # so, instead of the repo scan quietly finding nothing forever.
+        #
+        # ASSERT ON THE REPORT, NOT THE EXIT CODE. gitleaks exits non-zero both
+        # when it finds a secret and when it PANICS on an unparseable config
+        # (RE2 rejects lookahead, and this ruleset was written with one at
+        # first). An exit-code check calls the panic a success and then scans
+        # nothing for the rest of the repo's life.
+        #
+        # The planted password is generated here rather than written literally,
+        # so no password-shaped string lives in a tracked file — .gitleaks.toml
+        # has no path exemptions, and this file is scanned too.
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/leakcheck/config
+          planted="$(head -c 48 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | cut -c1-32)"
+          printf '[options]\nadmin_passwd = %s\n' "${planted}" > /tmp/leakcheck/config/odoo.conf
+          gitleaks dir --no-banner --redact --config "${GITHUB_WORKSPACE}/.gitleaks.toml" \
+            --report-format json --report-path /tmp/leakcheck-report.json /tmp/leakcheck || true
+          if [ ! -f /tmp/leakcheck-report.json ]; then
+            echo "::error::gitleaks wrote no report — it did not run (bad config, bad binary). Every scan in this job is meaningless."
+            exit 1
+          fi
+          python3 - <<'PY'
+          import json, sys
+          findings = json.load(open("/tmp/leakcheck-report.json"))
+          rules = sorted({f["RuleID"] for f in findings})
+          print(f"planted-secret scan: {len(findings)} finding(s), rules={rules}")
+          if "odoo-admin-passwd" not in rules:
+              print("::error::gitleaks did NOT flag a planted admin_passwd. "
+                    "The scanner or the odoo-admin-passwd rule is broken, so the repo scan proves nothing.")
+              sys.exit(1)
+          PY
+          echo "Planted secret was detected — the scanner discriminates."
+
+      - name: Scan the working tree for secrets
+        # `dir`, not `git`: this asks "does the tree we would ship contain a
+        # secret", which is the question a reviewer needs answered on every PR.
+        # It deliberately does NOT scan history — the Aug 2026 admin_passwd leak
+        # is still in old commits (the value is rotated and dead; the scrub
+        # decision is pending on repository visibility, see
+        # docs/KICKOFF-engineering-hygiene.md item 1). Scanning history here
+        # would pin CI red on a finding no PR can fix.
+        #
+        # This is a BACKSTOP. The control is .githooks/pre-commit — a check that
+        # runs after the commit cannot stop the commit.
+        run: gitleaks dir --no-banner --redact --config .gitleaks.toml .
+
+      - name: Assert the secret split is intact
+        # A direct regression test for the leak that has now happened twice.
+        run: |
+          set -euo pipefail
+          fail=0
+          if git ls-files --error-unmatch config/odoo.conf >/dev/null 2>&1; then
+            echo "::error::config/odoo.conf is TRACKED again. Secrets belong in the gitignored config/odoo.runtime.conf; the tracked template is config/odoo.conf.example."
+            fail=1
+          fi
+          if ! git ls-files --error-unmatch config/odoo.conf.example >/dev/null 2>&1; then
+            echo "::error::config/odoo.conf.example is missing — the scripts create the runtime config from it."
+            fail=1
+          fi
+          if ! grep -qE '^admin_passwd = CHANGEME$' config/odoo.conf.example; then
+            echo "::error::config/odoo.conf.example does not ship the CHANGEME placeholder — it may carry a real master password."
+            fail=1
+          fi
+          if git ls-files --error-unmatch config/odoo.runtime.conf >/dev/null 2>&1; then
+            echo "::error::config/odoo.runtime.conf is TRACKED. That file holds the live admin_passwd."
+            fail=1
+          fi
+          [ "${fail}" -eq 0 ] && echo "Secret split intact: example tracked with CHANGEME, working files ignored."
+          [ "${fail}" -eq 0 ]
+
       - name: Assert there is something to lint
         # Every check in this job PASSES ON AN EMPTY TREE. Measured, not assumed:
         #   black --check addons        -> exit 0, "No Python files ... Nothing to do"

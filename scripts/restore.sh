@@ -28,17 +28,10 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COMPOSE="$(compose_cmd "${REPO_ROOT}/docker/docker-compose.yml")"
 
 # Pre-flight: compose mounts config/odoo.runtime.conf (gitignored, absent on a
-# fresh clone). If a compose command ever ran before the file existed, docker
-# created that path as a DIRECTORY — detect both cases so the documented path
-# can't strand the operator on a confusing mount error.
-if [ -d "${REPO_ROOT}/config/odoo.runtime.conf" ]; then
-  echo "!! ${REPO_ROOT}/config/odoo.runtime.conf is a DIRECTORY (docker created it before the file existed)." >&2
-  echo "!! Remove it (rm -rf config/odoo.runtime.conf) and re-run — it will be recreated from config/odoo.conf." >&2
+# fresh clone). See ensure_runtime_conf in scripts/lib/preflight.sh.
+if ! ensure_runtime_conf "${REPO_ROOT}"; then
+  log_error "!! Aborting — config/odoo.runtime.conf is not usable."
   exit 1
-fi
-if [ ! -f "${REPO_ROOT}/config/odoo.runtime.conf" ]; then
-  echo ">> Creating config/odoo.runtime.conf from the template."
-  cp "${REPO_ROOT}/config/odoo.conf" "${REPO_ROOT}/config/odoo.runtime.conf"
 fi
 
 DB_NAME="${1:?usage: restore.sh <db_name> <db_dump> [filestore_tgz]}"

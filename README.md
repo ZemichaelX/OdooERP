@@ -21,14 +21,36 @@ playbook, customization guide). Operating rules: `CLAUDE.md`.
 - Accountant-review PDF samples in `samples/` (rendered from the demo tenant).
 
 ## Quick start
-1. `cp .env.example docker/.env` and set a `DB_PASSWORD` (compose's project
+1. `./scripts/install_hooks.sh` — installs the tracked git hooks, including a
+   **gitleaks pre-commit secret scan**. Needs gitleaks on PATH
+   (`winget install gitleaks` / `brew install gitleaks`); the hook refuses to
+   commit if it is missing, deliberately. See
+   [Secrets](#secrets-nothing-real-in-a-tracked-file).
+2. `cp .env.example docker/.env` and set a `DB_PASSWORD` (compose's project
    directory is `docker/`, so it reads `docker/.env` — a repo-root `.env` is
    ignored).
-2. `cp config/odoo.conf config/odoo.runtime.conf` — the gitignored runtime
-   config that compose mounts (`scripts/provision_client.sh` creates it and
-   adds a per-tenant `admin_passwd`).
-3. `docker compose -f docker/docker-compose.yml up -d`
-4. Open http://localhost:8069.
+3. `cp config/odoo.conf.example config/odoo.runtime.conf` — the gitignored
+   runtime config that compose mounts. Set `admin_passwd` (replace `CHANGEME`)
+   and, if several databases exist, `dbfilter`.
+   `scripts/provision_client.sh` does this for you, generating a strong
+   per-tenant `admin_passwd` and printing it once for your vault.
+4. `docker compose -f docker/docker-compose.yml up -d`
+5. Open http://localhost:8069.
+
+## Secrets: nothing real in a tracked file
+| File | Tracked? | Holds |
+|---|---|---|
+| `config/odoo.conf.example` | **yes** | template only — `admin_passwd = CHANGEME`, blank `dbfilter` |
+| `config/odoo.runtime.conf` | no (gitignored) | the real `admin_passwd`, the real `dbfilter`. What compose mounts. |
+| `.env.example` | **yes** | template only |
+| `docker/.env` | no (gitignored) | the real `DB_PASSWORD` |
+
+Never edit a tracked file to hold a per-instance value. The template and the
+working file used to be the same path (`config/odoo.conf`), and a live Odoo
+master password reached git twice as a result — the second time under a comment
+reading "LOCAL SECRET, DO NOT COMMIT". A comment is not a control; the
+pre-commit hook is. Background and the rotation checklist:
+[`docs/KICKOFF-engineering-hygiene.md`](docs/KICKOFF-engineering-hygiene.md).
 
 ## The demo (sales demo + local testing)
 Build the sales-demo database **from nothing**, with Odoo's own demo data OFF:

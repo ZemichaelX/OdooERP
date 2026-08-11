@@ -1,6 +1,11 @@
 .env
 # Runtime odoo.conf mounted by docker-compose — carries the per-tenant admin_passwd.
 config/odoo.runtime.conf
+# The working config. It carries admin_passwd and a per-instance dbfilter, so it
+# is NEVER tracked. Copy config/odoo.conf.example to create it.
+# (This leak has happened twice: PR #2 fixed it and it came back, because the
+# template and the working file were the same path.)
+config/odoo.conf
 *.pyc
 __pycache__/
 .pytest_cache/

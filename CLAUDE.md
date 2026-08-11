@@ -30,16 +30,18 @@ in a future multi-tenant SaaS (no hard-coded company assumptions; respect `compa
 ## Repo layout
 - addons/          custom modules (l10n_et_*, sapian_*)
 - docker/          Dockerfile, docker-compose
-- config/          odoo.conf template (no secrets)
+- config/          odoo.conf.example — TEMPLATE ONLY, never a real value
 - scripts/         provisioning, backup helpers
 - data-templates/  spreadsheet import templates for onboarding
 - docs/            architecture & module docs (the master planning package)
 
 ## How to run locally
+    ./scripts/install_hooks.sh    # once per clone: gitleaks pre-commit secret scan
     cp .env.example docker/.env   # set DB_PASSWORD etc. (compose's project dir
                                   # is docker/, so it reads docker/.env)
-    cp config/odoo.conf config/odoo.runtime.conf   # runtime config compose mounts
-                                  # (gitignored; provision_client.sh adds admin_passwd)
+    cp config/odoo.conf.example config/odoo.runtime.conf   # runtime config compose mounts
+                                  # (gitignored; replace admin_passwd = CHANGEME.
+                                  #  provision_client.sh generates one for you)
     docker compose -f docker/docker-compose.yml up -d
     # open http://localhost:8069
 

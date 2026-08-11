@@ -1,0 +1,102 @@
+# gitleaks configuration for SapianERP.
+#
+# Extends the upstream default ruleset (AWS keys, private keys, generic API
+# tokens, …) and adds the rules that matter for an Odoo deployment repo.
+#
+# Run by .githooks/pre-commit BEFORE the commit is created, and again in CI.
+# The hook is the one that counts: a check that runs after the commit cannot
+# stop the commit.
+#
+# TWO SYNTAX TRAPS, both hit while writing this file:
+#
+# 1. gitleaks compiles these with RE2, which has NO lookahead. `(?!CHANGEME)`
+#    does not merely fail to match — it fails to COMPILE, and gitleaks panics on
+#    startup. A panic exits non-zero, so a caller that only checks the exit code
+#    reads "secret found" and looks healthy while scanning nothing at all.
+#    Placeholders are therefore excluded with allowlists, and the CI
+#    discrimination test asserts on the report CONTENT, not the exit status.
+#
+# 2. `\s` matches newlines. `KEY\s*=\s*(\S{12,})` on a blank `TELEBIRR_APP_ID=`
+#    happily ran on to the NEXT line and reported the following variable's name
+#    as the secret. Horizontal whitespace only: `[ \t]*`.
+
+title = "SapianERP"
+
+[extend]
+useDefault = true
+
+# --- Odoo master password ---------------------------------------------------
+# The leak this file was written for. config/odoo.conf carried a live
+# `admin_passwd` into git TWICE. The tracked template now ships CHANGEME and any
+# other value is a finding.
+[[rules]]
+id = "odoo-admin-passwd"
+description = "Odoo database master password (admin_passwd) in a tracked file"
+regex = '''(?i)admin_passwd[ \t]*[:=][ \t]*['"]?([^\s#;'"]{6,})'''
+secretGroup = 1
+keywords = ["admin_passwd"]
+
+  [[rules.allowlists]]
+  description = "Placeholders and env-var indirection are not secrets."
+  regexTarget = "match"
+  regexes = [
+    '''(?i)CHANGEME''',
+    '''(?i)change[_-]?me''',
+    '''(?i)your[_-]?[a-z_]*password''',
+    '''\$\{''',
+    '''\$[A-Za-z_][A-Za-z0-9_]*''',
+    '''<[^>]+>''',
+  ]
+
+# --- Database password ------------------------------------------------------
+[[rules]]
+id = "odoo-db-password"
+description = "Odoo/Postgres password in a config, compose or env file"
+regex = '''(?i)(?:db_password|POSTGRES_PASSWORD)[ \t]*[:=][ \t]*['"]?([^\s#;'"]{6,})'''
+secretGroup = 1
+keywords = ["db_password", "DB_PASSWORD", "POSTGRES_PASSWORD"]
+
+  [[rules.allowlists]]
+  description = "Placeholders and env-var indirection are not secrets."
+  regexTarget = "match"
+  regexes = [
+    '''(?i)CHANGEME''',
+    '''(?i)change[_-]?me''',
+    '''(?i)your[_-]?[a-z_]*password''',
+    '''\$\{''',
+    '''\$[A-Za-z_][A-Za-z0-9_]*''',
+    '''<[^>]+>''',
+  ]
+
+# --- Ethiopian integrations we plan to add ----------------------------------
+# Written down before the code exists, so the first Telebirr key is caught by a
+# rule rather than by a reader.
+[[rules]]
+id = "et-payment-gateway-key"
+description = "Telebirr / Chapa / SantimPay credential"
+regex = '''(?i)(?:telebirr|chapa|santimpay)[_-]?(?:api)?[_-]?(?:key|secret|token|appid|app_id)[ \t]*[:=][ \t]*['"]?([A-Za-z0-9_\-]{12,})'''
+secretGroup = 1
+keywords = ["telebirr", "chapa", "santimpay"]
+
+  [[rules.allowlists]]
+  regexTarget = "match"
+  regexes = [
+    '''(?i)CHANGEME''',
+    '''(?i)change[_-]?me''',
+    '''(?i)your[_-]?[a-z_]*(?:key|secret|token)''',
+    '''\$\{''',
+  ]
+
+[[rules]]
+id = "sentry-dsn"
+description = "Sentry DSN with an embedded key"
+regex = '''https://([0-9a-f]{16,})@[a-z0-9.\-]+\.ingest\.[a-z0-9.\-]*sentry\.io/[0-9]+'''
+secretGroup = 1
+keywords = ["sentry.io"]
+
+# --- No global path allowlist ------------------------------------------------
+# Deliberately absent. Every file in the tree is scanned, including this one, the
+# hook and the hygiene doc — which is why none of them contains a literal
+# password-shaped string as an example. Where a test needs one, it is generated
+# at run time into a temp directory. An exemption list is where a rule goes to
+# die quietly.
