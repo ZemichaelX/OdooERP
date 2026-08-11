@@ -12,6 +12,10 @@ from pathlib import Path
 from odoo.tests import HttpCase, TransactionCase, tagged
 
 from odoo.addons.sapian_theme import brand
+from odoo.addons.sapian_theme.report_render import (
+    ReportAssetsUnreachable,
+    assert_report_assets_reachable,
+)
 
 MODULE_ROOT = Path(brand.__file__).parent
 PALETTE_FILE = MODULE_ROOT / "static" / "src" / "scss" / "sapian_variables.scss"
@@ -71,18 +75,50 @@ class TestSapianTheme(TransactionCase):
             "longer one edit:\n  " + "\n  ".join(offenders),
         )
 
-    def test_python_shade_matches_the_scss_recipe(self):
-        """brand.shade() must equal Bootstrap's shade-color($c, 15%).
+    def test_python_derivation_matches_the_scss_recipe(self):
+        """The Python and SCSS derivations must not drift apart.
 
-        The CSS hover state and the company's secondary_color are supposed to
-        be the same colour. They are computed by different languages, so this
-        pins the arithmetic: mix 15% black == 85% of every channel.
+        The document's secondary colour and the interface hover state are meant
+        to be one colour computed in two languages. If they diverge a company
+        prints one teal while the UI shows another.
         """
+        # The two primitives, against hand-computed values.
         self.assertEqual(brand.shade("#C0FFEE", 0.15), "#A3D9CA")
+        self.assertEqual(brand.tint("#C0FFEE", 0.15), "#C9FFF1")
+        # The luminance-aware branch, both ways round.
+        self.assertTrue(brand.is_dark("#14454F"), "deep teal must take the dark branch")
+        self.assertFalse(brand.is_dark("#C416D3"), "mid magenta must take the light branch")
         primary = brand.brand_primary()
-        channels = [int(primary.lstrip("#")[i : i + 2], 16) for i in (0, 2, 4)]
-        expected = "#%02X%02X%02X" % tuple(round(c * 0.85) for c in channels)
+        expected = brand.tint(primary) if brand.is_dark(primary) else brand.shade(primary)
         self.assertEqual(brand.brand_secondary(), expected)
+
+    def test_the_rule_still_reproduces_the_previous_brand(self):
+        """A general rule, not a special case for teal.
+
+        The luminance-aware derivation must give the previously-approved value
+        for the previous brand. If a future edit breaks this, the rule has
+        stopped being general and has become tuned to one colour.
+        """
+        magenta = "#C416D3"
+        self.assertEqual(brand.shade(magenta), "#A713B3")
+        self.assertFalse(brand.is_dark(magenta))
+
+    def test_a_dark_brand_hover_is_actually_visible(self):
+        """The defect the rule exists to prevent, stated as a number.
+
+        Darkening #14454F moves HSL lightness by under 3 points — a hover a
+        user cannot see, which reads as disabled. Lightening moves it by more
+        than 10.
+        """
+        primary = brand.brand_primary()
+        base = brand.hsl_lightness(primary)
+        darker = brand.hsl_lightness(brand.shade(primary))
+        lighter = brand.hsl_lightness(brand.tint(primary))
+        self.assertLess(
+            abs(base - darker), 5.0, "shading a dark brand should be near-invisible"
+        )
+        self.assertGreater(lighter - base, 8.0, "the chosen hover must be plainly visible")
+        self.assertEqual(brand.brand_secondary(), brand.tint(primary))
 
     # ---- the dark-mode assumption ----------------------------------------
 
@@ -292,3 +328,39 @@ class TestSapianThemeLogin(HttpCase):
         html = self._login_page()
         self.assertIn("+251 91 234 5678", html)
         self.assertIn("Support:", html)
+
+
+@tagged("post_install", "-at_install")
+class TestReportAssetGuard(HttpCase):
+    """The guard that makes a silently-unstyled PDF impossible to produce.
+
+    HttpCase because the whole point is a live server: the guard must PASS when
+    one is reachable and FAIL when it is not, and only a real server can
+    demonstrate the first half.
+    """
+
+    def test_guard_passes_when_the_server_is_reachable(self):
+        self.env["ir.config_parameter"].sudo().set_param(
+            "web.base.url", "http://127.0.0.1:%d" % self.http_port()
+        )
+        self.assertTrue(assert_report_assets_reachable(self.env))
+
+    def test_guard_fails_when_nothing_is_listening(self):
+        """The discrimination proof: make the bad thing happen on purpose.
+
+        Port 1 is reserved and nothing listens there, which is exactly the
+        state a `docker compose run --rm` container is in. An untested guard is
+        one more thing that passes by doing nothing.
+        """
+        self.env["ir.config_parameter"].sudo().set_param("web.base.url", "http://127.0.0.1:1")
+        with self.assertRaises(ReportAssetsUnreachable) as caught:
+            assert_report_assets_reachable(self.env, timeout=2)
+        message = str(caught.exception)
+        self.assertIn("silently UNSTYLED", message, "the error must name the consequence")
+        self.assertIn("web.base.url", message, "the error must name the cause")
+        self.assertIn("docker compose", message, "the error must name the usual fix")
+
+    def test_guard_fails_when_base_url_is_empty(self):
+        self.env["ir.config_parameter"].sudo().set_param("web.base.url", "")
+        with self.assertRaises(ReportAssetsUnreachable):
+            assert_report_assets_reachable(self.env, timeout=2)

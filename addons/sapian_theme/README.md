@@ -14,10 +14,20 @@ declaration out of that file (`brand.py`) so the company record default cannot
 drift from the compiled CSS.
 
 ```scss
-$sapian-brand: #C416D3;                              // the one value
-$sapian-brand-hover: shade-color($sapian-brand, 15%);  // derived
+$sapian-brand: #14454F;                     // the one value — deep teal
+$sapian-brand-is-dark: lightness($sapian-brand) < 40%;
+$sapian-brand-hover: if($sapian-brand-is-dark,      // derived, luminance-aware
+                        tint-color($sapian-brand, 15%),
+                        shade-color($sapian-brand, 15%));
 $sapian-brand-tint:  tint-color($sapian-brand, 90%);   // derived
 ```
+
+The hover derivation is **luminance-aware and has to be**. Darkening is the
+conventional hover, but on a dark brand it is invisible: `shade-color(15%)` moves
+`#14454F` by −2.9pp of HSL lightness and reads as *disabled*. Lightening moves it
++12.0pp. The rule is general, not tuned to teal — for the previous mid-tone
+magenta it takes the shade branch and reproduces exactly the value that was in
+use. The full palette and the amber fill-only rule live in `brand/README.md`.
 
 `test_no_raw_hex_outside_palette` fails the build if a colour literal appears
 anywhere else in the module, so "one edit" stays true rather than decaying into
@@ -32,6 +42,11 @@ $EDITOR addons/sapian_theme/static/src/scss/sapian_variables.scss
 # 2. rebuild assets on the tenant
 docker compose -f docker/docker-compose.yml run --rm odoo \
   odoo -d <db> -u sapian_theme --stop-after-init
+
+# 3. restart the server. The upgrade invalidates the compiled asset bundles and
+#    a already-running process keeps serving the OLD asset hash, so reports
+#    render unstyled until it restarts. Observed, not theorised.
+docker compose -f docker/docker-compose.yml restart odoo
 ```
 
 Verified: changing the value once moved `web.assets_backend` (160 occurrences),
@@ -121,20 +136,41 @@ existing company, and `test_existing_companies_keep_their_layout` enforces that.
 MoR-required invoice elements are a separate task that outranks the aesthetics
 and will likely produce a custom layout that moots this choice.
 
+## Verifying a report — use the guard, never a bare render
+
+**A PDF rendered outside a live server is not the PDF a client gets.**
+wkhtmltopdf fetches the report stylesheet over HTTP from `web.base.url`, and when
+it cannot it says nothing and renders the document unstyled — valid PDF, exit 0,
+plausible size, and every layout identical. That fault cost three wrong
+conclusions here before it was found.
+
+`report_render.py` makes it impossible to hit by accident:
+
+```python
+from odoo.addons.sapian_theme.report_render import render_pdf_checked
+pdf = render_pdf_checked(env, "account.report_invoice", invoice.ids)
+```
+
+It GETs the exact stylesheet URL the document links and raises
+`ReportAssetsUnreachable` — naming the cause and the usual fix — rather than
+returning a document that merely looks fine. Use it for any report verification.
+
 ## Contrast — measured, not assumed
 
 | Pair | Ratio | WCAG AA (normal text) |
 |---|---|---|
-| white on brand | 4.77:1 | PASS |
-| white on hover shade | 6.20:1 | PASS |
-| brand on white | 4.77:1 | PASS |
-| **brand on tint** | **4.08:1** | **FAIL** |
-| hover shade on tint | 5.30:1 | PASS |
+| white on brand `#14454F` | **10.53:1** | PASS |
+| white on hover `#376169` | 6.83:1 | PASS |
+| brand as ink on tint `#E8ECED` | 8.85:1 | PASS |
 
-This is why badge text uses `$sapian-brand-ink-on-tint` (the shade) and never
-the raw brand. A re-brand keeps the pair in step because both derive from the
-one value — but **re-check these numbers after changing it**, since a lighter
-brand can push white-on-brand below 4.5:1.
+Badge ink is `$sapian-brand-ink-on-tint`, which follows the same dark/light
+predicate: a dark brand is legible on its own tint and is used directly, a
+mid-tone one is not — the previous magenta measured 4.08:1 and FAILED, so the
+shade was substituted. Both cases stay correct from the one value.
+
+**Re-check these numbers after any re-brand**, since a lighter brand can push
+white-on-brand below 4.5:1. The other three palette colours and the amber
+fill-only rule are in `brand/README.md`.
 
 ## If dark mode ever becomes reachable
 
