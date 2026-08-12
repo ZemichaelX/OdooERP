@@ -32,9 +32,9 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 . "${REPO_ROOT}/scripts/lib/preflight.sh"
 COMPOSE="$(compose_cmd "${REPO_ROOT}/docker/docker-compose.yml")"
 
-if [ ! -f "${REPO_ROOT}/config/odoo.runtime.conf" ]; then
-  log_line ">> Creating config/odoo.runtime.conf from the template."
-  cp "${REPO_ROOT}/config/odoo.conf" "${REPO_ROOT}/config/odoo.runtime.conf"
+if ! ensure_runtime_conf "${REPO_ROOT}"; then
+  log_error "!! Aborting — config/odoo.runtime.conf is not usable."
+  exit 1
 fi
 if ! require_docker_stack "${COMPOSE}" db; then
   log_error "!! Aborting — the stack is not available."

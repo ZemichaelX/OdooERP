@@ -9,7 +9,7 @@ Each client runs an isolated Dockerized Odoo 19 instance (see `CLAUDE.md`).
   `-f docker/docker-compose.yml`, so its project directory — where it reads
   `.env` for `${DB_PASSWORD}` interpolation — is `docker/`.
 - `config/odoo.runtime.conf` — the odoo.conf that compose actually mounts.
-  Git-ignored because it carries per-tenant secrets; `config/odoo.conf` is
+  Git-ignored because it carries per-tenant secrets; `config/odoo.conf.example` is
   only the clean, tracked template.
 
 ## Local development / deploy steps
@@ -17,7 +17,7 @@ Each client runs an isolated Dockerized Odoo 19 instance (see `CLAUDE.md`).
 ```bash
 # from the repo root
 cp .env.example docker/.env                    # 1. set DB_PASSWORD
-cp config/odoo.conf config/odoo.runtime.conf   # 2. runtime config (see below)
+cp config/odoo.conf.example config/odoo.runtime.conf   # 2. runtime config (see below)
 docker compose -f docker/docker-compose.yml up -d
 # http://localhost:8069
 ```
@@ -25,7 +25,7 @@ docker compose -f docker/docker-compose.yml up -d
 Step 2 can be skipped when provisioning a tenant: `scripts/provision_client.sh`
 creates `config/odoo.runtime.conf` from the template if it is missing, then
 generates a strong per-tenant `admin_passwd` into it (printed once — vault it).
-Secrets never touch the tracked `config/odoo.conf`; `git status` stays clean
+Secrets never touch the tracked `config/odoo.conf.example`; `git status` stays clean
 across a provision run.
 
 ## Backups — making failure visible
@@ -63,7 +63,7 @@ silently is indistinguishable from one that works until the day you need it
 
 > **A8 (audit finding A8): do this before exposing an instance to the internet.**
 
-`config/odoo.conf` ships `proxy_mode = True`. That setting tells Odoo to trust
+`config/odoo.conf.example` ships `proxy_mode = True`. That setting tells Odoo to trust
 `X-Forwarded-*` headers — which is correct **only** when a trusted reverse proxy
 terminates TLS in front of Odoo and sets those headers. The bundled
 `docker-compose.yml` publishes port `8069` directly for local development, which
@@ -79,7 +79,7 @@ For any internet-facing deployment:
 3. Have the proxy set `X-Forwarded-For`, `X-Forwarded-Proto` and
    `X-Forwarded-Host`; keep `proxy_mode = True` so Odoo honours them **only**
    from that trusted hop.
-4. Confirm `list_db = False` stays set (it is, in `config/odoo.conf`) and that
+4. Confirm `list_db = False` stays set (it is, in `config/odoo.conf.example`) and that
    `provision_client.sh` has written a strong per-tenant `admin_passwd`
    (see audit finding A10).
 

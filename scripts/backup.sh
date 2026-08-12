@@ -64,14 +64,9 @@ fail() {
 
 # --- Preconditions -------------------------------------------------------
 # Checked BEFORE mkdir/redirect, so an unreachable stack leaves no artefact.
-if [ -d "${REPO_ROOT}/config/odoo.runtime.conf" ]; then
-  log_error "!! ${REPO_ROOT}/config/odoo.runtime.conf is a DIRECTORY (docker created it before the file existed)."
-  log_error "!! Remove it (rm -rf config/odoo.runtime.conf) and re-run — it will be recreated from config/odoo.conf."
+if ! ensure_runtime_conf "${REPO_ROOT}"; then
+  log_error "!! Aborting — config/odoo.runtime.conf is not usable."
   exit 1
-fi
-if [ ! -f "${REPO_ROOT}/config/odoo.runtime.conf" ]; then
-  log_line ">> Creating config/odoo.runtime.conf from the template."
-  cp "${REPO_ROOT}/config/odoo.conf" "${REPO_ROOT}/config/odoo.runtime.conf"
 fi
 
 # The directory itself is created first so the failure can be RECORDED: a

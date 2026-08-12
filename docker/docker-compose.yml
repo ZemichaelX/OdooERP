@@ -27,9 +27,9 @@ services:
       SENTRY_RELEASE: ${SENTRY_RELEASE:-}
     volumes:
       - ../addons:/mnt/extra-addons:ro
-      # Runtime copy of config/odoo.conf (gitignored — holds admin_passwd).
+      # Runtime copy of config/odoo.conf.example (gitignored — holds admin_passwd).
       # Created by scripts/provision_client.sh, or by hand:
-      #   cp config/odoo.conf config/odoo.runtime.conf
+      #   cp config/odoo.conf.example config/odoo.runtime.conf
       - ../config/odoo.runtime.conf:/etc/odoo/odoo.conf:ro
       - odoo-data:/var/lib/odoo
     restart: unless-stopped

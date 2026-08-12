@@ -21,14 +21,89 @@ playbook, customization guide). Operating rules: `CLAUDE.md`.
 - Accountant-review PDF samples in `samples/` (rendered from the demo tenant).
 
 ## Quick start
-1. `cp .env.example docker/.env` and set a `DB_PASSWORD` (compose's project
+1. `./scripts/install_hooks.sh` — installs the tracked git hooks, including a
+   **gitleaks pre-commit secret scan**. Needs gitleaks on PATH
+   (`winget install gitleaks` / `brew install gitleaks`); the hook refuses to
+   commit if it is missing, deliberately. It is a convenience, not the
+   guarantee — **run the verification** in
+   [Secrets](#secrets-nothing-real-in-a-tracked-file) and watch it fail, because
+   an uninstalled hook is silent.
+2. `cp .env.example docker/.env` and set a `DB_PASSWORD` (compose's project
    directory is `docker/`, so it reads `docker/.env` — a repo-root `.env` is
    ignored).
-2. `cp config/odoo.conf config/odoo.runtime.conf` — the gitignored runtime
-   config that compose mounts (`scripts/provision_client.sh` creates it and
-   adds a per-tenant `admin_passwd`).
-3. `docker compose -f docker/docker-compose.yml up -d`
-4. Open http://localhost:8069.
+3. `cp config/odoo.conf.example config/odoo.runtime.conf` — the gitignored
+   runtime config that compose mounts. Set `admin_passwd` (replace `CHANGEME`)
+   and, if several databases exist, `dbfilter`.
+   `scripts/provision_client.sh` does this for you, generating a strong
+   per-tenant `admin_passwd` and printing it once for your vault.
+4. `docker compose -f docker/docker-compose.yml up -d`
+5. Open http://localhost:8069.
+
+## Secrets: nothing real in a tracked file
+| File | Tracked? | Holds |
+|---|---|---|
+| `config/odoo.conf.example` | **yes** | template only — `admin_passwd = CHANGEME`, blank `dbfilter` |
+| `config/odoo.runtime.conf` | no (gitignored) | the real `admin_passwd`, the real `dbfilter`. What compose mounts. |
+| `.env.example` | **yes** | template only |
+| `docker/.env` | no (gitignored) | the real `DB_PASSWORD` |
+
+### Two layers, and only one of them is a guarantee
+
+| Layer | Where | Can it be bypassed? |
+|---|---|---|
+| **CI `Secret scan / gitleaks`** | `.github/workflows/secret-scan.yml`, every push and PR | **No** — once it is a required status check in branch protection. **This is the guarantee.** |
+| pre-commit hook | `.githooks/pre-commit`, your clone only | Yes — `--no-verify`, or simply never installing it. **Convenience only.** |
+
+The hook is fast and stops a mistake before it becomes a commit, but it lives in
+per-clone git config (`core.hooksPath`), which **cannot be committed**. On a
+fresh clone it silently does not exist and its absence is invisible — that is
+not a theory, it is how a test `admin_passwd` value got committed on a machine
+where the hook had never been installed. Install it, but do not rely on it.
+
+### Install the hook, then verify it actually fires
+
+Run this in Git Bash on Windows, or any POSIX shell. The commit **must fail**.
+
+```bash
+winget install gitleaks          # macOS: brew install gitleaks
+gitleaks version                 # must print a version, not "command not found"
+
+./scripts/install_hooks.sh
+git config --get core.hooksPath  # must print: .githooks
+
+printf '[options]\nadmin_passwd = %s\n' \
+  "$(head -c 48 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | cut -c1-32)" \
+  > config/leaktest.conf
+git add -f config/leaktest.conf
+git commit -m "this must be blocked"
+# EXPECT: ">> pre-commit: SECRET DETECTED IN STAGED CHANGES — commit blocked."
+
+git log --oneline -1             # must be UNCHANGED — no new commit
+git reset config/leaktest.conf && rm config/leaktest.conf
+```
+
+If `git commit` succeeded, the hook is not installed in this clone and the
+verification has told you so. Fix it before trusting it.
+
+### Verify the CI check is required (the layer that actually holds)
+
+```bash
+gh api repos/ZemichaelX/OdooERP/branches/master/protection \
+  --jq '.required_status_checks.contexts'
+# EXPECT the list to contain: gitleaks
+```
+
+To set it: **Settings → Branches → branch protection rule for `master` →
+Require status checks to pass before merging → add `gitleaks`.**
+
+### Never edit a tracked file to hold a per-instance value
+
+The template and the working file used to be the same path
+(`config/odoo.conf`), and a live Odoo master password reached git twice as a
+result — the second time under a comment reading "LOCAL SECRET, DO NOT COMMIT".
+A comment is not a control; the
+pre-commit hook is. Background and the rotation checklist:
+[`docs/KICKOFF-engineering-hygiene.md`](docs/KICKOFF-engineering-hygiene.md).
 
 ## The demo (sales demo + local testing)
 Build the sales-demo database **from nothing**, with Odoo's own demo data OFF:
