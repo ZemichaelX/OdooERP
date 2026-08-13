@@ -2,16 +2,27 @@
 #
 # SapianERP pre-commit hook: block secrets BEFORE the commit exists.
 #
-# Why a hook and not just CI: a live Odoo master password reached git twice.
-# The first time it was found in review and removed (PR #2); it came back. CI
-# would have flagged the second one too — after the commit was already written,
-# already pushed, and already in every clone. A secret's blast radius is set the
-# moment it is committed, so the check has to run before that. Same lesson as
-# pylint-odoo: a tool that only runs in CI is a tool that tells you what you
-# already shipped.
+# THIS IS THE ONLY THING THAT CAN STOP A SECRET IN THIS REPOSITORY.
 #
-# Install (once per clone):
+# Why a hook and not just CI: a live Odoo master password reached git twice. The
+# first time it was found in review and removed (PR #2); it came back. CI would
+# have flagged the second one too — after the commit was already written, already
+# pushed, and already in every clone. A secret's blast radius is set the moment
+# it is committed, so the check has to run before that.
+#
+# And here CI cannot even gate the merge: the repository is private on the GitHub
+# Free plan, where required status checks are unavailable (rulesets need Team,
+# classic branch protection needs Pro). The gitleaks job in
+# .github/workflows/secret-scan.yml runs and turns red, but nothing stops anyone
+# merging past it. It is an ALARM. This hook is the CONTROL.
+#
+# Which makes the install step load-bearing, not housekeeping. core.hooksPath is
+# per-clone git config and cannot be committed, so on a fresh clone this file
+# sits here doing nothing and says nothing about it.
+#
+# Install (once per clone, on EVERY machine):
 #     ./scripts/install_hooks.sh
+# Then verify it actually fires — see the README. An uninstalled hook is silent.
 #
 # Bypass, for the rare false positive:
 #     git commit --no-verify

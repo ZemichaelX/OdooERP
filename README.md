@@ -24,8 +24,9 @@ playbook, customization guide). Operating rules: `CLAUDE.md`.
 1. `./scripts/install_hooks.sh` — installs the tracked git hooks, including a
    **gitleaks pre-commit secret scan**. Needs gitleaks on PATH
    (`winget install gitleaks` / `brew install gitleaks`); the hook refuses to
-   commit if it is missing, deliberately. It is a convenience, not the
-   guarantee — **run the verification** in
+   commit if it is missing, deliberately. On this repo's plan the CI scan cannot
+   block a merge, so **this hook is the only thing that can stop a secret** —
+   run the verification in
    [Secrets](#secrets-nothing-real-in-a-tracked-file) and watch it fail, because
    an uninstalled hook is silent.
 2. `cp .env.example docker/.env` and set a `DB_PASSWORD` (compose's project
@@ -47,22 +48,35 @@ playbook, customization guide). Operating rules: `CLAUDE.md`.
 | `.env.example` | **yes** | template only |
 | `docker/.env` | no (gitignored) | the real `DB_PASSWORD` |
 
-### Two layers, and only one of them is a guarantee
+### Two layers. Nothing here is a guarantee — know which is which.
 
-| Layer | Where | Can it be bypassed? |
+| Layer | Where | What it can actually do |
 |---|---|---|
-| **CI `Secret scan / gitleaks`** | `.github/workflows/secret-scan.yml`, every push and PR | **No** — once it is a required status check in branch protection. **This is the guarantee.** |
-| pre-commit hook | `.githooks/pre-commit`, your clone only | Yes — `--no-verify`, or simply never installing it. **Convenience only.** |
+| **pre-commit hook** | `.githooks/pre-commit`, per clone | **The only thing that can stop a secret.** Blocks the commit before it exists. Bypassable with `--no-verify`, and absent entirely on a clone that never ran the installer. |
+| CI `gitleaks` | `.github/workflows/secret-scan.yml`, every push and PR | **Advisory.** Reports a secret after it is already committed and pushed. **It cannot block a merge.** |
 
-The hook is fast and stops a mistake before it becomes a commit, but it lives in
-per-clone git config (`core.hooksPath`), which **cannot be committed**. On a
-fresh clone it silently does not exist and its absence is invisible — that is
-not a theory, it is how a test `admin_passwd` value got committed on a machine
-where the hook had never been installed. Install it, but do not rely on it.
+**Why CI cannot block:** this repository is private on the GitHub **Free** plan,
+where required status checks are unavailable — rulesets need Team, classic
+branch protection needs Pro. The `gitleaks` job runs on every push and every pull
+request and turns the check red, but a red check on Free is a notification, not
+a gate. Anyone can merge past it.
+
+That inverts the usual advice, so state it plainly: **the hook is the control
+and CI is the alarm.** Neither is automatic. Install the hook in every clone,
+and treat a red `gitleaks` check as "a secret is already public in this repo,
+rotate it now" rather than as something that stopped anything.
+
+The hook's weakness is real too: `core.hooksPath` is per-clone git config and
+**cannot be committed**, so on a fresh clone it silently does not exist and its
+absence produces no output at all. That is not a theory — it is how a test
+`admin_passwd` value got committed on a machine where the hook had never been
+installed. Which is why the next step is not optional.
 
 ### Install the hook, then verify it actually fires
 
 Run this in Git Bash on Windows, or any POSIX shell. The commit **must fail**.
+Do this in **every clone**, on every machine — the hook does not travel with the
+repository.
 
 ```bash
 winget install gitleaks          # macOS: brew install gitleaks
@@ -85,16 +99,22 @@ git reset config/leaktest.conf && rm config/leaktest.conf
 If `git commit` succeeded, the hook is not installed in this clone and the
 verification has told you so. Fix it before trusting it.
 
-### Verify the CI check is required (the layer that actually holds)
+**Verified on Windows** (Git Bash, gitleaks 8.30.1, 2026-08-11) by the
+maintainer, both branches: refused to commit with gitleaks absent, and refused
+again with `SECRET DETECTED` once installed.
+
+### If the plan ever changes to Pro or Team
+
+Then, and only then, `gitleaks` can become a required status check and CI stops
+being advisory: **Settings → Branches → branch protection rule for `master` →
+Require status checks to pass before merging → add `gitleaks`.** Verify:
 
 ```bash
 gh api repos/ZemichaelX/OdooERP/branches/master/protection \
   --jq '.required_status_checks.contexts'
 # EXPECT the list to contain: gitleaks
+# On Free this call returns 404 Branch not protected — that is the current, expected state.
 ```
-
-To set it: **Settings → Branches → branch protection rule for `master` →
-Require status checks to pass before merging → add `gitleaks`.**
 
 ### Never edit a tracked file to hold a per-instance value
 
