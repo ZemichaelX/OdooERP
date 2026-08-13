@@ -1,0 +1,54 @@
+// =============================================================================
+// The LOGIN PAGE. Colour only, and only what $o-brand-primary cannot reach.
+//
+// WHY THIS FILE EXISTS — measured, not assumed:
+// the backend derives $primary from $o-brand-primary
+// (web/static/src/scss/bootstrap_overridden.scss:31), but the frontend never
+// does. `html_editor` is auto_install:True, so it is on effectively every
+// database, and it PREPENDS its own bootstrap_overridden.scss into
+// web._assets_frontend_helpers. That file rebuilds Bootstrap's $theme-colors
+// map from the website editor's colour palette:
+//
+//     @each $name, $color in $o-theme-color-palette {
+//         $theme-colors: map-merge(('#{$name}': o-color($color)), $theme-colors);
+//     }
+//
+// `.btn-primary` is generated from that MAP, not from $primary — so setting
+// $primary or $o-brand-primary changes nothing here. The served login CSS had
+// `--btn-bg` set to Odoo's own purple ($o-enterprise-color, in
+// web/static/src/scss/primary_variables.scss), with the brand nowhere near it.
+// The literal value is deliberately not repeated here: test_no_raw_hex_outside
+// _palette forbids colour literals outside the palette file, and it is right
+// to — a hex in a comment drifts as silently as one in a rule.
+//
+// Overriding the editor palette instead would mean reaching into
+// o-color()/o-related-color() and the colour-combination system — a large,
+// recursive surface, for a page whose only frontend consumer we have is the
+// login form. We ship no `website` module. So: one scoped rule, derived from
+// the single palette variable, verified against the CSS the browser is
+// actually served.
+//
+// FRAGILITY: this is a class-based selector override, the same category as the
+// notebook tab indicator. If `.oe_login_form` is renamed the rule stops
+// matching and the button reverts to Odoo purple — visible, not broken. Listed
+// in "Check these on upgrade" in README.md.
+// =============================================================================
+
+.oe_login_form {
+    .btn-primary {
+        --btn-bg: #{$sapian-brand};
+        --btn-border-color: #{$sapian-brand};
+        --btn-hover-bg: #{$sapian-brand-hover};
+        --btn-hover-border-color: #{$sapian-brand-hover};
+        --btn-active-bg: #{$sapian-brand-hover};
+        --btn-active-border-color: #{$sapian-brand-hover};
+        // White on the brand is 10.53:1 — see README.md.
+        --btn-color: #{$white};
+        --btn-hover-color: #{$white};
+        --btn-active-color: #{$white};
+    }
+
+    a {
+        color: $sapian-brand-hover;
+    }
+}

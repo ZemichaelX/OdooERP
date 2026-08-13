@@ -202,17 +202,24 @@ brand used as text or as an accent line against a dark surface.
 Ordered by how likely they are to break, worst first. All three fail *silently*
 — the UI stays correct and usable, it just stops being branded.
 
-1. **Active notebook tab indicator** — `sapian_backend.scss` overrides
+1. **Login sign-in button** — `sapian_frontend.scss` overrides
+   `.oe_login_form .btn-primary`. The frontend bundle **never** consults
+   `$o-brand-primary`: `html_editor` (auto_install) rebuilds Bootstrap's
+   `$theme-colors` map from the website editor's palette, and `.btn-primary` is
+   generated from that map. If `.oe_login_form` is renamed the button reverts
+   to Odoo's purple. `TestLoginPageIsActuallyBranded` asserts the brand in the
+   **served** stylesheet, so this fails loudly rather than silently.
+2. **Active notebook tab indicator** — `sapian_backend.scss` overrides
    `.o_notebook .nav-tabs .nav-link.active`. This is the module's only
    class-based selector override. If Odoo renames those classes the rule stops
    matching and the tab reverts to Odoo's default underline.
-2. **Form statusbar** — overrides the `--o-statusbar-background-active` /
+3. **Form statusbar** — overrides the `--o-statusbar-background-active` /
    `--o-statusbar-border-active` custom properties declared in
    `web/static/src/views/fields/statusbar/statusbar_field.scss`. If Odoo renames
    them the declaration is ignored and the statusbar falls back to its neutral
    grey. **That fallback is a feature, not a caveat** — the form stays perfectly
    readable, it just loses the accent.
-3. **`web._assets_primary_variables`** — the bundle we prepend into. The leading
+4. **`web._assets_primary_variables`** — the bundle we prepend into. The leading
    underscore marks it internal, but ten shipped Odoo modules extend it
    (`account`, `mail`, `portal`, `website`, `html_builder`, …), so breaking it
    would break Odoo's own code. Lowest risk of the three.
