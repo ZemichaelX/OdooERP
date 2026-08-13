@@ -34,19 +34,29 @@ file. The comment saying "do not commit" is not a control; it is a wish.
 | Template/working split | `config/odoo.conf.example` (tracked) vs `config/odoo.runtime.conf` (gitignored) | There is no tracked file an operator has any reason to edit with a real value. |
 | `config/odoo.conf` gitignored | `.gitignore` | The old path cannot come back even by habit or by `git add -A`. |
 | Placeholder is not a password | template ships `admin_passwd = CHANGEME` | — and `ensure_runtime_conf` treats CHANGEME as UNSET, generates a real secret, and **fails hard if CHANGEME survives**. Otherwise the fix would ship instances whose master password is the string CHANGEME: green because nothing happened. |
-| **CI secret scan — THE GUARANTEE** | `.github/workflows/secret-scan.yml` | Runs on every push and PR; unskippable once required in branch protection. |
-| gitleaks pre-commit hook | `.githooks/pre-commit`, `.gitleaks.toml` | Blocks the commit locally. **Convenience only** — see below. |
+| **gitleaks pre-commit hook — THE ONLY CONTROL** | `.githooks/pre-commit`, `.gitleaks.toml` | Blocks the commit before it exists. Per-clone; see its limits below. |
+| CI secret scan — **advisory** | `.github/workflows/secret-scan.yml` | Runs on every push and PR and turns red. **Cannot block a merge on this plan.** |
 | Hook installer | `scripts/install_hooks.sh` | `core.hooksPath = .githooks`. |
 | Placeholder assertion | secret-scan workflow | Independent of the pattern rules: fails if `config/odoo.conf.example` stops shipping `CHANGEME`. |
 
-### Both layers, and why neither alone is enough
+### Both layers, their real limits, and which one actually holds
 
-**A check that runs after the commit cannot stop the commit.** By the time CI
-speaks, the secret is in the object database, in the push, and in every clone
-that fetched. That is the case for the hook, and it is real.
+Each layer has a genuine weakness. Neither is a guarantee. Write both down,
+because a control described more strongly than it behaves is how the next leak
+gets waved through.
 
-**A pre-commit hook cannot be guaranteed to exist.** `core.hooksPath` is
-per-clone git config and **cannot be committed**. On a fresh clone the hook
+**CI cannot block a merge here.** The repository is private on the GitHub
+**Free** plan: rulesets require Team, classic branch protection requires Pro.
+`secret-scan.yml` runs on every push and every pull request and turns the
+`gitleaks` check red — but on Free a red check is a notification, not a gate.
+Anyone can merge past it. **CI is ADVISORY.**
+
+**A check that runs after the commit cannot stop the commit anyway.** By the
+time CI speaks, the secret is in the object database, in the push, and in every
+clone that fetched. Even required, CI would be containment, not prevention.
+
+**The hook can prevent — but cannot be guaranteed to exist.** `core.hooksPath`
+is per-clone git config and **cannot be committed**. On a fresh clone the hook
 silently does not run, and *its absence produces no output at all* — the purest
 form of the failure this repo keeps meeting: a success signal produced by doing
 nothing. Demonstrated on 2026-08-11, when a test `admin_passwd` value was
@@ -55,31 +65,34 @@ only, reverted) on a machine where the installer had never been run. The tell
 was `create mode 100644` in the commit output: the hook file was *new to that
 checkout*, so the hook config had only ever been set in another environment.
 
-So:
+So, as things actually stand:
 
-- **CI is the guarantee.** `secret-scan.yml` runs on every push and every pull
-  request, cannot be bypassed with `--no-verify`, and once it is a REQUIRED
-  status check cannot be merged past. It is a separate workflow from `ci.yml`
-  precisely so it has a stable check name to require, and so an unrelated
-  failing lint step can never cancel it.
-- **The hook is a fast local convenience.** Worth installing — it saves a
-  rotation — but never the thing being relied on.
+- **The hook is the control.** It is the only mechanism that can stop a secret
+  from becoming a commit. It is per-clone and manual, so installing and
+  *verifying* it on every machine is a real operational step, not a nicety.
+- **CI is the alarm.** A red `gitleaks` check means *a secret is already in the
+  repository* — rotate it, do not merely fix the diff. `secret-scan.yml` is kept
+  a separate workflow from `ci.yml` so it has a stable check name (ready to
+  require if the plan ever changes) and so an unrelated failing lint step can
+  never cancel it.
 
-### Making it unskippable (must be done in the GitHub UI, once)
+**Verified on Windows** by the maintainer on 2026-08-11 — Git Bash, gitleaks
+8.30.1, `core.hooksPath` set, and both branches proved: refused to commit with
+gitleaks absent, refused again with `SECRET DETECTED` once installed. That
+closes the UNVERIFIED-on-Windows item below.
 
-**Settings → Branches → branch protection rule for `master` → Require status
-checks to pass before merging → add `gitleaks`.**
+### If the plan ever moves to Pro or Team
 
-Verify:
+Only then can `gitleaks` become a required status check and CI stop being
+advisory: **Settings → Branches → branch protection rule for `master` → Require
+status checks to pass before merging → add `gitleaks`.**
 
 ```bash
 gh api repos/ZemichaelX/OdooERP/branches/master/protection \
   --jq '.required_status_checks.contexts'
 # EXPECT the list to contain: gitleaks
+# On Free this returns 404 Branch not protected — the current, expected state.
 ```
-
-Until that returns `gitleaks`, the guarantee is not in place and the hook is all
-there is.
 
 ### The hook fails LOUD when gitleaks is missing
 
@@ -121,13 +134,15 @@ non-zero on a config panic too — RE2 rejects lookahead, this ruleset was first
 written with one, and the crash read as "secret found" while nothing was
 scanned.
 
-### Windows note
+### Windows — VERIFIED
 
-The ops scripts are run from **Git Bash on Windows**. `core.hooksPath` and the
-hook script are POSIX-shell and platform-neutral, but per `CLAUDE.md` that is
-Linux evidence: the hook is **UNVERIFIED on Windows** until an operator runs
-`./scripts/install_hooks.sh` and the discrimination test above in Git Bash and
-reports back. `winget install gitleaks` is the expected install path there.
+The ops scripts are run from **Git Bash on Windows**, and per `CLAUDE.md` a
+platform-specific claim needs platform evidence. That evidence exists:
+
+**2026-08-11, verified end to end by the maintainer on Windows / Git Bash,
+gitleaks 8.30.1.** `core.hooksPath` set by the installer, and *both* branches
+proved — the hook refused to commit while gitleaks was absent, and refused again
+with `SECRET DETECTED` once installed. This item is closed, not argued.
 
 ### Full-history audit (2026-08-11)
 
@@ -176,17 +191,38 @@ ever existed in the tree — every path ever added is source, docs, scripts, or
 the seven `samples/*.pdf` demo documents, which contain fictional demo-tenant
 data. No Telebirr/Chapa/SantimPay key, no Sentry DSN, no API token.
 
-### What is NOT done
+### Incident closed — history scrub deliberately NOT performed
 
-- **History scrub.** ON HOLD by decision, until #16 and the login-fix PR are
-  merged — rewriting SHAs with open PRs is avoidable pain, and the password is
-  already dead (rotated twice), so the scrub is hygiene rather than containment.
-  When it runs: `git filter-repo` over `config/odoo.conf`, force-push, and every
-  collaborator re-clones. Note the scrub does **not** remove the value from
-  GitHub's own reflog/API immediately — treat the password as permanently
-  burned regardless, which it is.
-- **Branch protection.** The CI secret scan is only a guarantee once it is a
-  required status check. Verification command above.
+**Decision, 2026-08-11: no scrub. The incident is closed.** This is a considered
+choice, not a deferral, and the reasoning is recorded so nobody reopens it out of
+unease:
+
+- **The password is dead.** Rotated twice (the second time because the
+  replacement was printed in a handover report — see the CLAUDE.md rule that now
+  exists because of it). The value in history unlocks nothing.
+- **A scrub would not make it unretrievable anyway.** `git filter-repo` plus a
+  force-push rewrites the branch, but GitHub retains the old objects through its
+  own API and reflogs; a commit SHA stays fetchable long after it is unreachable
+  from any ref. We demonstrated exactly this during this work: `ca4541b` was
+  still served by the API after being force-pushed off the branch tip. So the
+  scrub buys the appearance of removal, not removal.
+- **The cost is real.** Rewriting every SHA breaks every clone and every open
+  PR, for a value that is already worthless and would remain retrievable.
+- **The repository is now private**, so the ongoing exposure is closed by
+  access control rather than by rewriting.
+
+What actually contained this incident: rotation, plus the structural change that
+makes the same mistake much harder (template/working-file split, gitignore, hook,
+CI alarm).
+
+**The audit above stands as the permanent record of what was exposed and for how
+long.** Treat the value as permanently burned, because it is.
+
+### Still open
+
+- **CI cannot gate merges** while the repo is private on the Free plan. This is
+  a known, accepted limitation, not an oversight — the hook is the control. See
+  above for what to change if the plan moves to Pro or Team.
 
 ---
 
