@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
 {
     "name": "SapianERP Theme",
-    "version": "19.0.1.0.0",
+    "version": "19.0.1.1.0",
     "summary": "SapianERP house identity: one brand colour driving the backend, "
-    "the login page and printed documents. Horizontal — no client and no "
-    "sector styling. Re-brand by editing one value in "
+    "the login page and printed documents, plus the app rail that makes the "
+    "app icons visible on desktop. Horizontal — no client and no sector "
+    "styling. Re-brand by editing one value in "
     "static/src/scss/sapian_variables.scss.",
     "author": "Sapian Technologies PLC",
     "website": "https://sapiantech.com",
@@ -29,6 +30,12 @@
         ],
         "web.assets_backend": [
             "sapian_theme/static/src/scss/sapian_backend.scss",
+            # The app rail. A component in the `main_components` registry —
+            # nothing patched, nothing inherited. See app_rail.js for the
+            # precedent counts behind that choice.
+            "sapian_theme/static/src/scss/sapian_rail.scss",
+            "sapian_theme/static/src/js/app_rail.js",
+            "sapian_theme/static/src/xml/app_rail.xml",
         ],
         # The login page needs its own rule: the frontend bundle never consults
         # $o-brand-primary. See the header of sapian_frontend.scss.

@@ -1,0 +1,100 @@
+// =============================================================================
+// The app rail.
+//
+// Two rules that must agree with each other, so they live in ONE media query:
+//   - the rail is shown from md up;
+//   - the web client is padded from md up to make room for it.
+// Split them and you get the failure where the client is indented by 52px with
+// nothing in the gap.
+//
+// Every colour here derives from $sapian-brand in sapian_variables.scss or
+// from an Odoo/Bootstrap variable. No hex — test_no_raw_hex_outside_palette
+// fails the build otherwise.
+// =============================================================================
+
+$o-sapian-rail-width: 3.25rem !default;   // 52px at the default root size
+$o-sapian-rail-tile-height: 3rem !default;
+$o-sapian-rail-icon-size: 2rem !default;
+$o-sapian-rail-active-bar: 3px !default;
+
+// Hidden by default. Below md the rail would eat a fifth of the viewport, and
+// Odoo already ships a full-screen app drawer for that case
+// (web.NavBar.AppsMenu.Sidebar) which DOES draw the icons.
+.o_sapian_rail {
+    display: none;
+}
+
+@include media-breakpoint-up(md) {
+    // THE one padding rule. `:has()` rather than a class on <body>, so the
+    // padding appears and disappears with the rail itself — including when a
+    // fullscreen action removes it — with no second piece of state to keep in
+    // step. Odoo 19 already relies on :has() in the backend bundle
+    // (web/static/src/views/view_components/selection_box.scss:2).
+    .o_web_client:has(.o_sapian_rail) {
+        padding-left: $o-sapian-rail-width;
+    }
+
+    .o_sapian_rail {
+        position: fixed;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        z-index: $zindex-sticky;   // under modals, backdrops, popovers, tooltips
+        display: flex;
+        flex-direction: column;
+        width: $o-sapian-rail-width;
+        overflow-y: auto;
+        overflow-x: hidden;
+        background-color: $o-view-background-color;
+        border-right: 1px solid $border-color;
+
+        // The scrollbar is the affordance that says "there is more below".
+        // Do not hide it: 36 apps do not fit, and a rail that looks complete
+        // while holding half the apps is the truncation this design refuses.
+        scrollbar-width: thin;
+    }
+
+    .o_sapian_rail_app {
+        position: relative;
+        flex: 0 0 auto;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: $o-sapian-rail-tile-height;
+        text-decoration: none;
+
+        &:hover {
+            background-color: $sapian-brand-tint;
+        }
+
+        &.o_sapian_rail_app_active {
+            background-color: $sapian-brand-tint;
+
+            &::before {
+                content: "";
+                position: absolute;
+                top: 0;
+                bottom: 0;
+                left: 0;
+                width: $o-sapian-rail-active-bar;
+                background-color: $sapian-brand;
+            }
+        }
+    }
+
+    .o_sapian_rail_icon {
+        width: $o-sapian-rail-icon-size;
+        height: $o-sapian-rail-icon-size;
+        object-fit: contain;
+    }
+
+    // Only reached when an app has no icon data at all — a defect the rail's
+    // test asserts never happens. Styled anyway so the failure is a readable
+    // label rather than a broken image.
+    .o_sapian_rail_initial {
+        font-weight: 700;
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        color: $sapian-brand-ink-on-tint;
+    }
+}

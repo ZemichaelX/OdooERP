@@ -4,6 +4,53 @@ All notable changes to SapianERP. Epics per `docs/plan-2026/10-claude-code-roadm
 
 ## [Unreleased]
 
+### The app rail — `sapian_theme` (2026-08-14)
+**Odoo 19's desktop apps menu draws no icons.** `web.NavBar.AppsMenu` has two
+branches: the small-screen one renders `<img t-attf-src="{{app.webIconData}}"/>`,
+the desktop one is a plain `DropdownItem` with `t-esc="app.name"`
+(`web/static/src/webclient/navbar/navbar.xml`). So the ten icons drawn for
+`brand/icons/` were invisible on the only screen a user works in. The rail is
+what makes them exist: a persistent icon launcher down the left edge, one tile
+per root app.
+
+**A component in `main_components`, nothing patched, nothing inherited.**
+Measured on this tree: 20 registration call sites into that registry across 7
+shipped modules; 1 module patches `NavBar.prototype` (website); 0 inherit the
+`web.WebClient` template. *(The count recorded earlier as 21 re-measures as 20;
+the number is corrected in `addons/sapian_theme/README.md` rather than
+repeated.)* Five dependencies, none internal to the navbar: the registry, the
+`menu` service, `MENUS:APP-CHANGED`, `ACTION_MANAGER:UI-UPDATED`, and the
+`/odoo/<action-path>` URL shape.
+
+**36 apps, ~900 pixels: the rail scrolls, and nothing is hidden.** At a 48px
+pitch, 36 apps is 1,728px against a 900px viewport — measured `scrollHeight`
+1728 / `clientHeight` 900, with 18 tiles visible without scrolling. Every
+alternative costs more than a scroll gesture: a "more" affordance hides apps
+outright, a pinned subset needs per-user state plus a scrolling overflow list
+anyway, grouping doubles the clicks, and smaller tiles make the icons illegible
+— which is the only reason the rail exists. The scrollbar is deliberately left
+visible as the "there is more below" affordance, and the current app is scrolled
+into view on every switch.
+
+**Order comes from menu sequence, NOT the catalogue tier.** Using `tier` would
+mean `sapian_theme` depending on `sapian_core` — the exact dependency removed
+from `l10n_et_payroll` in PR #21, on the principle that a manifest describes
+what code NEEDS. Sequence already orders Odoo's own apps dropdown and drawer, is
+editable per client with no code (Settings ▸ Technical ▸ Menu Items), and
+already lands the three SapianERP apps at positions 1, 10 and 12 of 36.
+
+**Guarded in a real browser, because a source assertion would have passed
+through the login defect too.** `tests/test_app_rail.py` drives headless Chrome,
+logs in, loads `/odoo` and asserts one tile per app with a decoded icon —
+expectation read per run from `/web/webclient/load_menus`, never a fixed 36.
+Measured: `apps=36 tiles=36 loaded=36 visibleWithoutScrolling=18
+lastReachableByScrolling=true`; at 375x667 `display=none padding-left=0`. The
+same check is run against a deliberately broken DOM (rail removed, tile removed,
+icon removed) and asserted to complain about each, then to recover.
+`browser_js` *skips* when Chrome is missing, so the new `rail-render` CI job
+installs one (`scripts/install_test_browser.sh`) and requires the browser's own
+`SAPIAN-RAIL …` log lines — which a skipped run cannot produce.
+
 ### SapianERP house identity — `sapian_theme` (2026-08-10)
 First UI work in the repo. One brand colour (`#C416D3`, provisional) driving the
 backend, the login page and printed documents, from a single file:
