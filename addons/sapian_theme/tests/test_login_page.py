@@ -26,6 +26,8 @@ import re
 
 from odoo.tests import HttpCase, tagged
 
+from odoo.addons.sapian_theme import brand
+
 SUPPORT_PARAM = "sapian_theme.support_contact"
 DEMO_SUPPORT = "+251 11 555 0000"
 
@@ -176,8 +178,6 @@ class TestLoginPageAsAVisitor(HttpCase):
         request takes. It was Odoo purple at 65% opacity while every other
         check reported the brand.
         """
-        from odoo.addons.sapian_theme import brand
-
         expected = brand.brand_primary()
         rule = re.search(r"\.oe_login_form \.btn-primary\{([^}]*)\}", self._login_css())
         self.assertTrue(rule, "the login button rule is not in the served CSS")
@@ -217,8 +217,6 @@ class TestLoginPageAsAVisitor(HttpCase):
         set, and nothing else — and run through the same parse. If this passes,
         the test above proves nothing.
         """
-        from odoo.addons.sapian_theme import brand
-
         expected = brand.brand_primary()
         as_shipped = (
             ".oe_login_form .btn-primary{--btn-bg: %s; --btn-border-color: %s; "
