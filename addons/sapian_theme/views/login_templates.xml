@@ -76,6 +76,31 @@
              tried. Stating the number is what lets such a database self-heal. -->
 
         <xpath expr="//div[hasclass('text-center')][hasclass('pb-3')]" position="replace"/>
+
+        <!-- "Powered by Odoo", removed.
+
+             web/views/webclient_templates.xml:128 hardcodes
+
+                 <a href="https://www.odoo.com?utm_source=db&amp;utm_medium=auth"
+                    target="_blank">Powered by <span>Odoo</span></a>
+
+             in the login card's footer, so the page a client opens every
+             morning attributes their ERP to somebody else and links away to a
+             competitor's sales funnel. See README.md ("Odoo attribution") for
+             the licensing position: `web` is LGPL-3, which requires no
+             attribution in a user interface, and the LGPL conveys no trademark
+             licence either way — so the link is Odoo's marketing, not a legal
+             notice, and removing it removes marketing.
+
+             Matched by HREF rather than by position: the surrounding footer div
+             also holds the "Manage Databases" link, which is a real feature and
+             must survive. Nothing else in this template points at odoo.com.
+
+             The replacement is NOT put here. When `website` is installed it
+             replaces this whole card (see the header of this file), footer
+             included, and anything anchored here vanishes with it. Ours lives
+             in `login_sapian` below, anchored on the login form. -->
+        <xpath expr="//a[contains(@href, 'odoo.com')]" position="replace"/>
     </template>
 
     <template id="login_sapian" inherit_id="web.login"
@@ -112,6 +137,25 @@
             <div t-if="sapian_support" class="text-center small text-muted mt-3">
                 <span>Support:</span>
                 <span t-esc="sapian_support"/>
+            </div>
+        </xpath>
+
+        <!-- Our attribution, replacing the one removed above.
+
+             Anchored on the login FORM for the same reason everything else
+             here is: `website` throws the card away, and with it the stock
+             footer this would otherwise live in. On a database without
+             `website` the result is the same line in the same place.
+
+             The mark is INLINE (sapian_theme.mark) so it inherits `color` from
+             this block, which sapian_frontend.scss sets to the one palette
+             value. An <img> could not do that — see that template's comment. -->
+        <xpath expr="//form[contains(@t-attf-class, 'oe_login_form')]" position="after">
+            <div class="text-center small mt-3 o_sapian_powered">
+                <a href="https://sapiantech.com" target="_blank" rel="noopener">
+                    <t t-call="sapian_theme.mark"/>
+                    <span>Powered by SapianERP</span>
+                </a>
             </div>
         </xpath>
 

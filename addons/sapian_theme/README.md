@@ -482,12 +482,77 @@ Only the statusbar is branded on its **active** stage; the rest stay neutral on
 purpose, so the loudest element on a form is not the one carrying the least
 information.
 
+## Odoo attribution
+
+The login footer used to read **"Powered by Odoo"**, linking to
+`odoo.com?utm_source=db&utm_medium=auth`. It is now "Powered by SapianERP" with
+the Sapian mark, linking to sapiantech.com. The licensing position, established
+before the change:
+
+* **`web` is LGPL-3.** LGPL-3 incorporates GPL-3's terms plus additional
+  permissions. The only clause about user interfaces is GPL-3 §5(d), and it is
+  about *Appropriate Legal Notices* — defined in §0 as a copyright notice, the
+  absence-of-warranty statement, the licence notice, and how to view the
+  licence. "Powered by Odoo" with a UTM-tagged marketing link is none of those.
+  §5(d) also says in terms: *"if the Program has interactive interfaces that do
+  not display Appropriate Legal Notices, your work need not make them do so."*
+  Odoo's login page displays no such notices. **Nothing in the licence requires
+  the attribution.**
+* **The licence conveys no trademark rights either way.** GPL-3 §7(e)
+  explicitly contemplates a licensor *"declining to grant rights under
+  trademark law for use of some trade names, trademarks, or service marks"*.
+  The Odoo word mark and logo remain Odoo S.A.'s, and a copyright licence does
+  not hand them over. That cuts towards removal, not against it: the risky act
+  is *using* somebody's mark, not declining to.
+* **Odoo S.A. publishes a separate trademark policy** at odoo.com/page/trademark
+  governing use of the name and logo. **UNVERIFIED HERE:** that page could not
+  be read from the environment this work was done in (the egress proxy blocks
+  odoo.com), so it is not quoted, and no claim is made about its contents.
+  Nothing in this change depends on it — the change *removes* every use of the
+  Odoo name and mark from our surfaces rather than adding one — but if the
+  question ever becomes "may we say we are built on Odoo", read that page
+  first. Do not treat this paragraph as having answered it.
+
+Nothing in Odoo is modified. Both templates are overridden by inheritance from
+this module:
+
+| Template | Emits the line on |
+|---|---|
+| `web.login_layout` | the login card, on a database without `website` |
+| `web.brand_promotion_message` | the customer portal, surveys — and the login page itself when `website` is installed |
+
+The second one is here because it was measured, not assumed: with `website`
+installed the login page came back carrying **two** attributions, because
+website replaces the login card with its own layout whose footer calls
+`web.brand_promotion`. Overriding the shared message template fixes every
+surface that emits it, once.
+
+## The backend footer
+
+A fixed bar across the bottom of every backend page: `© <year> <Company>. All
+Rights Reserved.` plus `For Support: …`. Same shape as the app rail — a
+component in the `main_components` registry, `position: fixed`, one
+`padding-bottom` rule on `.o_web_client` guarded by `:has()`, nothing patched
+and nothing inherited — and hidden below md and during a fullscreen action for
+the same reasons.
+
+Its text arrives through `session_info` (`models/ir_http.py`), because the
+backend is an OWL application and server-side QWeb never runs there. It reads
+**the same** `sapian_theme.support_contact` parameter as the login page: two
+settings meaning the same thing is how one of them goes stale.
+
 ## Configuration
 
 | Setting | Where | Empty behaviour |
 |---|---|---|
-| Support contact on the login page | `ir.config_parameter` → `sapian_theme.support_contact` | renders nothing at all — no empty box, no stray rule |
+| Support contact — login page **and** backend footer | `ir.config_parameter` → `sapian_theme.support_contact` | renders nothing at all — no empty box, no stray rule, no "For Support:" label |
 | Login logo | `res.company.logo` | falls back to the company **name as text**, never Odoo's stock placeholder |
+
+Neither is set by this module. `sapian_demo_trader` configures both for the
+demo tenant (`_configure_login_page`), and `scripts/provision_client.sh` closes
+public sign-up on a real client. A support contact that nobody configures
+renders nothing — which is exactly how this feature shipped invisible for weeks
+with a passing test.
 
 ## Scope
 
@@ -497,6 +562,9 @@ Two things, and nothing else:
    typography, no view layout, no dashboards.
 2. **The app rail** — a persistent icon launcher, because Odoo 19's desktop
    apps menu draws no icons and the module already owns the icon assets.
+3. **Whose product it looks like** — the login attribution and the backend
+   footer. A theme that colours the buttons and leaves the page signed by
+   somebody else has done half a job.
 
 > This section previously read *"No sidebar, dashboard or menu work."* The rail
 > makes half of that false, so it is rewritten rather than left standing.

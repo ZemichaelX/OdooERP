@@ -48,6 +48,20 @@ DEMO_COMPANY_NAME = "Selam General Trading PLC"
 PERIOD_FROM = "2026-07-01"
 PERIOD_TO = "2026-07-31"
 
+# The support line the demo's login page and backend footer carry.
+#
+# A plausible Ethiopian number, and deliberately NOT a real one: +251 is
+# Ethiopia's country code and 011 is the Addis Ababa landline prefix, so it
+# reads correctly to an Ethiopian prospect. It belongs to the demo tenant, the
+# same way "Selam General Trading PLC" does — a real client's number is
+# configured at provisioning, not shipped in a demo module.
+DEMO_SUPPORT_CONTACT = "+251 11 123 4567 / support@selamtrading.example"
+
+# Where Odoo stores the "Customer Account" setting. Used only as a fallback
+# when `auth_signup` is not installed and the field cannot be asked — see
+# _signup_scope_param.
+SIGNUP_SCOPE_PARAM = "auth_signup.invitation_scope"
+
 # The catalog tiers the demo tenant actually installs. The `optional` tier —
 # CRM, Manufacturing, Project, Email Marketing, Fleet, Repair, Maintenance,
 # Website & eCommerce — is deliberately left OUT, and the manifest does not
@@ -281,6 +295,51 @@ class SapianDemoTrader(models.AbstractModel):
             )
         if placeholders:
             placeholders.sudo().write({"active": False})
+        self._configure_login_page()
+
+    @api.model
+    def _configure_login_page(self):
+        """The two system parameters the login page a prospect sees depends on.
+
+        SIGNUP OFF. Odoo's default is `b2c` — FREE SIGN UP — declared on
+        `res.config.settings.auth_signup_uninvited`
+        (auth_signup/models/res_config_settings.py:13). Nothing in this repo
+        changed it, so every demo login page has been offering "Don't have an
+        account?" on a private company ERP. `b2b` means invitation only:
+        existing users can still be sent a signup link, a stranger cannot make
+        themselves one.
+
+        The parameter KEY is read off Odoo's own field rather than typed here.
+        The setting is called `auth_signup_uninvited` but it stores itself
+        under `auth_signup.invitation_scope`, and a literal of either name is a
+        string that can silently stop matching. Asking the field means we
+        follow a rename instead of failing quietly under it.
+
+        SUPPORT CONTACT. sapian_theme reads `sapian_theme.support_contact` on
+        the login page and in the backend footer, and renders NOTHING when it is
+        empty — which is what the demo did: the feature existed, a test asserted
+        it renders when configured, and no build ever configured it. A feature
+        nobody switches on is indistinguishable from a feature nobody wrote.
+
+        Both are set unconditionally rather than only-if-absent: this is the
+        demo tenant, and its login page is a scripted artefact, not a place to
+        preserve somebody's local experiment.
+        """
+        params = self.env["ir.config_parameter"].sudo()
+        params.set_param(self._signup_scope_param(), "b2b")
+        params.set_param("sapian_theme.support_contact", DEMO_SUPPORT_CONTACT)
+
+    @api.model
+    def _signup_scope_param(self):
+        """The system-parameter key behind the "Customer Account" setting.
+
+        Read from the field so a rename in Odoo follows automatically. The
+        fallback is the documented key, used only when `auth_signup` is not
+        installed — in which case there is no signup route to disable and
+        writing the parameter is simply harmless.
+        """
+        field = self.env["res.config.settings"]._fields.get("auth_signup_uninvited")
+        return getattr(field, "config_parameter", None) or SIGNUP_SCOPE_PARAM
 
     @api.model
     def _onboard_company(self, company_name, adopt_existing=False):

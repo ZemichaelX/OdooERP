@@ -45,12 +45,12 @@ echo ">> Provisioning client DB: ${DB_NAME}"
 echo ">> Country: ${COUNTRY_CODE} | Modules: ${MODULES}"
 
 # --- Phase 1: create the DB with base only (no chart yet) ----------------------
-echo ">> [1/3] Creating database (base only)..."
+echo ">> [1/4] Creating database (base only)..."
 $COMPOSE run --rm odoo \
   odoo -d "${DB_NAME}" -i base --without-demo=all --stop-after-init
 
 # --- Phase 2: set the company country BEFORE any chart loads -------------------
-echo ">> [2/3] Setting company country to '${COUNTRY_CODE}'..."
+echo ">> [2/4] Setting company country to '${COUNTRY_CODE}'..."
 printf "%s\n" \
   "company = env['res.company'].search([], limit=1)" \
   "country = env['res.country'].search([('code','=','${COUNTRY_CODE}'.upper())], limit=1)" \
@@ -60,9 +60,40 @@ printf "%s\n" \
   | $COMPOSE run --rm -T odoo odoo shell -d "${DB_NAME}" --no-http
 
 # --- Phase 3: install the real modules — 'et' chart auto-loads now -------------
-echo ">> [3/3] Installing modules (chart auto-loads for the country)..."
+echo ">> [3/4] Installing modules (chart auto-loads for the country)..."
 $COMPOSE run --rm odoo \
   odoo -d "${DB_NAME}" -i "${MODULES}" --without-demo=all --stop-after-init
+
+# --- Phase 4: close public sign-up -----------------------------------------
+# Odoo's default for "Customer Account" is b2c — FREE SIGN UP — declared on
+# res.config.settings.auth_signup_uninvited (auth_signup/models/
+# res_config_settings.py:13). On a private company ERP that puts "Don't have an
+# account?" on the login page of every client we provision, and nothing in this
+# repo was setting it: not here, and not on the demo tenant either. Both are set
+# now; the demo's copy lives in sapian_demo_trader._configure_login_page.
+#
+# b2b = invitation only. Existing users can still be sent a signup link, a
+# stranger cannot make themselves one.
+#
+# The parameter KEY is read off Odoo's own field rather than typed in: the
+# setting is called auth_signup_uninvited and stores itself under
+# auth_signup.invitation_scope, and a literal of either name is a string that
+# can silently stop matching. It prints what it wrote, so a run that did
+# nothing does not look like a run that worked.
+echo ">> [4/4] Closing public sign-up (invitation only)..."
+SIGNUP_OUT="$(printf "%s\n" \
+  "field = env['res.config.settings']._fields.get('auth_signup_uninvited')" \
+  "key = getattr(field, 'config_parameter', None) or 'auth_signup.invitation_scope'" \
+  "env['ir.config_parameter'].sudo().set_param(key, 'b2b')" \
+  "env.cr.commit()" \
+  "print('SIGNUP %s=%s' % (key, env['ir.config_parameter'].sudo().get_param(key)))" \
+  | $COMPOSE run --rm -T odoo odoo shell -d "${DB_NAME}" --no-http 2>&1)"
+printf '%s\n' "${SIGNUP_OUT}" | grep -E '^SIGNUP ' || true
+if ! printf '%s\n' "${SIGNUP_OUT}" | grep -q '^SIGNUP .*=b2b$'; then
+  echo "!! Public sign-up is NOT closed on ${DB_NAME} — the login page will offer" >&2
+  echo "   account creation to anyone who can reach it. Read back: none." >&2
+  exit 1
+fi
 
 # Acceptance: a client database must carry no demo content. This replaces the
 # implicit guard that existed while the demo tenant shipped in demo/ (see

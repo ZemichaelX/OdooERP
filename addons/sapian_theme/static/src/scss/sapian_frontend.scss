@@ -34,6 +34,34 @@
 // in "Check these on upgrade" in README.md.
 // =============================================================================
 
+// EVERY STATE, not just the resting one.
+//
+// The first version of this rule set --btn-bg, --btn-hover-* and --btn-active-*
+// and stopped there, which left two states Odoo purple on a page that had
+// otherwise passed every brand check we have. Read out of the SERVED bundle:
+//
+//   .btn:disabled, .btn.disabled { background-color: var(--btn-disabled-bg); …
+//                                  opacity: var(--btn-disabled-opacity) }
+//   .btn:focus-visible { box-shadow: var(--btn-focus-box-shadow,
+//                                        0 0 0 .25rem RGBA(134,102,126,.5)) }
+//   .btn { --btn-focus-box-shadow: 0 0 0 .25rem rgba(var(--btn-focus-shadow-rgb), .5) }
+//
+// so an unset --btn-disabled-bg and an unset --btn-focus-shadow-rgb both fall
+// through to Odoo's purple. The disabled one is not a rare state: it is what
+// the button looks like WHILE YOU ARE LOGGING IN. web/static/src/public/login.js
+// calls addLoadingEffect() on submit, and that (core/utils/ui.js:190) adds
+// `o_btn_loading disabled pe-none` and sets `disabled = true` — so the click
+// that takes a prospect into the demo turns the button purple at 65% opacity,
+// for as long as the request takes. Nothing we had could see it: the CSS check
+// read --btn-bg, and --btn-bg is correct.
+//
+// The list below is therefore derived from the served CSS rather than from
+// memory. Bootstrap's own button custom properties, in full:
+//   resting  --btn-bg / --btn-border-color / --btn-color
+//   :hover   --btn-hover-*
+//   :active  --btn-active-*        (and .active, .show)
+//   :disabled/.disabled  --btn-disabled-*   ← the loading state
+//   :focus-visible       --btn-focus-shadow-rgb
 .oe_login_form {
     .btn-primary {
         --btn-bg: #{$sapian-brand};
@@ -42,13 +70,49 @@
         --btn-hover-border-color: #{$sapian-brand-hover};
         --btn-active-bg: #{$sapian-brand-hover};
         --btn-active-border-color: #{$sapian-brand-hover};
+        // The submitting state. Bootstrap already dims it to
+        // --btn-disabled-opacity (0.65), so the colour stays the brand and the
+        // dimming is what says "working" — a dimmed brand, not a dimmed purple.
+        --btn-disabled-bg: #{$sapian-brand};
+        --btn-disabled-border-color: #{$sapian-brand};
+        // The focus ring, as an R,G,B triple: Bootstrap composes it into
+        // rgba(var(--btn-focus-shadow-rgb), .5). to-rgb() is Bootstrap's own
+        // helper (lib/bootstrap/scss/_functions.scss:36), available here
+        // because web._assets_helpers loads _functions.scss first.
+        --btn-focus-shadow-rgb: #{to-rgb($sapian-brand)};
         // White on the brand is 10.53:1 — see README.md.
         --btn-color: #{$white};
         --btn-hover-color: #{$white};
         --btn-active-color: #{$white};
+        --btn-disabled-color: #{$white};
     }
 
     a {
         color: $sapian-brand-hover;
+    }
+}
+
+// The "Powered by SapianERP" line that replaces Odoo's.
+//
+// `color` on the anchor is what the inline mark's `fill="currentColor"`
+// resolves against, so the text and the mark cannot end up in two different
+// colours — see views/sapian_mark.xml.
+.o_sapian_powered {
+    a {
+        color: $sapian-brand;
+        text-decoration: none;
+
+        &:hover,
+        &:focus {
+            color: $sapian-brand-hover;
+            text-decoration: underline;
+        }
+    }
+
+    .o_sapian_mark {
+        width: 1em;
+        height: 1em;
+        vertical-align: -0.125em;
+        margin-right: 0.35em;
     }
 }

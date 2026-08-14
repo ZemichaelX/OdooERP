@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <!--
+        One line, two parts, and the support half disappears when nothing is
+        configured — no empty "For Support:" label, the same empty-state rule
+        the login page follows.
+
+        `d-none` is NOT used to hide below md, for the same reason the rail does
+        not use it: the padding rule that reserves space keys off the element
+        being there, so a display utility would leave a 28px gap with nothing in
+        it. The breakpoint lives in sapian_footer.scss beside the padding rule.
+    -->
+    <t t-name="sapian_theme.BackendFooter">
+        <div t-if="!state.fullscreen" class="o_sapian_footer">
+            <span class="o_sapian_footer_copy">
+                © <t t-esc="year"/> <t t-esc="company"/>. All Rights Reserved.
+            </span>
+            <span t-if="support" class="o_sapian_footer_support">
+                For Support: <t t-esc="support"/>
+            </span>
+        </div>
+    </t>
+
+</templates>

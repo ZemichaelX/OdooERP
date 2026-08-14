@@ -40,6 +40,18 @@ class TestSapianTheme(TransactionCase):
         ).group(0)
         self.assertEqual(brand.brand_primary(), declared.upper())
 
+    def test_the_mark_takes_its_colour_from_the_palette(self):
+        """No hex in the mark, and no way for it to acquire one.
+
+        `fill="currentColor"` is what lets the same file be brand-coloured on
+        the login page and in the backend footer without a second definition of
+        the colour — and it is why the hex guard below needs no exemption for
+        it.
+        """
+        inline = (MODULE_ROOT / "views" / "sapian_mark.xml").read_text()
+        self.assertIn('fill="currentColor"', inline)
+        self.assertNotRegex(inline, HEX_LITERAL.pattern)
+
     def test_no_raw_hex_outside_palette(self):
         """The one-edit property, enforced.
 
