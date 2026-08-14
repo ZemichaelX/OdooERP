@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!--
+        WHOSE BEHAVIOUR THIS IS, established before changing anything.
+
+        The Quotations list showing "Creation Date" is ODOO'S OWN DEFAULT, not
+        something this repo did. `sale.view_quotation_tree`
+        (sale/views/sale_order_views.xml:216) explicitly does:
+
+            <field name="date_order" position="replace">
+                <field name="create_date" string="Creation Date" optional="show"/>
+            </field>
+
+        and we ship no sale.order view at all — `grep` over addons/ returns
+        nothing. The Sales *Orders* list (`sale.view_order_tree`) does not do
+        the swap, so only Quotations are affected.
+
+        WHY IT MATTERS HERE AND NOWHERE ELSE.
+
+        For a real client the two dates are minutes apart and Odoo's choice is
+        reasonable. For the demo tenant every record is created in one scripted
+        run, so `create_date` is the build timestamp: seven orders all placed
+        at 14:32 today, which reads as a fixture rather than a month of trading
+        — worse than showing no date at all.
+
+        So the fix belongs to the DEMO, not to core and not to clients. This
+        view lives in sapian_demo_trader, which is never installed on a client
+        database, so a client's Quotations list keeps Odoo's default. We are
+        not second-guessing Odoo for everyone; we are making one demo readable.
+
+        Inherited in EXTENSION mode from `sale.view_quotation_tree`, so it also
+        reaches `sale.view_quotation_tree_with_onboarding` — the view the Sales
+        app actually opens, which inherits that one in primary mode.
+    -->
+    <record id="view_quotation_tree_demo_order_date" model="ir.ui.view">
+        <field name="name">sale.order.list (quotes) — demo shows the order date</field>
+        <field name="model">sale.order</field>
+        <field name="inherit_id" ref="sale.view_quotation_tree"/>
+        <field name="arch" type="xml">
+            <field name="create_date" position="replace">
+                <field name="date_order" string="Order Date" optional="show"/>
+            </field>
+        </field>
+    </record>
+</odoo>

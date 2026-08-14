@@ -318,6 +318,17 @@ OVERTIME_AMOUNT = 2000.0
 # of the demo. Cement is quoted per BAG here because that is how it is sold.
 _CEMENT_OPC_BAG_SALE = PRICES["cement_opc_quintal_sale"] / BAGS_PER_QUINTAL
 
+# The two INVOICED orders' dates. Odoo rewrites `date_order` to now() on
+# confirmation (`sale.order._prepare_confirmation_values`), so a demo order is
+# stamped with the build timestamp unless it is written back afterwards — which
+# is what made the Sales list read "seven orders all placed at 15:51 today".
+# Both sit a few days ahead of the 10 July invoice, so the list tells the
+# ordinary story: quoted, delivered, invoiced, inside one month.
+INVOICED_ORDER_DATES = {
+    "mebrat": "2026-07-06",
+    "abyssinia": "2026-07-08",
+}
+
 # (state, customer key, [(product key, qty, unit price)], order date)
 QUOTATIONS = [
     (
