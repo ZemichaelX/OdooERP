@@ -115,7 +115,11 @@ class SapianModuleCatalog(models.Model):
         ("Employees", "hr", "hr", "core"),
         ("Ethiopian Accounting", "l10n_et_base", "finance", "core"),
         ("Ethiopian Payroll", "l10n_et_payroll", "hr", "common"),
-        ("Ethiopian Statutory Reports", "l10n_et_reports", "finance", "common"),
+        # Named to match the app tile the client will actually see. The menu was
+        # renamed from "Ethiopian Statutory Reports" when l10n_et_reports became
+        # a top-level app; a prospect picking a module here and then hunting for
+        # a differently-named tile is a self-inflicted demo bug.
+        ("Ethiopian Compliance", "l10n_et_reports", "finance", "common"),
         # Standard Odoo Community apps — no Ethiopian layer yet, offered on demand.
         ("CRM", "crm", "sales", "optional"),
         ("Manufacturing", "mrp", "supply_chain", "optional"),

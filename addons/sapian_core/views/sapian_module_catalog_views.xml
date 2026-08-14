@@ -83,7 +83,14 @@
         </field>
     </record>
 
-    <menuitem id="menu_sapian_root" name="SapianERP" sequence="5"/>
+    <!-- web_icon is what makes this a TILE rather than a blank label. Without
+         it, load_menus returns web_icon_data=False and the app drawer renders
+         the name with no image at all (the <img> carries t-if="app.webIconData").
+         Measured before this change: 21 root menus on the demo tenant, exactly
+         one without an icon — this one. See brand/icons/README.md; the
+         invariant is enforced by TestAppIconInvariant in sapian_core. -->
+    <menuitem id="menu_sapian_root" name="SapianERP" sequence="5"
+              web_icon="sapian_core,static/description/icon.png"/>
     <menuitem id="menu_sapian_config" name="Configuration" parent="menu_sapian_root" sequence="10"/>
     <menuitem id="menu_sapian_module_catalog" name="Module Catalog"
               parent="menu_sapian_config" action="action_sapian_module_catalog" sequence="10"/>

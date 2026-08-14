@@ -132,10 +132,18 @@
         </field>
     </record>
 
+    <!-- TOP-LEVEL APP, renamed from "Ethiopian Statutory Reports".
+         "Compliance" is what the buyer is actually buying — VAT declarations,
+         WHT summaries and filings are the obligation, the reports are just how
+         it is discharged. Sitting beside Sales and Inventory it states what the
+         product does; buried under Accounting > Reporting it stated only that
+         we print things.
+         NOTE: `parent` is absent, not blank — see the payroll menu for why that
+         distinction matters on an existing database. -->
     <menuitem id="menu_l10n_et_reports"
-              name="Ethiopian Statutory Reports"
-              parent="account.menu_finance_reports"
-              sequence="50"/>
+              name="Ethiopian Compliance"
+              sequence="50"
+              web_icon="l10n_et_reports,static/description/icon.png"/>
     <menuitem id="menu_l10n_et_vat_declaration"
               action="action_l10n_et_vat_declaration"
               parent="menu_l10n_et_reports"

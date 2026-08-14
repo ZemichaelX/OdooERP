@@ -1,9 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
+    <!-- TOP-LEVEL APP, not a section of Employees.
+         Payroll is a product in its own right — it is the standalone
+         Payroll+HR offering in the build plan, and a prospect must be able to
+         see it beside Sales and Inventory without opening Employees first.
+         This also matches Odoo's own convention: Payroll is a top-level app in
+         Enterprise, not an hr submenu.
+         NOTE: `parent` is absent, not blank. Removing the attribute is what
+         makes this a root menu; on an EXISTING database the reparent only
+         takes effect on -u, and is verified against parent_id in the database
+         rather than against this file. -->
     <menuitem id="menu_l10n_et_payroll_root"
               name="Ethiopian Payroll"
-              parent="hr.menu_hr_root"
               sequence="60"
+              web_icon="l10n_et_payroll,static/description/icon.png"
               groups="hr.group_hr_user"/>
     <menuitem id="menu_l10n_et_payroll_run"
               action="action_l10n_et_payroll_run"
