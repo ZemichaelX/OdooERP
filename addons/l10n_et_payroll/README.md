@@ -3,7 +3,7 @@
 Ethiopian payroll engine + monthly workflow. Epic A of the revised backlog
 (CLAUDE.md); spec `docs/plan-2026/07-ethiopian-localization.md` §2.
 
-## Workflow (Ethiopian Payroll menu, under Employees)
+## Workflow (Ethiopian Payroll — a top-level app, not a section of Employees)
 1. **Payroll Run** (monthly): select employees (defaults to all), *Generate
    Payslips* — basic salary from each employee's `hr.version` wage, citizenship
    from nationality. Odoo 19 Community has no `hr_contract`/`hr_payroll`;

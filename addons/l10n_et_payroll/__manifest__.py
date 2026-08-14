@@ -9,6 +9,11 @@
     "website": "https://sapiantech.com",
     "category": "Localization/Ethiopia",
     "license": "LGPL-3",
+    # A top-level app, not an Employees section. This is the standalone
+    # Payroll+HR product, and it carries its own icon
+    # (static/description/icon.png) so it renders as a tile rather than a bare
+    # label. See brand/icons/README.md.
+    "application": True,
     "depends": ["hr", "account", "l10n_et_base", "sapian_core"],
     "data": [
         "security/ir.model.access.csv",

@@ -1,4 +1,9 @@
-# l10n_et_reports — Ethiopia Statutory Reports (SapianERP)
+# l10n_et_reports — Ethiopian Compliance (SapianERP)
+
+Ships as the top-level app **Ethiopian Compliance** (menu renamed from
+"Ethiopian Statutory Reports" and unparented from Accounting > Reporting when
+it was promoted): compliance is the obligation the client is buying, the
+reports are how it is discharged.
 
 Thin statutory-reports slice (Epic B of the revised backlog, CLAUDE.md; spec
 `docs/plan-2026/07-ethiopian-localization.md` §5 — everything else in §5 stays

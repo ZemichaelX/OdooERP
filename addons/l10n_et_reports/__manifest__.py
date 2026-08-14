@@ -9,6 +9,10 @@
     "website": "https://sapiantech.com",
     "category": "Localization/Ethiopia",
     "license": "LGPL-3",
+    # A top-level app ("Ethiopian Compliance"), not a section under Accounting >
+    # Reporting. Compliance is what the client is buying; it carries its own
+    # icon (static/description/icon.png). See brand/icons/README.md.
+    "application": True,
     "depends": ["l10n_et_base"],
     "data": [
         "security/ir.model.access.csv",
