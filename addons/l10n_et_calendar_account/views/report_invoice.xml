@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- On the printed invoice.
+
+         Each date's output is replaced by a pair of lines, each gated by the
+         company's "Calendar on Documents" setting via the mixin's
+         l10n_et_report_shows(). With the default "both" a reader sees the
+         Gregorian date and the Ethiopian one beneath it; set to "Ethiopian
+         only" the Gregorian line disappears entirely, which is the point —
+         a setting that only ever ADDS a line is not a choice of calendar.
+
+         No Python here: the template calls two mixin methods, and the bridge
+         contributes nothing but the xpath. -->
+    <template id="report_invoice_document" inherit_id="account.report_invoice_document">
+        <xpath expr="//div[@name='invoice_date']/div[@t-field='o.invoice_date']" position="replace">
+            <div t-if="o.l10n_et_report_shows('gregorian')" t-field="o.invoice_date">2023-09-12</div>
+            <div t-if="o.l10n_et_report_shows('ethiopian')"
+                 name="l10n_et_invoice_date"
+                 t-out="o.l10n_et_display('invoice_date')">Hamle 1, 2017</div>
+        </xpath>
+        <xpath expr="//div[@name='due_date']/div[@t-field='o.invoice_date_due']" position="replace">
+            <div t-if="o.l10n_et_report_shows('gregorian')" t-field="o.invoice_date_due">2023-10-31</div>
+            <div t-if="o.l10n_et_report_shows('ethiopian')"
+                 name="l10n_et_invoice_date_due"
+                 t-out="o.l10n_et_display('invoice_date_due')">Nehase 1, 2017</div>
+        </xpath>
+    </template>
+</odoo>

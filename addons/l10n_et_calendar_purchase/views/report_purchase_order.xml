@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- On the printed purchase order / RFQ.
+
+         Same shape as the invoice bridge: each date's output becomes a pair of
+         lines gated by the company's "Calendar on Documents" setting, so
+         "Ethiopian only" really does remove the Gregorian line.
+
+         NOTE, so it is not mistaken for an omission: Odoo prints the Order
+         DEADLINE only while the order is a request for quotation. Once it is
+         confirmed the same block prints the Confirmation Date (date_approve)
+         instead, which is not one of the two fields in scope, so no Ethiopian
+         date appears beside it. Expected Arrival prints in both states. -->
+    <template id="report_purchaseorder_document" inherit_id="purchase.report_purchaseorder_document">
+        <xpath expr="//p[@t-field='o.date_order']" position="replace">
+            <p t-if="o.l10n_et_report_shows('gregorian')"
+               t-field="o.date_order" t-options="{'date_only': 'true'}" class="m-0"/>
+            <p t-if="o.l10n_et_report_shows('ethiopian')"
+               name="l10n_et_date_order" class="m-0"
+               t-out="o.l10n_et_display('date_order')">Hamle 1, 2017</p>
+        </xpath>
+        <xpath expr="//p[@t-field='o.date_planned']" position="replace">
+            <p t-if="o.l10n_et_report_shows('gregorian')"
+               t-field="o.date_planned" t-options="{'date_only': 'true'}" class="m-0"/>
+            <p t-if="o.l10n_et_report_shows('ethiopian')"
+               name="l10n_et_date_planned" class="m-0"
+               t-out="o.l10n_et_display('date_planned')">Nehase 1, 2017</p>
+        </xpath>
+    </template>
+</odoo>
