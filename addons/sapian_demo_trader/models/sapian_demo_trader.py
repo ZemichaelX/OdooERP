@@ -16,7 +16,12 @@ feature visibly firing:
 
 Hand-computed month totals (tests enforce): output VAT 17,295 on 115,300; input
 VAT 13,770 on 91,800; net VAT +3,525 PAYABLE; WHT 2,064 + 4,500 + 1,200 = 7,764;
-payroll gross 23,800, PAYE 3,900, pension 1,526/2,398, net 18,374.
+payroll gross 58,300, PAYE 11,525, pension 3,941/6,193, net 42,834.
+
+The tenant also carries a SALES PIPELINE — three draft quotations, one sent,
+one confirmed and delivered but deliberately not invoiced — so the Sales app
+opens on something to walk through. None of it posts to the ledger, so none of
+the totals above move with it.
 
 These follow from demo_catalogue.py: every order line takes its price_unit from
 cat.PRICES, so the month's totals are DOWNSTREAM of the catalogue, not an
@@ -29,9 +34,11 @@ All dates are pinned inside July 2026 so every statutory report has one clean
 period window with exact GL tie-outs, independent of the wall clock.
 """
 
+import base64
 import logging
 
 from odoo import Command, api, models
+from odoo.tools import file_open
 
 from . import demo_catalogue as cat
 
@@ -156,6 +163,7 @@ class SapianDemoTrader(models.AbstractModel):
                 self._configure_demo_login(existing)
             return existing
         company = self._onboard_company(company_name, adopt_existing=adopt_existing)
+        self._set_company_logo(company)
         # stock only auto-creates warehouses for new companies in TEST mode
         # (stock/models/res_company.py); at demo-load time we must create it
         # ourselves or SO confirmation finds no delivery rule.
@@ -169,6 +177,9 @@ class SapianDemoTrader(models.AbstractModel):
         demo._create_opening_stock(products)
         employees = demo._create_employees()
         demo._run_sales_flow(partners, products)
+        # After the invoiced flow, so the pipeline's one confirmed order draws
+        # on what July actually leaves on hand rather than on opening stock.
+        demo._create_quotations(partners, products)
         demo._run_purchase_flow(partners, products)
         demo._create_direct_bills(partners, products)
         demo._run_payroll(employees)
@@ -200,6 +211,37 @@ class SapianDemoTrader(models.AbstractModel):
         """
         # sudo: group administration, same as the rest of provisioning.
         self.env.ref("base.group_user").sudo()._apply_group(self.env.ref("uom.group_uom"))
+
+    @api.model
+    def _set_company_logo(self, company):
+        """Give the demo tenant its OWN mark — deliberately not the Sapian one.
+
+        WHOSE LOGO THIS IS, because it is the whole argument.
+
+        Selam General Trading PLC is the demo CLIENT: a fictional Addis
+        building-materials trader. Putting the Sapian logo on its invoices
+        would teach a prospect exactly the wrong thing — that documents printed
+        out of the system carry the VENDOR's brand — in the same session where
+        we claim the product is white-labelled. The moment the demo needs is
+        "this is YOUR letterhead, and one field changes it", and that moment
+        only exists if the letterhead is visibly the client's.
+
+        Leaving Odoo's default is worse still: `uses_default_logo` renders the
+        stock Odoo wordmark on every invoice, which contradicts the branding
+        claim on screen while it is being made. That is why this is not
+        optional and why a test asserts `uses_default_logo` is False rather
+        than merely asserting the field is filled — the field is ALWAYS filled
+        (`res.company.logo` has `default=_get_logo`), so "non-empty" is a check
+        that passes by doing nothing.
+
+        static/img/selam_logo.png is a generated geometric mark: a rounded tile
+        in the tenant's own primary colour carrying a stack of six blocks (the
+        HCB it sells), beside a plain sans wordmark. Generic on purpose. It is
+        demo furniture with no brand status — replace it freely; the real brand
+        assets live in brand/.
+        """
+        with file_open("sapian_demo_trader/static/img/selam_logo.png", "rb") as logo_file:
+            company.sudo().logo = base64.b64encode(logo_file.read())
 
     @api.model
     def _configure_demo_login(self, company):
@@ -418,6 +460,36 @@ class SapianDemoTrader(models.AbstractModel):
                     "l10n_et_tin": "0033445566",
                 }
             ),
+            # Pipeline-only customers — quotations, no invoices. They all carry
+            # a TIN: a quotation that would become a non-compliant invoice is
+            # not a quotation anybody should be shown.
+            "rift_valley": partner_model.create(
+                {
+                    "name": cat.CUSTOMER_RIFT_VALLEY,
+                    "is_company": True,
+                    "country_id": ethiopia.id,
+                    "city": "Bishoftu",
+                    "l10n_et_tin": "0044556677",
+                }
+            ),
+            "hawassa": partner_model.create(
+                {
+                    "name": cat.CUSTOMER_HAWASSA,
+                    "is_company": True,
+                    "country_id": ethiopia.id,
+                    "city": "Hawassa",
+                    "l10n_et_tin": "0055667788",
+                }
+            ),
+            "tsehay": partner_model.create(
+                {
+                    "name": cat.CUSTOMER_TSEHAY,
+                    "is_company": True,
+                    "country_id": ethiopia.id,
+                    "city": "Addis Ababa",
+                    "l10n_et_tin": "0066778899",
+                }
+            ),
             # Compliant supplier: TIN + valid licence -> standard 3% WHT.
             "depot": partner_model.create(
                 {
@@ -450,8 +522,19 @@ class SapianDemoTrader(models.AbstractModel):
         }
 
     def _create_employees(self):
-        """Three employees: the two payroll golden cases + one below-threshold
-        employee deliberately missing her POESSA pension ID."""
+        """One employee per PAYE band, plus the job titles that make it read.
+
+        The roster and the reasoning live in demo_catalogue.EMPLOYEES: six
+        people, one in each of Proclamation 1395/2025's six monthly bands, so
+        the progressive table is visible at a glance on the payslip list rather
+        than being something a salesperson has to describe. Chaltu's missing
+        POESSA id and Bekele's overtime are both deliberate and both explained
+        there.
+
+        Job titles are not decoration: "Cleaner 1,800 — no tax" next to
+        "General Manager 25,000 — 35%" is the demonstration. Without them the
+        list is six names and six numbers.
+        """
         company = self.env.company
         ethiopia = self.env.ref("base.et")
         bank = self.env["res.bank"].create(
@@ -459,10 +542,11 @@ class SapianDemoTrader(models.AbstractModel):
         )
         employee_model = self.env["hr.employee"]
 
-        def employee(name, wage, tin, pension_id, account_number):
+        def employee(name, job_title, wage, tin, pension_id, account_number):
             record = employee_model.create(
                 {
                     "name": name,
+                    "job_title": job_title,
                     "company_id": company.id,
                     "country_id": ethiopia.id,
                     "l10n_et_tin": tin,
@@ -483,30 +567,87 @@ class SapianDemoTrader(models.AbstractModel):
                 record.sudo().bank_account_ids = [Command.link(account.id)]
             return record
 
-        return {
-            "almaz": employee(
-                "Almaz Tadesse — አልማዝ ታደሰ",
-                10000,
-                "0012121212",
-                "POESSA-001122",
-                "1000200030001",
-            ),
-            "bekele": employee(
-                "Bekele Worku — በቀለ ወርቁ",
-                10000,
-                "0013131313",
-                "POESSA-003344",
-                "1000200030002",
-            ),
-            # Missing POESSA ID → fix-before-filing banner on the schedule.
-            "chaltu": employee(
-                "Chaltu Deme — ጫልቱ ደሜ",
-                1800,
-                "0014141414",
-                False,
-                "1000200030003",
-            ),
-        }
+        return {row[0]: employee(*row[1:]) for row in cat.EMPLOYEES}
+
+    @api.model
+    def _demo_salesperson(self):
+        """The user every demo sale order is assigned to, and why it matters.
+
+        Odoo's Sales app opens on `sale.action_quotations_with_onboarding`,
+        whose context is `{'search_default_my_quotation': 1}` — a default
+        filter of `user_id = uid`. Provisioning runs through `odoo shell`,
+        where `env.user` is OdooBot (uid 1), so every order was being stamped
+        with OdooBot as salesperson and the demo login (admin, uid 2) opened
+        Sales on ZERO rows.
+
+        Odoo does not leave that void empty. It renders its ONBOARDING SAMPLE
+        DATA over the list: ghosted quotations for Henry Campbell, John Miller
+        and Thomas Passot, priced in DOLLARS, under a "Beat competitors with
+        stunning quotations!" video. A prospect being sold Ethiopian software
+        sees American names and USD — the same class of fault as the US
+        placeholder companies this module already archives, and it survived
+        precisely because "there are orders in the database" was true.
+
+        So the salesperson is set explicitly to the account the demo is
+        presented from, on every order including the invoiced ones. Never left
+        to default.
+        """
+        return self.env.ref("base.user_admin")
+
+    def _create_quotations(self, partners, products):
+        """The sales pipeline: drafts, one sent, one confirmed-not-invoiced.
+
+        Without these the Sales app opens on an empty list, and the demo has
+        nothing to walk from quotation to invoice — the single most ordinary
+        thing an ERP is bought to do. The set and the reasoning are in
+        demo_catalogue.QUOTATIONS.
+
+        NOTHING HERE POSTS TO THE LEDGER. Draft and sent orders create no
+        accounting entries at all, and the one confirmed order is deliberately
+        left uninvoiced, so every VAT, WHT and payroll golden in this module is
+        untouched BY CONSTRUCTION rather than by luck. That is the property to
+        preserve if this list grows: add drafts freely, invoice nothing.
+        """
+        order_model = self.env["sale.order"]
+        salesperson = self._demo_salesperson()
+        pricelist = self.env["product.pricelist"].search(
+            [
+                ("currency_id", "=", self.env.ref("base.ETB").id),
+                ("company_id", "=", self.env.company.id),
+            ],
+            limit=1,
+        )
+        created = order_model
+        for state, customer_key, lines, order_date in cat.QUOTATIONS:
+            order = order_model.create(
+                {
+                    "partner_id": partners[customer_key].id,
+                    "pricelist_id": pricelist.id,
+                    "user_id": salesperson.id,
+                    "date_order": "%s 09:00:00" % order_date,
+                    "validity_date": "2026-08-31",
+                    "order_line": [
+                        Command.create(
+                            {
+                                "product_id": products[product_key].id,
+                                "product_uom_qty": quantity,
+                                "price_unit": price,
+                            }
+                        )
+                        for product_key, quantity, price in lines
+                    ],
+                }
+            )
+            if state == "sent":
+                # Odoo's own transition, rather than writing `state` — a demo
+                # built by poking fields is a demo that stops matching the
+                # product the first time the transition grows a side effect.
+                order.action_quotation_sent()
+            elif state == "sale":
+                order.action_confirm()
+                self._validate_pickings(order.picking_ids)
+            created |= order
+        return created
 
     def _validate_pickings(self, pickings):
         """Set full quantities and validate (delivery/receipt)."""
@@ -562,10 +703,12 @@ class SapianDemoTrader(models.AbstractModel):
             ],
             limit=1,
         )
+        salesperson = self._demo_salesperson()
         order_mebrat = order_model.create(
             {
                 "partner_id": partners["mebrat"].id,
                 "pricelist_id": pricelist.id,
+                "user_id": salesperson.id,
                 "order_line": [
                     Command.create(
                         {
@@ -581,6 +724,7 @@ class SapianDemoTrader(models.AbstractModel):
             {
                 "partner_id": partners["abyssinia"].id,
                 "pricelist_id": pricelist.id,
+                "user_id": salesperson.id,
                 "order_line": [
                     Command.create(
                         {
@@ -685,7 +829,21 @@ class SapianDemoTrader(models.AbstractModel):
             bill.action_post()
 
     def _run_payroll(self, employees):
-        """July payroll: both golden cases + below-threshold; posted + bank file."""
+        """July 2026 payroll: one payslip per PAYE band, posted + bank file.
+
+        July 2026 is the most recent CLOSED month for this tenant, and it is
+        pinned rather than computed from the wall clock for the same reason
+        every other date here is: the statutory reports need one clean period
+        window with exact GL tie-outs, and a demo whose numbers move with the
+        calendar cannot have goldens at all.
+
+        EVERY FIGURE ON EVERY PAYSLIP IS COMPUTED BY THE REAL ENGINE. Nothing
+        below writes an amount: the run generates payslips from
+        `hr.version.wage`, one taxable input line is added, and
+        `action_confirm` computes PAYE and pension through
+        l10n_et_payroll. A hand-written payslip is a number nobody can defend,
+        and it would eventually get quoted at a prospect.
+        """
         run = self.env["l10n.et.payroll.run"].create(
             {
                 "company_id": self.env.company.id,
@@ -695,8 +853,11 @@ class SapianDemoTrader(models.AbstractModel):
             }
         )
         run.action_generate_payslips()
+        # The overtime line is what lifts one of the two 10,000-birr employees
+        # out of the 25% band into the 30% one, while the pension base stays on
+        # the basic wage. See demo_catalogue.EMPLOYEES.
         overtime_slip = run.payslip_ids.filtered(
-            lambda slip: slip.employee_id == employees["bekele"]
+            lambda slip: slip.employee_id == employees[cat.OVERTIME_EMPLOYEE_KEY]
         )
         self.env["l10n.et.payslip.input"].create(
             {
@@ -704,7 +865,7 @@ class SapianDemoTrader(models.AbstractModel):
                 "name": "Overtime July",
                 "category": "earning",
                 "taxable": True,
-                "amount": 2000.0,
+                "amount": cat.OVERTIME_AMOUNT,
             }
         )
         run.action_confirm()
