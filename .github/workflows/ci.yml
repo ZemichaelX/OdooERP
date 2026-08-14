@@ -148,14 +148,21 @@ jobs:
           # (sapian_core, l10n_et_base/payroll/reports, vertical_pharma) so
           # --test-enable runs the whole suite. --workers=0 is required for the
           # HttpCase web tests. A failing test makes odoo exit non-zero → CI red.
+          #
+          # sapian_dress_rehearsal is here because it was NOT, and that is how
+          # its provisioner stayed broken for a week: scripts/dress_rehearsal.sh
+          # is run by hand, CI never touched the module, and the one guard that
+          # could have caught it did not exist. It is an internal QA module and
+          # never ships to a client (scripts/check_no_demo_modules.sh enforces
+          # that separately); installing it on a scratch CI database is free.
           odoo \
             --db_host=db --db_port=5432 --db_user=odoo --db_password=odoo \
             --data-dir=/tmp/odoo-data \
             --addons-path="${GITHUB_WORKSPACE}/addons,/usr/lib/python3/dist-packages/odoo/addons" \
             -d ci_test \
-            -i sapian_demo_trader,sapian_demo_pharma,sapian_theme \
+            -i sapian_demo_trader,sapian_demo_pharma,sapian_theme,sapian_dress_rehearsal \
             --test-enable \
-            --test-tags '/sapian_core,/l10n_et_base,/l10n_et_payroll,/l10n_et_reports,/vertical_pharma,/sapian_demo_trader,/sapian_demo_pharma,/sapian_theme' \
+            --test-tags '/sapian_core,/l10n_et_base,/l10n_et_payroll,/l10n_et_reports,/vertical_pharma,/sapian_demo_trader,/sapian_demo_pharma,/sapian_theme,/sapian_dress_rehearsal' \
             --workers=0 --max-cron-threads=0 \
             --stop-after-init --log-level=test 2>&1 | tee /tmp/odoo-test.log
           # `set -o pipefail` already makes a non-zero odoo exit fail this step.
@@ -182,15 +189,15 @@ jobs:
             echo "::error::The Odoo test runner never reported a result line — no tests were executed. A suite that runs nothing must not report success."
             exit 1
           fi
-          # MIN_EXPECTED_TESTS is a FLOOR, not the exact count (291 at this
-          # commit, after the app rail). Raise it as the suite grows. Only ever
+          # MIN_EXPECTED_TESTS is a FLOOR, not the exact count (315 at this
+          # commit, after adding sapian_dress_rehearsal to the selection). Raise it as the suite grows. Only ever
           # lower it in a commit that says which tests went away and why —
           # lowering it to make CI pass is how this guard gets quietly disabled.
           #
           # NOTE: this job has no browser, so the app rail's browser_js tests
           # skip here. They are covered by the `rail-render` job, which installs
           # Chrome and fails if the browser did not actually report.
-          MIN_EXPECTED_TESTS=260
+          MIN_EXPECTED_TESTS=290
           EXECUTED=$(grep -oE "odoo\.tests\.stats: [A-Za-z0-9_]+: [0-9]+ tests" /tmp/odoo-test.log \
                      | awk '$4 == "tests" { total += $3 } END { print total + 0 }')
           echo "Executed ${EXECUTED} tests (floor ${MIN_EXPECTED_TESTS}):"

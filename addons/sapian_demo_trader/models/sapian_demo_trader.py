@@ -126,17 +126,7 @@ class SapianDemoTrader(models.AbstractModel):
         hence a no-op for the wizard's install step (which only touches modules
         in state 'uninstalled').
         """
-        module_model = self.env["ir.module.module"].sudo()
-        demo_module = module_model.search([("name", "=", "sapian_demo_trader")], limit=1)
-        reachable = set()
-        frontier = demo_module
-        while frontier:
-            reachable.update(frontier.mapped("name"))
-            names = frontier.mapped("dependencies_id.name")
-            frontier = module_model.search(
-                [("name", "in", names), ("name", "not in", list(reachable))]
-            )
-        return reachable
+        return self.env["sapian.module.catalog"]._reachable_module_names("sapian_demo_trader")
 
     def _provision_demo_tenant(self, company_name=DEMO_COMPANY_NAME, adopt_existing=False):
         """Provision the full demo tenant (idempotent by company name).
@@ -342,9 +332,7 @@ class SapianDemoTrader(models.AbstractModel):
         if not company:
             company = self.env["res.company"].create({"name": company_name})
         catalog = self.env["sapian.module.catalog"]._ensure_default_catalog(company)
-        picks = catalog.filtered(
-            lambda entry: entry.technical_name in self._demo_installable_names()
-        )
+        picks = catalog._filter_safe_to_pick("sapian_demo_trader")
         wizard = (
             self.env["sapian.onboarding.wizard"]
             .with_company(company)
@@ -645,6 +633,9 @@ class SapianDemoTrader(models.AbstractModel):
                 order.action_quotation_sent()
             elif state == "sale":
                 order.action_confirm()
+                # Same rewrite as the invoiced flow above: confirmation resets
+                # date_order to now().
+                order.date_order = "%s 09:00:00" % order_date
                 self._validate_pickings(order.picking_ids)
             created |= order
         return created
@@ -709,6 +700,7 @@ class SapianDemoTrader(models.AbstractModel):
                 "partner_id": partners["mebrat"].id,
                 "pricelist_id": pricelist.id,
                 "user_id": salesperson.id,
+                "date_order": "%s 09:00:00" % cat.INVOICED_ORDER_DATES["mebrat"],
                 "order_line": [
                     Command.create(
                         {
@@ -725,6 +717,7 @@ class SapianDemoTrader(models.AbstractModel):
                 "partner_id": partners["abyssinia"].id,
                 "pricelist_id": pricelist.id,
                 "user_id": salesperson.id,
+                "date_order": "%s 09:00:00" % cat.INVOICED_ORDER_DATES["abyssinia"],
                 "order_line": [
                     Command.create(
                         {
@@ -744,7 +737,14 @@ class SapianDemoTrader(models.AbstractModel):
             }
         )
         for order in order_mebrat | order_abyssinia:
+            ordered_on = order.date_order
             order.action_confirm()
+            # Odoo stamps date_order with now() on confirmation
+            # (sale.order._prepare_confirmation_values), so a scripted demo
+            # order ends up dated the day the database was BUILT. Put the July
+            # date back — an order list where every row reads "15:51 today" is
+            # worse than no dates at all.
+            order.date_order = ordered_on
             self._validate_pickings(order.picking_ids)
             invoices = order._create_invoices()
             # Set the due date alongside the invoice date: with no payment term

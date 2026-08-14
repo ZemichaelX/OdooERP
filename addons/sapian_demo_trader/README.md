@@ -22,6 +22,18 @@ method that `scripts/build_demo.sh` calls once the install has finished.
 ./scripts/build_demo.sh <db_name>          # drops, rebuilds, provisions, verifies
 ```
 
+The build installs **`sapian_theme` alongside the demo module**, and the
+verification step reads the COMPILED stylesheet to prove it took:
+`--primary`, the navbar background and the login button must all be the brand,
+and the app rail's CSS must be in the bundle. That is deliberately not "is the
+theme in the install list" — a config line saying `-i sapian_theme` is exactly
+what a purple demo would also have. Measured on a build without it, all five
+checks go red.
+
+The theme is a build decision, not a manifest dependency: a client may or may
+not buy it, and the demo module must not force it into every database that
+installs the demo.
+
 Two earlier arrangements failed and the reasons are worth keeping: loading from
 `demo/` meant the tenant only appeared with Odoo demo data on, which also
 dragged in US placeholder companies; loading from `data/` ran mid-install, and
@@ -104,6 +116,30 @@ Two things are deliberate and should survive any edit:
 Every payslip figure is computed by the real engine from
 `demo_catalogue.EMPLOYEES`; nothing writes an amount. A hand-written payslip is
 a number nobody can defend, and it would eventually get quoted at a prospect.
+
+### The dates on screen
+
+Odoo's Quotations list shows **Creation Date**, not the order date —
+`sale.view_quotation_tree` (`sale/views/sale_order_views.xml:216`) explicitly
+replaces `date_order` with `create_date`, and this repo ships no `sale.order`
+view of its own. For a real client the two are minutes apart. For a scripted
+demo `create_date` is the build timestamp on every row, so the list read
+"seven orders all placed at 15:51 today" — a fixture, not a month of trading.
+
+Two changes, both scoped to the demo:
+
+- `views/sale_order_views.xml` puts the **order date** back in the Quotations
+  list. It lives in this module, which never reaches a client database, so
+  Odoo's default is untouched for everyone else.
+- Every order is **dated inside July** and stays there. Odoo rewrites
+  `date_order` to `now()` on confirmation
+  (`sale.order._prepare_confirmation_values`), so the provisioner writes the
+  intended date back afterwards — otherwise even an order created with a July
+  date comes out stamped today.
+
+Still on build-time dates and **not** fixed: stock transfers
+(`stock.picking.date_done`). Visible in Inventory, not in the Sales list this
+was about.
 
 ### The tenant's own logo
 

@@ -45,7 +45,15 @@
         "l10n_et_payroll",
         "l10n_et_reports",
     ],
-    # NO data/ or demo/ entry, deliberately. The tenant used to load from
+    # A VIEW, and deliberately nothing else. See the long note below: no data
+    # file may PROVISION anything at install time. An `ir.ui.view` record is
+    # inert — it creates no company, loads no chart and runs no method — so it
+    # is safe here in a way the tenant data was not. If a second entry is ever
+    # added, check it against that distinction rather than against this list.
+    "data": [
+        "views/sale_order_views.xml",
+    ],
+    # NO data/ or demo/ entry that PROVISIONS, deliberately. The tenant used to load from
     # demo/, which meant it only appeared when Odoo demo data was enabled —
     # and that also loaded Odoo's US placeholder companies and a website bound
     # to the wrong company. Moving it to data/ removed that, but introduced a

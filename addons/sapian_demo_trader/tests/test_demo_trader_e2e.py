@@ -23,6 +23,7 @@ recomputed; they are not an independent golden the prices must be bent to match.
 The payroll figures are independent of the catalogue and do not move with it.
 """
 
+from odoo import fields
 from odoo.tests import TransactionCase, tagged
 
 from odoo.addons.sapian_core.models.sapian_module_catalog import SapianModuleCatalog
@@ -341,6 +342,66 @@ class TestDemoTraderE2E(TransactionCase):
                 "would be blocked mid-demo"
                 % (order.partner_id.name, order.amount_total, cap.cap_amount),
             )
+
+    def test_every_order_is_dated_in_the_demo_month(self):
+        """No order may carry the build timestamp.
+
+        Two separate causes, both fixed and both worth a guard:
+
+        1. The invoiced orders never set `date_order` at all, so it defaulted
+           to creation time.
+        2. Odoo REWRITES `date_order` to now() on confirmation
+           (`sale.order._prepare_confirmation_values`), so even an order created
+           with a July date came out stamped today once confirmed.
+
+        On screen that reads as seven orders all placed at the same minute of
+        the build, which is worse than showing no date: it says "fixture", not
+        "a month of trading". Asserted as a window rather than a list of exact
+        timestamps, so the pipeline can be edited freely.
+        """
+        orders = self.env["sale.order"].search([("company_id", "=", self.company.id)])
+        self.assertTrue(orders, "no orders to check")
+        stray = orders.filtered(
+            lambda order: not (
+                fields.Date.to_date("2026-07-01")
+                <= fields.Date.to_date(order.date_order)
+                <= fields.Date.to_date("2026-07-31")
+            )
+        )
+        self.assertFalse(
+            stray,
+            "orders dated outside the demo month — almost certainly the build "
+            "timestamp: %s"
+            % ", ".join("%s %s" % (order.partner_id.name, order.date_order) for order in stray),
+        )
+
+    def test_the_quotation_list_shows_the_order_date(self):
+        """The demo's own view, and proof of what it is overriding.
+
+        Odoo's `sale.view_quotation_tree` replaces `date_order` with
+        `create_date` in the Quotations list — that is core behaviour, not
+        something this repo introduced, and it is left alone for clients. The
+        demo module ships a view that puts the order date back, because in a
+        scripted tenant `create_date` is the build timestamp for every row.
+
+        Asserted on the RESOLVED arch that the Sales app actually renders, not
+        on our XML file, which would pass even if the inheritance failed to
+        apply.
+        """
+        view = self.env.ref("sale.view_quotation_tree_with_onboarding")
+        arch = self.env["sale.order"].get_view(view.id, "list")["arch"]
+        self.assertIn(
+            'name="date_order"',
+            arch,
+            "the Quotations list does not show the order date; the demo view "
+            "in sapian_demo_trader/views/sale_order_views.xml is not applying",
+        )
+        self.assertNotIn(
+            'name="create_date"',
+            arch,
+            "the Quotations list still shows Creation Date, which in the demo "
+            "is the build timestamp on every row",
+        )
 
     def test_company_carries_its_own_logo_not_odoo_s(self):
         """`uses_default_logo` is False — the field being NON-EMPTY proves

@@ -166,6 +166,57 @@ class SapianModuleCatalog(models.Model):
         return result
 
     @api.model
+    def _reachable_module_names(self, module_name):
+        """Every module reachable from ``module_name``'s manifest, transitively.
+
+        THE CONTRACT THIS EXISTS TO KEEP, said once here instead of copied into
+        every module that provisions a tenant.
+
+        `sapian.onboarding.wizard.action_apply` installs whatever it is handed
+        that is still uninstalled. That is correct during real onboarding, and
+        it is fatal for a scripted tenant build: `button_immediate_install`
+        commits and replaces the registry underneath the running script. Odoo
+        refuses outright when it cannot take the `ir_cron` lock, which surfaces
+        as the deeply unhelpful "Odoo is currently processing a scheduled
+        action".
+
+        So a provisioner must hand the wizard ONLY entries that are already
+        installed — which, for a module being provisioned, means entries
+        reachable from its own manifest. Then the install step is a guaranteed
+        no-op.
+
+        This was learned twice. `sapian_demo_trader` used to pick by TIER,
+        which coincided with its dependency set only while the catalog held 15
+        curated entries; seeding all 38 broke the coincidence and it was fixed
+        to select on the property itself. `sapian_dress_rehearsal` handed the
+        wizard the WHOLE catalog and was not fixed at the same time, so it
+        tried to install 28 modules mid-provision and the rehearsal script
+        stopped running at all — invisibly, because the wizard SKIPS
+        installation in test mode, so its tests stayed green.
+
+        Hence: one helper, used by both.
+        """
+        module_model = self.env["ir.module.module"].sudo()
+        frontier = module_model.search([("name", "=", module_name)])
+        reachable = set()
+        while frontier:
+            reachable.update(frontier.mapped("name"))
+            names = frontier.mapped("dependencies_id.name")
+            frontier = module_model.search(
+                [("name", "in", names), ("name", "not in", list(reachable))]
+            )
+        return reachable
+
+    def _filter_safe_to_pick(self, module_name):
+        """The subset of these entries a ``module_name`` provisioner may pick.
+
+        Everything else stays seeded and un-picked, which is the point: the
+        catalog shows what is enabled alongside what is available.
+        """
+        reachable = self._reachable_module_names(module_name)
+        return self.filtered(lambda entry: entry.technical_name in reachable)
+
+    @api.model
     def _sync_enabled_from_installed(self):
         """Make `enabled` reflect reality: an entry is enabled exactly when its
         Odoo module is installed. Runs on every module install/upgrade (data

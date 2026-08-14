@@ -4,6 +4,64 @@ All notable changes to SapianERP. Epics per `docs/plan-2026/10-claude-code-roadm
 
 ## [Unreleased]
 
+### The demo you rehearse on is now the demo you show (2026-08-14)
+Two flagged-but-unfixed items, and a third gap found while answering the
+question about them.
+
+**The demo was Odoo purple with no app rail.** `build_demo.sh` installed the
+demo module and not `sapian_theme`, so the tenant a prospect sees contradicted
+the white-labelling pitch in the same session. Now installed — and, because a
+config line saying `-i sapian_theme` is exactly what a purple demo would also
+have, step [5/5] READS THE COMPILED STYLESHEET: `--primary`, the navbar
+background, the login button and the app rail's padding rule must all come back
+branded, or the build exits non-zero instead of failing on camera. Run against
+a build without the theme, all five checks go red.
+
+Recorded because the ask cannot be met as literally worded: **`#714B67` is NOT
+the purple on screen.** The backend's unthemed primary is `#71639e`, and
+`#714B67` still appears ~13 times in a *correctly* themed bundle (html_editor
+palettes and friends), so "must not contain #714B67" would fail a good build.
+The checks assert the positive — the rules a prospect actually sees carry
+`#14454F` — which is both stronger and true. The frontend bundle's `:root
+--primary` is still `#714B67`; that is the separately-queued finding from
+PR #23, now PRINTED as a NOTE on every build rather than filed away.
+
+**Every order showed the build timestamp.** Established before changing
+anything: this is **Odoo's own default**, not ours. `sale.view_quotation_tree`
+(`sale/views/sale_order_views.xml:216`) explicitly replaces `date_order` with
+`create_date`, and this repo ships no `sale.order` view. Fixed in the demo's own
+view, which never reaches a client database, so Odoo's behaviour is untouched
+for everyone else. A second cause needed fixing too: Odoo rewrites `date_order`
+to `now()` on confirmation (`_prepare_confirmation_values`), so even orders
+created with a July date came out stamped today. All seven now read Jul 6–30.
+
+**And the dress rehearsal had not run since PR #24.** Asked whether the two
+provisioning paths diverge, the answer turned out to be worse than divergence:
+`scripts/dress_rehearsal.sh` died on
+
+    UserError: Odoo is currently processing a scheduled action.
+
+`_onboard_company` handed the wizard `Command.set(catalog.ids)` — the WHOLE
+catalog. That was a no-op only while the catalog held 15 curated entries;
+seeding all 38 turned it into **28 uninstalled modules** (crm, mrp,
+point_of_sale, website, …) that the wizard tried to install mid-provision.
+`sapian_demo_trader` was fixed for exactly this in PR #24 and the rehearsal was
+not.
+
+**Nothing caught it because the guard could not fire.** The wizard SKIPS module
+installation in test mode, so every test of that module ran in the one mode
+where the failure is impossible — green tests, dead script. The pick now goes
+through one shared `sapian.module.catalog._filter_safe_to_pick`, used by both
+tenant builders, and `test_catalog_pick.py` asserts the mode-independent fact
+instead: every entry handed to the wizard is already installed.
+
+Deliberate divergence, kept and documented: different month, volume and payroll
+roster (the rehearsal's five employees exercise the transport-allowance cap and
+a pension-exempt foreigner, and its exam recomputes each of their payslips), and
+no client logo on a tenant nobody is shown. Everything else — theme, salesperson,
+catalog pick — was an accident and is now closed.
+
+
 ### The demo tenant is a demo again — `sapian_demo_trader` (2026-08-14)
 Three gaps found while writing the user guide, each of which forced an apology
 mid-demo.

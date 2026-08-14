@@ -83,9 +83,34 @@ class SapianDressRehearsal(models.AbstractModel):
     # ----------------------------------------------------------- onboarding
     @api.model
     def _onboard_company(self, company_name):
-        """Create a bare company and push it through the onboarding wizard."""
+        """Create a bare company and push it through the onboarding wizard.
+
+        THE PICK IS NOT THE WHOLE CATALOG, and that is not a style preference.
+
+        This used to pass `Command.set(catalog.ids)`. It worked only while the
+        catalog held 15 curated entries that happened to coincide with this
+        module's manifest dependencies. Once the catalog became the full 38-app
+        catalogue, the wizard was being handed **28 uninstalled modules** —
+        crm, mrp, point_of_sale, website, website_sale and friends — and tried
+        to install them mid-provision. `button_immediate_install` cannot take
+        the `ir_cron` lock inside a shell session, so `scripts/dress_rehearsal.sh`
+        died on
+
+            UserError: Odoo is currently processing a scheduled action.
+
+        and the rehearsal stopped running at all. It stayed invisible because
+        the wizard SKIPS installation in test mode
+        (`sapian_core/wizard/sapian_onboarding_wizard.py::_install_modules`),
+        so this module's tests exercised the one mode where the failure cannot
+        occur — a guard that could never fire.
+
+        `_filter_safe_to_pick` selects on the property itself: entries reachable
+        from this module's own manifest, hence already installed, hence a
+        guaranteed no-op for the wizard's install step.
+        """
         company = self.env["res.company"].create({"name": company_name})
         catalog = self.env["sapian.module.catalog"]._ensure_default_catalog(company)
+        picks = catalog._filter_safe_to_pick("sapian_dress_rehearsal")
         wizard = (
             self.env["sapian.onboarding.wizard"]
             .with_company(company)
@@ -98,12 +123,26 @@ class SapianDressRehearsal(models.AbstractModel):
                     "city": "Addis Ababa",
                     "fiscal_year": "ethiopian",
                     "primary_color": "#2b6cb0",
-                    "module_catalog_ids": [Command.set(catalog.ids)],
+                    "module_catalog_ids": [Command.set(picks.ids)],
                 }
             )
         )
         wizard.action_apply()
         return company
+
+    @api.model
+    def _rehearsal_salesperson(self):
+        """The user every rehearsal sale order is assigned to.
+
+        The rehearsal tenant is KEPT after the run for manual click-through, so
+        it hits exactly the trap `sapian_demo_trader` hit: Odoo's Sales app
+        filters on `user_id = uid` by default
+        (`sale.action_quotations_with_onboarding`), provisioning runs as
+        OdooBot, and an empty list makes Odoo render its onboarding SAMPLE
+        DATA — US names, dollar amounts — over the top. The rehearsal is where
+        we look for exactly that kind of surprise, so it must not have it.
+        """
+        return self.env.ref("base.user_admin")
 
     @api.model
     def _ensure_warehouse(self, company):
@@ -318,6 +357,7 @@ class SapianDressRehearsal(models.AbstractModel):
         (backorder 1 unit); order 20 is fully delivered then returns 2 units
         with a credit note."""
         order_keys = ["teff", "coffee", "oil", "sugar", "consulting"]
+        salesperson = self._rehearsal_salesperson()
         invoices = self.env["account.move"]
         deliveries = []
         return_info = None
@@ -329,6 +369,7 @@ class SapianDressRehearsal(models.AbstractModel):
             order = self.env["sale.order"].create(
                 {
                     "partner_id": customer.id,
+                    "user_id": salesperson.id,
                     "date_order": _d(day),
                     "order_line": [
                         Command.create(
