@@ -27,6 +27,15 @@
     # tenant built for a 2–5 person hardware shop. They remain in the catalog,
     # listed and not enabled.
     "depends": [
+        # sapian_core was previously reached TRANSITIVELY through
+        # l10n_et_payroll, which no longer depends on it. This module uses it
+        # directly and always did — the tenant is onboarded through the real
+        # wizard (models/sapian_demo_trader.py:261,264) and two test modules
+        # import from odoo.addons.sapian_core (test_catalog_dependencies.py:21,
+        # test_demo_trader_e2e.py:27). Relying on another module's dependency
+        # for something you import yourself is a latent break, and this is the
+        # break: it only surfaced when payroll was made standalone.
+        "sapian_core",
         "sale_management",
         "purchase",
         "stock",
