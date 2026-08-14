@@ -9,20 +9,24 @@ comment; adding a catalog entry without its dependency silently broke the demo
 build.
 
 The invariant is over the PICKED entries, not the whole catalog. The demo picks
-the core and common tiers (``DEMO_CATALOG_TIERS``); the `optional` tier is
-seeded into the catalog and left un-picked, so those apps stay visible as
+catalog entries that are reachable dependencies of this module; everything else
+is seeded and left un-picked, so those apps stay visible as
 available-and-not-enabled without being installed — which is the point, since
 installing them put Manufacturing, Fleet, Repair, Project and Website in the
 demo tenant's main menu bar.
+
+The pick used to be by TIER (core+common), which coincided with the dependency
+set only while the catalog held 15 curated entries. Seeding the full 38-app
+catalogue broke the coincidence: `common` now holds crm, project,
+point_of_sale, calendar, contacts, board and the hr_* apps, none of them
+dependencies here. The demo now selects on the property itself, so this test
+asserts a fact rather than a coincidence.
 """
 
 from odoo.tests import TransactionCase, tagged
 
 from odoo.addons.sapian_core.models.sapian_module_catalog import (
     SapianModuleCatalog,
-)
-from odoo.addons.sapian_demo_trader.models.sapian_demo_trader import (
-    DEMO_CATALOG_TIERS,
 )
 
 
@@ -48,12 +52,14 @@ class TestCatalogDependencies(TransactionCase):
         return reachable
 
     def test_every_picked_catalog_app_is_a_dependency(self):
-        """Picked catalog module names ⊆ this module's transitive dependencies."""
-        picked = {
-            entry[1]
-            for entry in SapianModuleCatalog.STANDARD_CATALOG
-            if entry[3] in DEMO_CATALOG_TIERS
-        }
+        """Picked catalog module names ⊆ this module's transitive dependencies.
+
+        Asserted against what the provisioner ACTUALLY picks — the same helper
+        it calls — not against a tier list that merely used to agree with it.
+        """
+        catalogued = {entry[1] for entry in SapianModuleCatalog.STANDARD_CATALOG}
+        installable = self.env["sapian.demo.trader"]._demo_installable_names()
+        picked = catalogued & installable
         self.assertTrue(picked, "the demo must pick at least one catalog app")
         missing = sorted(picked - self._reachable_dependencies())
         self.assertFalse(
@@ -72,11 +78,8 @@ class TestCatalogDependencies(TransactionCase):
         bar, which is in every frame of a screen recording, while every other
         test in the suite still passes.
         """
-        unpicked = {
-            entry[1]
-            for entry in SapianModuleCatalog.STANDARD_CATALOG
-            if entry[3] not in DEMO_CATALOG_TIERS
-        }
+        catalogued = {entry[1] for entry in SapianModuleCatalog.STANDARD_CATALOG}
+        unpicked = catalogued - self.env["sapian.demo.trader"]._demo_installable_names()
         self.assertTrue(unpicked, "the catalog must still offer un-picked apps")
         leaked = sorted(unpicked & self._reachable_dependencies())
         self.assertFalse(
@@ -87,13 +90,14 @@ class TestCatalogDependencies(TransactionCase):
         )
 
     def test_unpicked_apps_are_offered_not_hidden(self):
-        """All 15 entries are still seeded — the un-picked ones are visible and
-        not enabled, which is the honest answer to "so it does manufacturing?"."""
+        """Every catalog entry is still seeded — the un-picked ones are visible
+        and not enabled, the honest answer to "so it does manufacturing?"."""
         company = self.env["res.company"].create({"name": "Catalog Visibility PLC"})
         catalog = self.env["sapian.module.catalog"]._ensure_default_catalog(company)
         self.assertEqual(len(catalog), len(SapianModuleCatalog.STANDARD_CATALOG))
-        unpicked = catalog.filtered(lambda entry: entry.tier not in DEMO_CATALOG_TIERS)
-        self.assertTrue(unpicked, "the optional tier must still appear in the catalog")
+        installable = self.env["sapian.demo.trader"]._demo_installable_names()
+        unpicked = catalog.filtered(lambda entry: entry.technical_name not in installable)
+        self.assertTrue(unpicked, "un-picked apps must still appear in the catalog")
         # `enabled` is a status, not a switch: it mirrors the installed state.
         # Compared against what is actually installed rather than asserted to
         # be empty, so the test stays true on a developer database that happens

@@ -77,8 +77,25 @@ class SapianOnboardingWizard(models.TransientModel):
     module_catalog_ids = fields.Many2many(
         "sapian.module.catalog",
         string="Modules",
-        help="Product modules to enable for this company (from the catalog).",
+        help="Product modules to enable for this company (from the catalog). "
+        "Picking a module also picks whatever it includes.",
     )
+
+    @api.onchange("module_catalog_ids")
+    def _onchange_module_catalog_ids(self):
+        """Tick what the picked modules include, visibly.
+
+        The consultant must SEE that choosing Ethiopian Payroll also brings the
+        SapianERP core — a silent expansion at apply time would install
+        something they never saw on screen. The closure is re-applied at apply
+        time as well (see `action_apply`), because an onchange only fires in the
+        UI: a wizard driven over RPC or from a script never triggers it, and the
+        customer bought the bundle either way.
+        """
+        for wizard in self:
+            expanded = wizard.module_catalog_ids._expand_requires()
+            if expanded != wizard.module_catalog_ids:
+                wizard.module_catalog_ids = [Command.set(expanded.ids)]
 
     @api.model
     def default_get(self, fields_list):
@@ -186,6 +203,14 @@ class SapianOnboardingWizard(models.TransientModel):
         company_id = self.company_id.id
         tin = self.tin
         fiscal_year = self.fiscal_year
+        # Expand bundles HERE too, not only in the onchange. An onchange fires
+        # in the UI and nowhere else — a wizard driven over RPC, from a
+        # provisioning script or by a test would otherwise install the picked
+        # modules without what they include, and the customer bought the bundle
+        # in every one of those paths.
+        picked = self.module_catalog_ids._expand_requires()
+        if picked != self.module_catalog_ids:
+            self.module_catalog_ids = [Command.set(picked.ids)]
         technical_names = self.module_catalog_ids.mapped("technical_name")
 
         warnings = self._apply_company_profile()
