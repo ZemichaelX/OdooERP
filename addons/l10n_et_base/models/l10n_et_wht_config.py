@@ -59,10 +59,21 @@ DEFAULT_SOURCE_NOTE = (
 # OPEN DISCREPANCY, deliberately left alone: `_l10n_et_ensure_default` seeds
 # effective_from = date(2025, 8, 1), while the knowledge base records the
 # domestic WHT change as effective 7 August 2025 (Nehase 1, 2017 EC). These
-# cannot both be right, and 1 Aug 2025 is Hamle 24 — mid-Ethiopian-month, which
+# cannot both be right, and 1 Aug 2025 is Hamle 25 — mid-Ethiopian-month, which
 # no verified Ethiopian effective date has been. Neither artefact is changed
 # here; the correct date is being established from a primary source. Until then,
 # treat any WHT decision dated 1-6 Aug 2025 as unverified.
+#
+# (This comment said "Hamle 24" until l10n_et_calendar existed to check it. The
+# conversion is Hamle 25: Nehase 1 is 7 Aug, Hamle has 30 days, so 1 Aug is
+# Hamle 25. A hand-converted date in a comment about a hand-converted date
+# being wrong is its own small argument for the library. The DISCREPANCY is
+# unchanged — only the arithmetic describing it is corrected.)
+#
+# Now machine-checked: tests_fast/test_et_statutory_dates_land_on_month_1.py
+# asserts that every shipped Ethiopian effective date lands on day 1, with this
+# seed marked xfail(strict=True) so the open question is visible on every run
+# and the marker must be deleted when the seed is corrected.
 
 
 class L10nEtWhtConfig(models.Model):

@@ -4,6 +4,50 @@ All notable changes to SapianERP. Epics per `docs/plan-2026/10-claude-code-roadm
 
 ## [Unreleased]
 
+### The Ethiopian calendar, and a date that had been wrong in plain sight (2026-08-14)
+New module `l10n_et_calendar`, in two layers per CLAUDE.md rule 10: the
+conversion is pure arithmetic, so it lives in `reference/et_calendar.py` with
+125 goldens in `tests_fast/` that need no Odoo, and the ORM layer only calls it.
+
+**The arithmetic.** Leap iff `year % 4 == 3`, no century exception, taken from
+the calendar's definition rather than inferred from examples; epoch Meskerem 1,
+1 EC = JDN 1,724,221; Julian Day Number as the pivot. Validated against three
+authorities that are not this code's own output: the project's proclamation
+anchors, an independent integer Julian implementation, and a recorded one-off
+cross-check against the `ethiopian-date` package. Both traps in the brief are
+tested rather than assumed — Hamle 1 is **not** always 8 July (it steps to the
+7th for part of each cycle, and an earlier claim in this repo that it never does
+was wrong), and the Gregorian-year offset flips between +7 and +8 at the
+Ethiopian new year.
+
+**A date nobody had questioned.** Asked what 1 August 2025 converts to, the
+answer was Hamle 25, 2017 EC — mid-Ethiopian-month, where every effective date
+this project has verified against a proclamation lands on day 1. That is a
+checkable property, so it is now checked: `tests_fast/` enumerates every
+statutory effective date we ship and asserts each lands on day 1. It found a
+**second** one that had never been flagged anywhere — the cash cap seed,
+`date(2025, 7, 1)` = Sene 24, 2017 EC, from the same proclamation whose PAYE
+bands commence on Hamle 1. Both are marked `xfail(strict=True)` with dated
+reasons pointing at the unresolved gazette question: visible in every run, and
+loud if somebody corrects a seed without removing the marker. **No seed was
+changed** — a calendar agreeing with a knowledge base is corroboration, not a
+primary source.
+
+**The mirror.** `l10n.et.date.mixin` gives any model a stored, indexed,
+searchable Ethiopian twin of a Gregorian date, read-only, with two per-company
+settings (display format, and which calendar prints on documents). What is
+stored is canonical — `2017-11-01`, not "Hamle 1, 2017" — so the format setting
+cannot invalidate a million rows, the column sorts correctly, and one Ethiopian
+month is one prefix filter. Measured, not guessed: a mirrored date costs ~22 MB
+per million rows, two cost ~36 MB, and the index turns a 30 ms sequential scan
+into 7.9 ms. Module README carries the numbers and the collation caveat.
+
+CI gains a `calendar-standalone` job, because the module's central claim is that
+it stands alone and the integration job installs it beside everything else we
+ship: it installs the calendar on a database with nothing else of ours,
+asserts that from `ir_module_module`, uninstalls it, asserts the columns went
+with it, and reinstalls.
+
 ### The demo you rehearse on is now the demo you show (2026-08-14)
 Two flagged-but-unfixed items, and a third gap found while answering the
 question about them.

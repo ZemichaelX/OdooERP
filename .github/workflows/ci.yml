@@ -160,9 +160,9 @@ jobs:
             --data-dir=/tmp/odoo-data \
             --addons-path="${GITHUB_WORKSPACE}/addons,/usr/lib/python3/dist-packages/odoo/addons" \
             -d ci_test \
-            -i sapian_demo_trader,sapian_demo_pharma,sapian_theme,sapian_dress_rehearsal \
+            -i sapian_demo_trader,sapian_demo_pharma,sapian_theme,sapian_dress_rehearsal,l10n_et_calendar \
             --test-enable \
-            --test-tags '/sapian_core,/l10n_et_base,/l10n_et_payroll,/l10n_et_reports,/vertical_pharma,/sapian_demo_trader,/sapian_demo_pharma,/sapian_theme,/sapian_dress_rehearsal' \
+            --test-tags '/sapian_core,/l10n_et_base,/l10n_et_payroll,/l10n_et_reports,/vertical_pharma,/sapian_demo_trader,/sapian_demo_pharma,/sapian_theme,/sapian_dress_rehearsal,/l10n_et_calendar' \
             --workers=0 --max-cron-threads=0 \
             --stop-after-init --log-level=test 2>&1 | tee /tmp/odoo-test.log
           # `set -o pipefail` already makes a non-zero odoo exit fail this step.
@@ -189,15 +189,16 @@ jobs:
             echo "::error::The Odoo test runner never reported a result line — no tests were executed. A suite that runs nothing must not report success."
             exit 1
           fi
-          # MIN_EXPECTED_TESTS is a FLOOR, not the exact count (315 at this
-          # commit, after adding sapian_dress_rehearsal to the selection). Raise it as the suite grows. Only ever
+          # MIN_EXPECTED_TESTS is a FLOOR, not the exact count (342 at this
+          # commit, after adding l10n_et_calendar's 27 to the selection).
+          # Raise it as the suite grows. Only ever
           # lower it in a commit that says which tests went away and why —
           # lowering it to make CI pass is how this guard gets quietly disabled.
           #
           # NOTE: this job has no browser, so the app rail's browser_js tests
           # skip here. They are covered by the `rail-render` job, which installs
           # Chrome and fails if the browser did not actually report.
-          MIN_EXPECTED_TESTS=290
+          MIN_EXPECTED_TESTS=317
           EXECUTED=$(grep -oE "odoo\.tests\.stats: [A-Za-z0-9_]+: [0-9]+ tests" /tmp/odoo-test.log \
                      | awk '$4 == "tests" { total += $3 } END { print total + 0 }')
           echo "Executed ${EXECUTED} tests (floor ${MIN_EXPECTED_TESTS}):"
@@ -206,6 +207,108 @@ jobs:
             echo "::error::Only ${EXECUTED} tests executed, expected at least ${MIN_EXPECTED_TESTS}. The suite did not run — this is a failure, not a pass."
             exit 1
           fi
+
+  calendar-standalone:
+    name: Calendar installs, and uninstalls, alone
+    runs-on: ubuntu-latest
+    # WHY A SEPARATE JOB.
+    #
+    # l10n_et_calendar's central claim is that it stands ALONE: a client who
+    # wants Ethiopian dates on a purchase order must not be handed a chart of
+    # accounts with them. The integration job installs it beside every other
+    # module we ship, so it cannot tell the difference between "depends on base
+    # and base_setup" and "happens to work because l10n_et_base was already
+    # there". This job installs it on a database that has nothing else of ours
+    # on it at all.
+    #
+    # It also exercises UNINSTALL. An uninstall that leaves columns behind is
+    # invisible until a client asks to remove the module, which is exactly when
+    # nobody wants to be debugging.
+    container:
+      image: odoo:19.0@sha256:e415f9924395e7521245813135112f264b9222bcde3b1d3c2ee9ff073081540a
+      options: --user root
+    services:
+      db:
+        image: postgres:16@sha256:33f923b05f64ca54ac4401c01126a6b92afe839a0aa0a52bc5aeb5cc958e5f20
+        env:
+          POSTGRES_USER: odoo
+          POSTGRES_PASSWORD: odoo
+          POSTGRES_DB: postgres
+        options: >-
+          --health-cmd "pg_isready -U odoo"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install alone, run its tests, uninstall, reinstall
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/odoo-data
+          # Flags only, so the same set can be handed to `odoo` and to
+          # `odoo shell` (the subcommand has to come first).
+          ARGS="--db_host=db --db_port=5432 --db_user=odoo --db_password=odoo
+                --data-dir=/tmp/odoo-data
+                --addons-path=${GITHUB_WORKSPACE}/addons,/usr/lib/python3/dist-packages/odoo/addons
+                --workers=0 --max-cron-threads=0 --stop-after-init"
+
+          # 1. install alone, with its tests
+          odoo ${ARGS} -d ci_calendar -i l10n_et_calendar \
+            --test-enable --test-tags '/l10n_et_calendar' \
+            --log-level=test 2>&1 | tee /tmp/calendar.log
+
+          if grep -qE "tests\.result: ([1-9][0-9]* failed|0 failed, [1-9][0-9]* error)" /tmp/calendar.log; then
+            echo "::error::l10n_et_calendar tests failed."
+            exit 1
+          fi
+          # A GREEN EXIT CODE IS NOT PROOF THAT ANYTHING RAN. Assert the count.
+          MIN_CALENDAR_TESTS=25          # 27 at this commit
+          EXECUTED=$(grep -oE "odoo\.tests\.stats: l10n_et_calendar: [0-9]+ tests" /tmp/calendar.log \
+                     | grep -oE "[0-9]+ tests" | grep -oE "[0-9]+" | tail -1 || echo 0)
+          echo "Executed ${EXECUTED} calendar tests (floor ${MIN_CALENDAR_TESTS})"
+          if [ "${EXECUTED}" -lt "${MIN_CALENDAR_TESTS}" ]; then
+            echo "::error::Only ${EXECUTED} calendar tests executed — the suite did not run."
+            exit 1
+          fi
+
+          # 2. nothing else of ours came along for the ride. Asserted against
+          #    the database, not the manifest: ir_module_module knows what is
+          #    actually installed. The marker is printed by the shell itself,
+          #    so an odoo shell that died before running anything cannot pass
+          #    this by producing no output.
+          echo 'print("SAPIAN-CAL others=%s" % sorted(n for n in env["ir.module.module"].search([("state","=","installed")]).mapped("name") if n.startswith(("sapian_", "l10n_et_"))))' \
+            | odoo shell ${ARGS} -d ci_calendar --log-level=warn 2>&1 | tee /tmp/calendar-alone.log
+          grep -q "SAPIAN-CAL others=" /tmp/calendar-alone.log \
+            || { echo "::error::The odoo shell never reported — the standalone check ran nothing."; exit 1; }
+          if ! grep -q "SAPIAN-CAL others=\['l10n_et_calendar'\]" /tmp/calendar-alone.log; then
+            echo "::error::l10n_et_calendar is not alone on this database:"
+            grep "SAPIAN-CAL others=" /tmp/calendar-alone.log
+            exit 1
+          fi
+
+          # 3. uninstall, and prove the columns went with it
+          echo 'env["ir.module.module"].search([("name","=","l10n_et_calendar")]).button_immediate_uninstall(); env.cr.commit()' \
+            | odoo shell ${ARGS} -d ci_calendar --log-level=warn 2>&1 | tail -3
+          echo 'env.cr.execute("SELECT column_name FROM information_schema.columns WHERE table_name = %s", ("res_company",)); print("SAPIAN-CAL leftover=%d" % len([c for (c,) in env.cr.fetchall() if c.startswith("l10n_et_")])); env.cr.execute("SELECT state FROM ir_module_module WHERE name = %s", ("l10n_et_calendar",)); print("SAPIAN-CAL state=%s" % env.cr.fetchone()[0])' \
+            | odoo shell ${ARGS} -d ci_calendar --log-level=warn 2>&1 | tee /tmp/calendar-uninstall.log
+          grep -E "SAPIAN-CAL (leftover|state)=" /tmp/calendar-uninstall.log | sed 's/^/  /'
+          grep -q "SAPIAN-CAL state=uninstalled" /tmp/calendar-uninstall.log \
+            || { echo "::error::The module did not reach state 'uninstalled'."; exit 1; }
+          grep -q "SAPIAN-CAL leftover=0" /tmp/calendar-uninstall.log \
+            || { echo "::error::Uninstall left l10n_et_ columns behind on res_company."; exit 1; }
+
+          # 4. and it goes back on afterwards
+          odoo ${ARGS} -d ci_calendar -i l10n_et_calendar \
+            --test-enable --test-tags '/l10n_et_calendar' \
+            --log-level=test 2>&1 | tee /tmp/calendar-again.log
+          if grep -qE "tests\.result: ([1-9][0-9]* failed|0 failed, [1-9][0-9]* error)" /tmp/calendar-again.log; then
+            echo "::error::l10n_et_calendar failed on reinstall."
+            exit 1
+          fi
+          grep -q "odoo\.tests\.stats: l10n_et_calendar: " /tmp/calendar-again.log \
+            || { echo "::error::No calendar tests ran on reinstall."; exit 1; }
 
   theme-with-website:
     name: Theme login vs website
