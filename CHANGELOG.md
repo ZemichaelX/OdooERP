@@ -4,6 +4,58 @@ All notable changes to SapianERP. Epics per `docs/plan-2026/10-claude-code-roadm
 
 ## [Unreleased]
 
+### The login page a client actually sees (2026-08-14)
+Five defects, all client-facing, all invisible to every check we had — because
+every check we had talked to the database or to a compiled asset, and none
+asked what comes back on the wire. `build_demo.sh` reported
+`login_primary=#14454F`, correctly, about a page that said **Powered by Odoo**.
+
+**Attribution.** The login footer now reads "Powered by SapianERP" with the
+Sapian mark, linking to sapiantech.com, in brand teal. The licensing position
+was established first and is written down in `addons/sapian_theme/README.md`:
+LGPL-3 requires no UI attribution (GPL-3 §5(d) is about *Appropriate Legal
+Notices* — copyright, warranty, licence — which a UTM-tagged marketing link is
+not), and the licence conveys no trademark rights either way (§7(e)), which
+cuts towards removal rather than against it. Odoo's own trademark policy page
+could not be reached from this environment and is therefore **not** quoted or
+relied on. Nothing in Odoo is modified: two templates are overridden by
+inheritance. The second one, `web.brand_promotion_message`, is there because
+with `website` installed the page came back carrying **two** attributions.
+
+**Sign-up.** Odoo's default for "Customer Account" is `b2c` — free sign up —
+so every demo and every client login page invited strangers to create an
+account on a private company ERP. Neither the demo tenant nor
+`provision_client.sh` set it; both do now, reading the parameter key off Odoo's
+own field rather than typing `auth_signup_uninvited` (which is the field name;
+the key is `auth_signup.invitation_scope`).
+
+**Support contact.** sapian_theme has had a configurable support line, and a
+test asserting it renders, since the theme shipped. No build ever configured
+it, so it rendered nothing — a feature indistinguishable from one nobody wrote.
+The demo tenant configures it now.
+
+**The button's other states.** The brand fix covered the resting state.
+`--btn-disabled-bg` and `--btn-focus-shadow-rgb` were unset and fell through to
+Odoo purple, and the disabled one is not an edge case: `login.js` adds
+`disabled` on submit, so the button turned purple at 65% opacity for the
+duration of every login. All five states are now derived from the palette.
+
+**A backend footer**, matching what a competitor puts on every screen:
+`© <year> <Company>. All Rights Reserved. For Support: …`, driven by the same
+support parameter as the login page. Same shape as the app rail — a component
+in `main_components`, `position: fixed`, one `padding-bottom` rule, hidden
+below md and during fullscreen actions.
+
+**And the check that was missing.** `build_demo.sh` now renders `/web/login`
+through Odoo's own WSGI application as an anonymous visitor and asserts on the
+returned HTML: 200, a size floor (so absence can only be measured on a page
+that rendered), no Odoo attribution, our attribution present, no signup link,
+the configured support contact actually visible, and the button branded in
+every state. Proven to discriminate by restoring the shipped state on a built
+demo: `login_odoo_refs=2`, `login_signup=1`, `login_support_rendered=0`,
+`login_signup_scope=b2c` — while `login_primary` stayed green, which is exactly
+how this survived.
+
 ### The Ethiopian calendar, and a date that had been wrong in plain sight (2026-08-14)
 New module `l10n_et_calendar`, in two layers per CLAUDE.md rule 10: the
 conversion is pure arithmetic, so it lives in `reference/et_calendar.py` with

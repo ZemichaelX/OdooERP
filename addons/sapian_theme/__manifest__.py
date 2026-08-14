@@ -15,7 +15,12 @@
     # other sapian module, and must not drag product modules in behind it.
     "depends": ["base", "web"],
     "data": [
+        # The mark first: login_templates.xml t-calls it.
+        "views/sapian_mark.xml",
         "views/login_templates.xml",
+        # The other emitter of "Powered by Odoo" — reached by the portal,
+        # and by the login page itself when `website` is installed.
+        "views/brand_promotion.xml",
         # Last: a drift check that only warns. See the file for why it never
         # fixes anything on its own.
         "data/brand_drift_check.xml",
@@ -36,6 +41,11 @@
             "sapian_theme/static/src/scss/sapian_rail.scss",
             "sapian_theme/static/src/js/app_rail.js",
             "sapian_theme/static/src/xml/app_rail.xml",
+            # The backend footer: same shape as the rail — a component in
+            # `main_components`, position: fixed, one padding rule.
+            "sapian_theme/static/src/scss/sapian_footer.scss",
+            "sapian_theme/static/src/js/backend_footer.js",
+            "sapian_theme/static/src/xml/backend_footer.xml",
         ],
         # The login page needs its own rule: the frontend bundle never consults
         # $o-brand-primary. See the header of sapian_frontend.scss.

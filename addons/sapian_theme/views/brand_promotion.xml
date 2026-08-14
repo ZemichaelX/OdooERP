@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- THE SECOND "Powered by Odoo", and the reason this file exists.
+
+         Removing the login card's hardcoded odoo.com link (login_templates.xml)
+         is enough on the databases we ship. It is NOT enough on a database with
+         `website` installed, and that was measured rather than assumed: with
+         website on, the login page came back carrying TWO attributions —
+
+             odoo.com count: 2
+
+         — because website replaces the login card with `website.layout`, whose
+         footer calls `web.brand_promotion`, which calls
+         `web.brand_promotion_message` (web/views/webclient_templates.xml:87).
+         That template builds "Powered by %s" around an <img> of the Odoo logo
+         badged with a utm_medium link.
+
+         The same template is what the customer PORTAL and survey pages use, so
+         overriding it here fixes every surface that emits the line, once,
+         instead of chasing them one page at a time.
+
+         `_message` is dropped deliberately. Callers pass Odoo marketing copy
+         through it (website_sale passes "the #1 Open Source eCommerce"), and
+         there is no version of that sentence which belongs on a client's ERP.
+
+         This is template inheritance on an LGPL-3 module, not a change to it.
+         See README.md, "Odoo attribution", for the licensing position. -->
+
+    <template id="brand_promotion_message" inherit_id="web.brand_promotion_message"
+              name="SapianERP brand promotion">
+        <!-- The Odoo logo <a> lives inside a t-set body, so it never reaches
+             the page once the t-out below is replaced. Emptied anyway: a
+             variable that still builds a competitor's link is a trap for
+             whoever inherits this next. -->
+        <xpath expr="//t[@t-set='odoo_logo']" position="replace">
+            <t t-set="odoo_logo"/>
+        </xpath>
+        <xpath expr="//t[@t-set='final_message']" position="replace">
+            <t t-set="final_message"/>
+        </xpath>
+        <xpath expr="//t[@t-out]" position="replace">
+            <span class="o_sapian_powered">
+                <a href="https://sapiantech.com" target="_blank" rel="noopener">
+                    <t t-call="sapian_theme.mark"/>
+                    <span>Powered by SapianERP</span>
+                </a>
+            </span>
+        </xpath>
+    </template>
+
+</odoo>

@@ -134,13 +134,28 @@ def first(css, pattern):
     return found[0] if found else 'ABSENT'
 
 
+def brand_rgb(hexcolour):
+    """'#14454F' -> '20, 69, 79', the form Bootstrap's focus ring uses."""
+    value = hexcolour.lstrip('#')
+    return ', '.join(str(int(value[i:i + 2], 16)) for i in (0, 2, 4))
+
+
+print('CHECK brand_expected_rgb=%s' % brand_rgb(BRAND))
+
 backend = bundle_css('web.assets_web')
 frontend = bundle_css('web.assets_frontend')
 print('CHECK backend_primary=%s' % first(backend, r'--primary: (#[0-9A-Fa-f]{6});'))
 print('CHECK backend_navbar=%s'
       % first(backend, r'\.o_main_navbar\{background-color: (#[0-9A-Fa-f]{6})'))
-print('CHECK login_primary=%s'
-      % first(frontend, r'\.oe_login_form \.btn-primary\{--btn-bg: (#[0-9A-Fa-f]{6})'))
+login_rule = first(frontend, r'(\.oe_login_form \.btn-primary\{[^}]*\})')
+print('CHECK login_primary=%s' % first(login_rule, r'--btn-bg: (#[0-9A-Fa-f]{6})'))
+# EVERY STATE, not just the resting one. --btn-bg was already asserted and was
+# already correct while the button turned Odoo purple the moment you clicked it:
+# web/static/src/public/login.js adds `disabled` on submit, and an unset
+# --btn-disabled-bg falls through to Odoo's own colour. The focus ring is the
+# same shape of miss. See sapian_frontend.scss.
+print('CHECK login_disabled=%s' % first(login_rule, r'--btn-disabled-bg: (#[0-9A-Fa-f]{6})'))
+print('CHECK login_focus_rgb=%s' % first(login_rule, r'--btn-focus-shadow-rgb: ([0-9]+, [0-9]+, [0-9]+)'))
 print('CHECK rail_css=%s'
       % bool(re.search(r'\.o_web_client:has\(\.o_sapian_rail\)\{padding-left', backend)))
 # REPORTED, not checked — a known open item kept in front of whoever builds a
@@ -151,6 +166,44 @@ print('CHECK rail_css=%s'
 # sapian_frontend.scss, which is what CHECK login_primary above asserts.
 print('NOTE frontend_root_primary=%s (Odoo default; see sapian_frontend.scss)'
       % first(frontend, r'--primary: (#[0-9A-Fa-f]{6});'))
+
+# ---- the LOGIN PAGE, as an anonymous visitor is served it ------------------
+# THIS IS THE GAP THAT LET THREE CLIENT-FACING DEFECTS THROUGH.
+#
+# Every check above this line talks to the database or to a compiled asset.
+# None of them asks what comes back on the wire. So the build could report
+# `login_primary=#14454F` — correctly — while the page that colour was on said
+# "Powered by Odoo", offered a stranger an account, and showed no support
+# number. All three were found by a human opening the page.
+#
+# Rendered through Odoo's own WSGI application rather than over a socket:
+# `werkzeug.test.Client(odoo.http.root)` runs the real dispatcher, the real
+# routing, the real session and the real QWeb, and returns exactly the bytes a
+# browser would get — with no port to bind, no background container to reap and
+# no behavioural difference on Windows, where these scripts are run from Git
+# Bash. The request carries no session cookie, so it is served as the anonymous
+# visitor a prospect is.
+from werkzeug.test import Client                    # noqa: E402
+from odoo.http import root as http_root             # noqa: E402
+
+login_response = Client(http_root).get('/web/login', headers={'Host': 'localhost'})
+login_html = login_response.get_data(as_text=True)
+print('CHECK login_http=%s' % login_response.status_code)
+# A zero-length page satisfies every "must not contain" below. Assert the size
+# first, so absence can only be measured on a page that actually rendered.
+print('CHECK login_bytes=%d' % len(login_html))
+print('CHECK login_odoo_refs=%d'
+      % (login_html.count('odoo.com') + login_html.count('Powered by <span>Odoo')))
+print('CHECK login_powered_sapian=%d' % login_html.count('Powered by SapianERP'))
+print('CHECK login_mark=%d' % login_html.count('o_sapian_mark'))
+print('CHECK login_signup=%d' % login_html.count('/web/signup'))
+support = env['ir.config_parameter'].sudo().get_param('sapian_theme.support_contact') or ''
+print('CHECK login_support_configured=%d' % bool(support))
+print('CHECK login_support_rendered=%d' % (bool(support) and support in login_html))
+scope_field = env['res.config.settings']._fields.get('auth_signup_uninvited')
+scope_key = getattr(scope_field, 'config_parameter', None) or 'auth_signup.invitation_scope'
+print('CHECK login_signup_scope=%s'
+      % (env['ir.config_parameter'].sudo().get_param(scope_key) or 'unset'))
 
 # The rail's data precondition: one tile per root app, every one with an icon.
 # The RENDERED assertion lives in sapian_theme's browser tests; this is the
@@ -201,7 +254,37 @@ else
     "The backend navbar is not the brand colour. It is in every frame of a"$'\n'"   screen recording."
   check "^CHECK login_primary=${BRAND_EXPECTED}\$" \
     "The LOGIN page's sign-in button is not the brand colour. The frontend"$'\n'"   bundle never consults \$o-brand-primary — see sapian_frontend.scss."
+  check "^CHECK login_disabled=${BRAND_EXPECTED}\$" \
+    "The sign-in button's DISABLED colour is not the brand — which is the"$'\n'"   colour it turns the moment a prospect clicks it, because login.js adds"$'\n'"   \`disabled\` while the request is in flight."
+  BRAND_RGB="$(printf '%s\n' "${VERIFY_OUT}" | sed -n 's/^CHECK brand_expected_rgb=//p' | tr -d '\r')"
+  check "^CHECK login_focus_rgb=${BRAND_RGB}\$" \
+    "The sign-in button's FOCUS RING is not the brand. Keyboard users and"$'\n'"   anyone who tabs into the form see Odoo purple."
 fi
+
+# ---- the login page as a visitor is served it -------------------------------
+# Ordered so the "did it render at all" checks come first: every absence check
+# below them is meaningless on an empty page.
+check '^CHECK login_http=200$' \
+  "The login page did not return 200. Nothing below this line was checked on"$'\n'"   a real page."
+LOGIN_BYTES="$(printf '%s\n' "${VERIFY_OUT}" | sed -n 's/^CHECK login_bytes=//p' | tr -d '\r')"
+if [ -z "${LOGIN_BYTES}" ] || [ "${LOGIN_BYTES}" -lt 2000 ]; then
+  log_error "!! The login page came back at ${LOGIN_BYTES:-0} bytes — too small to be the"$'\n'"   real page, and small enough that every 'must not contain' check below"$'\n'"   would pass by having nothing in it."
+  verify_failed=1
+fi
+check '^CHECK login_powered_sapian=1$' \
+  "The login footer does not say 'Powered by SapianERP'. The page a client"$'\n'"   opens every morning is unsigned — or still signed by somebody else."
+check '^CHECK login_mark=1$' \
+  "The Sapian mark is not on the login page beside the attribution."
+check '^CHECK login_odoo_refs=0$' \
+  "The login page still attributes the product to Odoo, or still links to"$'\n'"   odoo.com. See sapian_theme/views/login_templates.xml."
+check '^CHECK login_signup=0$' \
+  "The login page offers ACCOUNT CREATION to anonymous visitors. Odoo's"$'\n'"   default for 'Customer Account' is b2c (free sign up) — see the"$'\n'"   CHECK login_signup_scope line above; it must read b2b."
+check '^CHECK login_signup_scope=b2b$' \
+  "Public sign-up is not set to invitation-only on this database."
+check '^CHECK login_support_configured=1$' \
+  "No support contact is configured, so sapian_theme renders nothing —"$'\n'"   which is exactly how a feature with a passing test shipped invisible."
+check '^CHECK login_support_rendered=1$' \
+  "A support contact IS configured but does not appear in the served page."
 check '^CHECK rail_css=True$' \
   "The app rail's CSS is not in the served backend bundle, so the rail cannot"$'\n'"   render and the app icons stay invisible on desktop."
 check '^CHECK rail_iconless=0$' \

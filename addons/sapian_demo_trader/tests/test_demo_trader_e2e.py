@@ -497,6 +497,48 @@ class TestDemoTraderE2E(TransactionCase):
         )
         self.assertFalse(users, "users still default to a placeholder company")
 
+    def test_the_login_page_settings_are_configured(self):
+        """The two settings the login page a prospect sees depends on.
+
+        Both were unset, on every demo ever built. Odoo's default for
+        "Customer Account" is b2c — free sign up — so the demo login page
+        invited strangers to create an account on a private company ERP; and
+        sapian_theme's support line renders nothing when unconfigured, which is
+        how a feature with a passing test shipped invisible for weeks.
+
+        Asserted through the SAME key lookup the code uses, so a rename in Odoo
+        moves both together instead of leaving a test that passes against a
+        parameter nobody reads.
+        """
+        demo = self.env["sapian.demo.trader"]
+        demo._configure_demo_login(self.company)
+        params = self.env["ir.config_parameter"].sudo()
+        self.assertEqual(
+            params.get_param(demo._signup_scope_param()),
+            "b2b",
+            "public sign-up is open on the demo tenant",
+        )
+        self.assertTrue(
+            params.get_param("sapian_theme.support_contact"),
+            "no support contact, so the login page renders no way to get help",
+        )
+
+    def test_the_signup_key_is_the_one_odoo_actually_reads(self):
+        """`auth_signup_uninvited` is the FIELD name; the parameter it writes
+        is `auth_signup.invitation_scope`. Setting the field name as a
+        parameter would look right and change nothing, so this pins that the
+        code asks the field rather than guessing."""
+        demo = self.env["sapian.demo.trader"]
+        field = self.env["res.config.settings"]._fields.get("auth_signup_uninvited")
+        if field is None:
+            self.skipTest("auth_signup is not installed on this database")
+        self.assertEqual(demo._signup_scope_param(), field.config_parameter)
+        self.assertNotEqual(
+            demo._signup_scope_param(),
+            "auth_signup_uninvited",
+            "that is the field name, not the parameter key",
+        )
+
     def test_demo_provision_idempotent(self):
         """Provisioning again with the same name is a no-op."""
         again = self.env["sapian.demo.trader"]._provision_demo_tenant(

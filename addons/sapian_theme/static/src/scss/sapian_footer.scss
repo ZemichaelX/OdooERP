@@ -1,0 +1,60 @@
+// =============================================================================
+// The backend footer.
+//
+// Same two-rules-that-must-agree shape as the rail, so they live in ONE media
+// query: the footer is shown from md up, and the web client is padded from md
+// up to make room for it. Split them and you get a strip of empty space with
+// nothing in it — which is what a Bootstrap display utility would have given
+// us, since `d-none` leaves the element in the DOM and the padding rule keys
+// off `:has(.o_sapian_footer)`.
+//
+// It is a fixed bar rather than a block at the end of the page because the
+// backend's content area scrolls independently: a footer inside it would be
+// reachable only after scrolling a long list to the bottom, which is not
+// "on every page".
+//
+// No hex here — test_no_raw_hex_outside_palette fails the build otherwise.
+// =============================================================================
+
+$o-sapian-footer-height: 1.75rem !default;   // 28px at the default root size
+
+// Hidden below md: on a phone the scarce dimension is vertical, and a
+// permanent 28px bar costs more than the line is worth there. The support
+// number is still on the login page they came through.
+.o_sapian_footer {
+    display: none;
+}
+
+@include media-breakpoint-up(md) {
+    // THE one padding rule, and `:has()` for the same reason as the rail: the
+    // reservation appears and disappears with the footer itself, including
+    // when a fullscreen action removes it, with no second piece of state.
+    .o_web_client:has(.o_sapian_footer) {
+        padding-bottom: $o-sapian-footer-height;
+    }
+
+    .o_sapian_footer {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: $zindex-sticky;   // under modals, backdrops, popovers, tooltips
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 1rem;
+        height: $o-sapian-footer-height;
+        padding: 0 0.75rem;
+        overflow: hidden;
+        white-space: nowrap;
+        font-size: 0.75rem;
+        line-height: 1;
+        color: $sapian-brand;
+        background-color: $sapian-brand-tint;
+        border-top: 1px solid $border-color;
+    }
+
+    .o_sapian_footer_support {
+        font-weight: 600;
+    }
+}
