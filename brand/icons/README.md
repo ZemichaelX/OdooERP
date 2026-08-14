@@ -87,10 +87,56 @@ unique to us.
 
 ## Two things that will bite you
 
-**Replacing a PNG may not update a live database.** Odoo recomputes
-`web_icon_data` only when `web_icon` is *written*. A module whose icon file
-changes on disk can keep serving the old attachment through `-u` indefinitely.
-Verify icon changes on an **upgraded** database, never only a fresh one.
+**Replacing a PNG DOES update a live database — this was tested, and the earlier
+warning here was wrong.** It is retracted rather than deleted, because the
+reasoning that produced it was sound and someone will re-derive it.
+
+The worry: Odoo recomputes `web_icon_data` only when `web_icon` is *written*
+(`ir_ui_menu.py`, `create`/`write`: `if 'web_icon' in vals`). Since v3 changed
+every PNG while leaving every `web_icon` attribute byte-identical, it looked as
+though `-u` would have nothing to write and every deployed database would serve
+the v2 icons forever — invisibly, because a fresh install would look correct.
+
+It does not happen, for a reason in the loader
+(`odoo/tools/convert.py::_tag_menuitem`):
+
+```python
+if parent is not None:
+    values['parent_id'] = parent
+elif rec.get('parent'):
+    values['parent_id'] = self.id_get(rec.attrib['parent'])
+elif rec.get('web_icon'):
+    values['web_icon'] = rec.attrib['web_icon']
+```
+
+`web_icon` is put in the write values **on every load of a parentless
+menuitem**, whether or not the value changed. `write()` then recomputes
+`web_icon_data` unconditionally, which re-reads the file from disk. Our three
+app menus are parentless, so every `-u` refreshes them.
+
+Measured, v2 database upgraded in place with only the PNGs changed (menu XML and
+manifests byte-identical — verified with `git diff`):
+
+| module | before | after | disk after |
+|---|---|---|---|
+| `sapian_core` | 4165 `6adc9a4f` | **3589 `ff89c0b5`** | 3589 `ff89c0b5` |
+| `l10n_et_payroll` | 2552 `54f44c96` | **2742 `18f05801`** | 2742 `18f05801` |
+| `l10n_et_reports` | 2857 `384792e7` | **3223 `5385a93e`** | 3223 `5385a93e` |
+
+The other seven modules have no root menu, so they never travel through
+`web_icon_data` at all. Their icon reaches the Apps list via
+`ir.module.module.icon_image`, which is `compute='_get_icon_image'` with
+**`store=False`** — read from disk on every access, so it cannot go stale
+either. Verified: `icon_image` bytes equal the on-disk bytes for all of them.
+
+**What remains true**, and is the narrow finding this warning was over-generalised
+from: *removing* the `web_icon` attribute does not clear `web_icon_data`. The
+attribute is then absent from the write values, so nothing recomputes and the old
+attachment survives. A module that **loses** its icon keeps serving the old one.
+That is only reachable by deleting the declaration, not by replacing the file.
+
+No upgrade hook is needed. Verify icon changes on an upgraded database anyway —
+the check is cheap and this is exactly the class of thing that changes upstream.
 
 **Verify the delivered file, not the render.** Exporting these to a palette PNG
 via `quantize()` on an RGB image silently produced files whose transparency
