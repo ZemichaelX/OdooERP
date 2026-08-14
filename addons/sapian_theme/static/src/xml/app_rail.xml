@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <!--
+        A flat list of <a> tiles. No grouping, no "more" affordance, no
+        truncation: every installed app is here, in menu-sequence order, and the
+        rail scrolls when they do not fit. See README.md, "36 apps and 900
+        pixels", for why that is the trade-off and what it costs.
+
+        `d-none` is NOT used to hide below md. Bootstrap's display utilities
+        leave the element in the DOM, and the padding rule that makes room for
+        the rail keys off `:has(.o_sapian_rail)` — so a display utility would
+        indent the web client by 52px while showing nothing in the gap. Both
+        rules live inside one media query in sapian_rail.scss instead, where
+        they cannot disagree.
+    -->
+    <t t-name="sapian_theme.AppRail">
+        <nav t-if="!state.fullscreen" class="o_sapian_rail" t-ref="rail"
+             aria-label="Applications">
+            <a t-foreach="apps" t-as="app" t-key="app.id"
+               class="o_sapian_rail_app"
+               t-att-class="{ o_sapian_rail_app_active: currentApp and currentApp.id === app.id }"
+               t-att-href="hrefFor(app)"
+               t-att-aria-label="app.name"
+               t-att-data-menu-xmlid="app.xmlid"
+               t-att-data-tooltip="app.name"
+               data-tooltip-position="right"
+               t-on-click.prevent="() => this.onAppClick(app)">
+                <img t-if="app.webIconData" class="o_sapian_rail_icon"
+                     t-att-src="app.webIconData" t-att-alt="app.name"/>
+                <!--
+                    Same degradation as the login page: when there is no image,
+                    fall back to the NAME rather than to a broken <img> or a
+                    stock placeholder. An app in this state is a defect —
+                    load_web_menus already substitutes Odoo's default icon when
+                    a menu has none — so the rail's own test asserts that this
+                    branch is taken zero times.
+                -->
+                <span t-else="" class="o_sapian_rail_initial"
+                      t-esc="app.name.trim().slice(0, 2)"/>
+            </a>
+        </nav>
+    </t>
+
+</templates>

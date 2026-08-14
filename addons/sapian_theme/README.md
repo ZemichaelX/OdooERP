@@ -1,8 +1,202 @@
 # SapianERP Theme
 
 The house identity: one brand colour driving the backend, the login page and
-printed documents. Horizontal by design — nothing here assumes a client, a
-sector or a company.
+printed documents, plus the **app rail** that makes the app icons visible on
+desktop. Horizontal by design — nothing here assumes a client, a sector or a
+company.
+
+## The app rail
+
+### Why it exists at all
+
+**Odoo 19's desktop apps menu renders no icons.** `web.NavBar.AppsMenu` has two
+branches: the small-screen one draws
+`<img t-attf-src="{{app.webIconData}}"/>`, and the desktop one is a plain
+`DropdownItem` with `t-esc="app.name"` — a text list
+(`web/static/src/webclient/navbar/navbar.xml`). Icons therefore appear only in
+the narrow-screen drawer and in the Apps list.
+
+So the ten icons in `brand/icons/` were invisible on the screen a user actually
+works in. The rail is what makes them exist.
+
+### Why `main_components`, and not the navbar or the web client
+
+Measured on this Odoo 19 tree, not assumed:
+
+```bash
+docker compose -f docker/docker-compose.yml exec -T odoo bash -lc \
+  'cd /usr/lib/python3/dist-packages/odoo/addons && python3 - <<PY
+import re, pathlib
+pat = re.compile(r"registry\s*\.\s*category\(\s*\"main_components\"\s*\)\s*\.\s*add\(")
+sites = []
+for p in sorted(pathlib.Path(".").rglob("*.js")):
+    if "/tests/" in str(p) or p.name.endswith(".test.js"):
+        continue
+    flat = re.sub(r"\s+", " ", p.read_text(errors="ignore"))
+    n = len(pat.findall(flat))
+    for a in set(re.findall(r"(?:const|let|var)\s+(\w+)\s*=\s*registry\s*\.\s*category\(\s*\"main_components\"\s*\)", flat)):
+        n += len(re.findall(re.escape(a) + r"\s*\.\s*add\(", flat))
+    if n:
+        sites.append((str(p), n))
+print("call sites:", sum(c for _, c in sites))
+print("modules   :", len({s.split("/")[0] for s, _ in sites}))
+PY'
+```
+
+| Extension point | Shipped Odoo modules using it |
+|---|---|
+| `main_components` registry | **20 registration call sites across 7 modules** — web, mail, website, html_editor, html_builder, point_of_sale, base_import |
+| `patch(NavBar.prototype, …)` | **1** — website, which is also the only module to extend the `web.NavBar` template |
+| inherit the `web.WebClient` template | **0** (mail patches `WebClient.prototype` in JS; nobody touches the template) |
+
+The registry is the extension point Odoo itself reaches for twenty times. The
+navbar is contested by exactly one module and the web-client template by none —
+which measures how *unusual* those two are, not how safe. Registering a
+component costs nothing another module can take away; the login-branding defect
+below was precisely a lost inheritance contest.
+
+> **Correction to the recorded number.** This count was previously written down
+> as **21**-vs-1-vs-0. Re-measured on 19.0-20260723 with the command above it is
+> **20** call sites (7 modules), 1, 0. The shape of the argument is unchanged;
+> the number is not, so the number is corrected rather than repeated.
+
+### The five things it depends on, none internal to the navbar
+
+1. the `main_components` registry
+2. the `menu` service — `getApps` / `getCurrentApp` / `selectMenu`
+3. the `MENUS:APP-CHANGED` bus event
+4. the `ACTION_MANAGER:UI-UPDATED` bus event, so a fullscreen action gets the
+   whole screen — the same event and the same `mode !== "new"` guard `WebClient`
+   uses for its own `state.fullscreen`
+5. the `/odoo/<action-path>` URL shape, mirrored from `NavBar.getMenuItemHref`
+   so a middle-click still opens a tab
+
+Nothing is patched and nothing is inherited.
+
+### 36 apps and 900 pixels
+
+The design was drawn when a tenant had 14 root apps. It now has **36**. At the
+48px pitch the rail uses that is **1,728px of tiles against a ~900px viewport**
+— half the apps do not fit.
+
+**The rail scrolls. Nothing is hidden, grouped, collapsed or truncated.**
+
+What the user loses, stated plainly: on a 900px-tall screen roughly the bottom
+half of a 36-app install needs a scroll gesture to reach. Measured on the build
+database at 1366x900: `scrollHeight` 1728 against `clientHeight` 900, and
+**18 of 36 tiles visible without scrolling**.
+
+That is the cost, and it is the cheapest one available, because **36 apps do not
+fit and every alternative pays more**:
+
+| Alternative | Why not |
+|---|---|
+| Truncate with a "more" affordance | An app you cannot see is worse than an app you must scroll to. This is the failure mode the whole design refuses. |
+| A pinned / favourites subset | Needs per-user state, a pin UI and a "show everything" escape hatch — three new surfaces — and a user who has pinned nothing sees an arbitrary subset. The unpinned apps still need somewhere to live, which is a scrolling list. |
+| Group or collapse by category | Turns a one-click launcher into two clicks, and needs a grouping source we do not have without a new module dependency (below). |
+| Smaller tiles | 36 × 28px is still ~1,000px, and the icons stop being legible — which defeats the only reason the rail exists. |
+
+The scrollbar is deliberately left visible (`scrollbar-width: thin`). It is the
+affordance that says *there is more below*; a rail that looked complete while
+holding half the apps would be the silent truncation this design refuses.
+
+Two things soften the cost:
+
+- **The current app is scrolled into view** on arrival and after every app
+  switch, so wherever you are, you can see where you are.
+- **Order is menu sequence**, which is already the order of Odoo's own apps
+  dropdown and its small-screen drawer. Two lists of the same things in two
+  different orders is worse than one long list.
+
+### Ordering: menu sequence, and why NOT the catalogue tier
+
+`sapian.module.catalog` carries a `tier` (core / common / optional) and it is
+the obvious ordering source. **It is not used, and should not be.**
+
+Reaching for it would mean `sapian_theme` declaring a manifest dependency on
+`sapian_core`. That is the exact dependency removed from `l10n_et_payroll` in
+PR #21, on the principle that **a manifest describes what code NEEDS**. The rail
+does not need the catalogue: it needs an order, and `load_menus` already carries
+one. Three further reasons, none of them merely tidy:
+
+- This module installs on a database carrying **no other sapian module** — that
+  is a stated property of it, and a `sapian_core` dependency would end it.
+- `tier` is per-company configuration a consultant edits for packaging reasons.
+  Wiring it to the rail would make the app order jump when somebody re-tiers a
+  catalogue entry for a reason that has nothing to do with navigation.
+- Menu sequence is editable per client with **no code and no dependency**:
+  Settings ▸ Technical ▸ User Interface ▸ Menu Items, change `sequence`.
+
+And it already lands well. Measured on the build database, sequence alone puts
+all three SapianERP apps in the visible band — SapianERP at position 1,
+Ethiopian Compliance at 10, Ethiopian Payroll at 12 of 36 — with Apps and
+Settings at the bottom where convention puts them.
+
+### Below md
+
+The rail is hidden below Bootstrap's `md` breakpoint and Odoo's own drawer
+(`web.NavBar.AppsMenu.Sidebar`) handles small screens — and it *does* draw the
+icons, so nothing is lost there.
+
+The show/hide rule and the `padding-left` that makes room for the rail live in
+**one media query** in `sapian_rail.scss`, because they cannot be allowed to
+disagree: hiding the rail with Bootstrap's `d-none` would leave the element in
+the DOM, the `:has(.o_sapian_rail)` padding would still match, and the web
+client would be indented 52px around an empty strip.
+
+The padding keys off `:has()` rather than a class on `<body>` so that it
+appears and disappears **with the rail itself**, including when a fullscreen
+action removes it. There is no second piece of state to keep in step.
+
+### How it is guarded
+
+`tests/test_app_rail.py` drives real headless Chrome, logs in, loads `/odoo` and
+looks at the DOM the user gets — because a source assertion would have passed
+straight through the login defect below, and would pass through an unrendered
+rail for exactly the same reason.
+
+There is **no expected tile count** in the file. The expectation is read per run
+from `/web/webclient/load_menus`, so the guard stays correct on a database with
+3 apps or 60; a fixed 36 would go red the first time a client installed one more
+module.
+
+`browser_js` *skips* when Chrome is missing, and a skip is a success signal
+produced by doing nothing. So the `rail-render` CI job installs Chrome
+(`scripts/install_test_browser.sh`) and then greps the log for the
+`SAPIAN-RAIL …` lines the tests print **from inside the page**. A skipped run
+cannot produce them, and the job fails when they are absent.
+
+The guard is proved to discriminate by breaking, in the live DOM, each thing it
+claims to check, and asserting it complains about each — then that it recovers.
+What the browser printed on the 36-app build database:
+
+```
+SAPIAN-RAIL viewport=1366x900 apps=36 tiles=36 loaded=36 \
+    visibleWithoutScrolling=18 lastReachableByScrolling=true
+SAPIAN-RAIL-OVERFLOW forcedRailHeight=1680 contentHeight=1728 tiles=36 \
+    visibleWithoutScrolling=35 lastReachableByScrolling=true
+SAPIAN-RAIL-SMALL viewport=375x667 display=none padding-left=0
+
+SAPIAN-RAIL-DISCRIMINATION no-rail       -> no .o_sapian_rail element in the DOM
+SAPIAN-RAIL-DISCRIMINATION missing-tile  -> rail shows 35 tiles for 36 root apps
+SAPIAN-RAIL-DISCRIMINATION iconless-tile -> sapian_core.menu_sapian_root: no
+                                            <img> — fell back to the text initial
+SAPIAN-RAIL-DISCRIMINATION restored      -> clean
+```
+
+**Two things that cost a debugging session, recorded so they do not cost
+another:**
+
+1. **A `ready` expression must evaluate to a BOOLEAN.**
+   `ChromeBrowser._wait_ready` compares the CDP result against
+   `{'type': 'boolean', 'value': True}` (`odoo/tests/common.py:1877`), so
+   `document.querySelector(…)` — which returns an Element — is *never* ready.
+   The test then times out after 60s with a websocket `TimeoutError` that looks
+   like infrastructure trouble rather than a wrong expression. Use `!!`.
+2. **Odoo's onboarding tour hijacks `/odoo`.** With `res.users.tour_enabled`
+   stored `True`, the tour starts on page load and clicks its way into another
+   app — moving the very highlight these tests assert on. `RailBrowserCase`
+   turns it off in `setUp`.
 
 ## Where the palette lives
 
@@ -246,9 +440,22 @@ database that had `website` — which is not academic, since `website_sale` pull
 
 ## Check these on upgrade
 
-Ordered by how likely they are to break, worst first. All three fail *silently*
-— the UI stays correct and usable, it just stops being branded.
+Ordered by how likely they are to break, worst first. Every one of them fails
+*silently* — the UI stays correct and usable, it just stops being branded.
 
+0. **The app rail's three contact points with Odoo.** Highest risk in the
+   module, because it is JavaScript against a framework rather than a colour.
+   - `menuService.getApps()` and the `MENUS:APP-CHANGED` /
+     `ACTION_MANAGER:UI-UPDATED` bus events. A rename empties the rail or
+     leaves it stuck on the wrong highlight.
+   - `.o_web_client` on `<body>` (`web/views/webclient_templates.xml:309`) —
+     the padding hook. If it is renamed the rail overlaps the content.
+   - `:has()` support in the CSS. Already relied on by Odoo's own backend
+     bundle, so this breaks only if Odoo drops it.
+
+   None of these fails quietly for long: `TestSapianAppRailRendered` renders
+   the real page and asserts a tile per app with a decoded icon, and it asserts
+   the padding is at least the rail's width.
 1. **Login sign-in button** — `sapian_frontend.scss` overrides
    `.oe_login_form .btn-primary`. The frontend bundle **never** consults
    `$o-brand-primary`: `html_editor` (auto_install) rebuilds Bootstrap's
@@ -284,5 +491,19 @@ information.
 
 ## Scope
 
-Colour and the primary-action treatment only. No layout, no spacing, no
-typography. No sidebar, dashboard or menu work.
+Two things, and nothing else:
+
+1. **Colour** — the brand and the primary-action treatment. No spacing, no
+   typography, no view layout, no dashboards.
+2. **The app rail** — a persistent icon launcher, because Odoo 19's desktop
+   apps menu draws no icons and the module already owns the icon assets.
+
+> This section previously read *"No sidebar, dashboard or menu work."* The rail
+> makes half of that false, so it is rewritten rather than left standing.
+> Dashboards and view layout are still out.
+
+The rail lives here rather than in a module of its own because it must use the
+palette — `$sapian-brand` and its derivations — and a separate module would
+have to declare a dependency on this one to reach it, or restate the colour and
+break the "one edit to re-brand" property that `test_no_raw_hex_outside_palette`
+enforces. It adds no manifest dependency: `base` + `web`, as before.
