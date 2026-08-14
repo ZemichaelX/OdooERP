@@ -3,24 +3,88 @@
 
     <!-- The login page.
 
-         Verified against 19.0 rather than assumed: the template is
-         `web.login_layout`, declared at web/views/webclient_templates.xml:110.
-         (`website.login_layout` also exists and is a different thing — it is
-         the website module's wrapper, and inheriting it would do nothing on a
-         database without `website` installed.)
+         TWO templates, and the split is the whole point. Read this before
+         moving anything back into one.
 
-         The sign-in button needs no rule here: it is `.btn-primary`, so it is
-         already brand-coloured through $o-brand-primary. White on brand is
-         4.77:1, which passes WCAG AA for normal text. -->
-    <template id="login_layout_sapian" inherit_id="web.login_layout"
-              name="SapianERP login branding">
+         `web.login_layout` (web/views/webclient_templates.xml:110) is the CARD:
+         a t-call to web.frontend_layout wrapping a card > card-body containing
+         the stock logo, `<t t-out="0"/>` for the page content, and a footer.
 
-        <!-- Logo: degrade to the company name rather than to Odoo's stock
-             placeholder. `/web/binary/company_logo` always returns an image —
-             Odoo's own logo when the company has set none — so a fresh
-             database would otherwise greet a prospect with someone else's
-             branding. Checking the field lets us render text instead. -->
-        <xpath expr="//div[hasclass('text-center')][hasclass('pb-3')]" position="replace">
+         `web.login` (line 136) is the CONTENT poured into that t-out.
+
+         WEBSITE DESTROYS THE CARD. website/views/website_templates.xml:1622
+         inherits web.login_layout at priority 20 with
+
+             <xpath expr="t[@t-call]" position="replace">
+                 <t t-call="website.layout">
+                     <div class="oe_website_login_container" t-out="0"/>
+                 </t>
+             </xpath>
+
+         — it replaces the ENTIRE t-call subtree, so the card, the card-body and
+         the stock logo div all cease to exist. Anything we xpath into them
+         disappears with them. That is exactly what happened: with `website`
+         installed the logo and the support line vanished silently.
+
+         A PRIORITY BUMP DOES NOT FIX IT, and this was measured rather than
+         assumed: at priority 50 (applying after website's 20) the upgrade did
+         NOT error, but the login tests went from 2 failures to 4 — worse. Our
+         specs then operate on a subtree that website has already thrown away.
+
+         The fix is to stop anchoring the branding in the contested layout at
+         all. Everything that must survive lives in `web.login`, whose content
+         is passed through `t-out="0"` into whichever wrapper wins — the stock
+         card, or website's. The login FORM is the anchor because a login page
+         cannot stop containing its own login form; it is the one node here that
+         cannot be optioned away.
+
+         Matched on `contains(@t-attf-class, 'oe_login_form')` and NOT on
+         `hasclass('oe_login_form')`. The class is COMPUTED —
+         `t-attf-class="oe_login_form #{'' if login else 'd-none'}"` — so there
+         is no static `class` attribute for hasclass() to see, and that xpath
+         fails to locate the node at INSTALL time, not at render time. Measured:
+         it aborts the install with "Element cannot be located in parent view".
+
+         `web.login_layout` is still inherited, for exactly one job: deleting
+         the stock logo so we do not render two. When website is installed that
+         deletion is moot (the node is gone anyway) and harmlessly discarded.
+
+         The sign-in button needs no rule here — it is styled at ASSET level in
+         sapian_frontend.scss, which is why the button colour survived `website`
+         when these two template features did not. See README.md. -->
+
+    <template id="login_layout_sapian" inherit_id="web.login_layout" priority="10"
+              name="SapianERP login branding (stock logo removal)">
+        <!-- Remove Odoo's unconditional company logo. `/web/binary/company_logo`
+             always returns an image — Odoo's own when the company has set none —
+             so leaving it would greet a prospect with someone else's branding on
+             a fresh database. The replacement lives in `login_sapian` below,
+             which checks the field and degrades to the company NAME instead.
+
+             priority=10 is DELIBERATE and must stay BELOW website's 20
+             (website/views/website_templates.xml:1622). This view must apply
+             while the stock logo still exists; website then replaces the whole
+             card and this deletion becomes moot, which is fine. Applying AFTER
+             website means xpath'ing into a subtree that no longer exists — and
+             that is not theory: at priority 50 the login page returned HTTP 500
+             with "Element ... cannot be located in parent view".
+
+             Explicit rather than relying on Odoo's default of 16, because a
+             stored priority is NOT reset when the XML stops specifying it. A
+             database that ever carried a different value keeps it through every
+             subsequent upgrade — measured, on the database where the 50 was
+             tried. Stating the number is what lets such a database self-heal. -->
+
+        <xpath expr="//div[hasclass('text-center')][hasclass('pb-3')]" position="replace"/>
+    </template>
+
+    <template id="login_sapian" inherit_id="web.login"
+              name="SapianERP login branding (content)">
+
+        <!-- Logo, or the company name when there is none. Anchored BEFORE the
+             login form, which puts it exactly where the stock logo was inside
+             the card, and keeps it at the top of website's container too. -->
+        <xpath expr="//form[contains(@t-attf-class, 'oe_login_form')]" position="before">
             <t t-set="sapian_company"
                t-value="env['res.company'].sudo().search([], order='id', limit=1)"/>
             <div class="text-center pb-3 border-bottom mb-4">
@@ -42,7 +106,7 @@
 
              Empty state renders NOTHING — no empty box, no stray separator.
              That is what the t-if on the whole block is for. -->
-        <xpath expr="//div[hasclass('card-body')]" position="inside">
+        <xpath expr="//form[contains(@t-attf-class, 'oe_login_form')]" position="after">
             <t t-set="sapian_support"
                t-value="env['ir.config_parameter'].sudo().get_param('sapian_theme.support_contact')"/>
             <div t-if="sapian_support" class="text-center small text-muted mt-3">

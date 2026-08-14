@@ -195,3 +195,88 @@ jobs:
             echo "::error::Only ${EXECUTED} tests executed, expected at least ${MIN_EXPECTED_TESTS}. The suite did not run — this is a failure, not a pass."
             exit 1
           fi
+
+  theme-with-website:
+    name: Theme login vs website
+    runs-on: ubuntu-latest
+    # WHY A SEPARATE JOB.
+    #
+    # sapian_theme's login branding is template inheritance on
+    # web.login_layout / web.login — layouts other modules also inherit. The
+    # `website` module replaces the whole login card at priority 20, and when it
+    # is installed our logo and support-contact line silently vanished. The
+    # login tests PASSED in CI throughout, because CI never installed website:
+    # the guard existed but was never exercised where the breakage happens.
+    #
+    # A guard that cannot fail in CI is not a guard. This job installs website
+    # WITH sapian_theme and runs the login tests against that combination.
+    #
+    # Separate from integration-tests, not folded into it, for two reasons:
+    #   1. it runs in PARALLEL, so the extra ~2 minutes of installing website do
+    #      not lengthen the critical path;
+    #   2. it is a distinct question with a distinct failure meaning — "the
+    #      theme lost a contest with another module" is not "a test broke".
+    #
+    # This is NOT hypothetical coverage: website_sale is a plausible client
+    # purchase (an Ethiopian retailer selling online) and it pulls website in.
+    container:
+      image: odoo:19.0@sha256:e415f9924395e7521245813135112f264b9222bcde3b1d3c2ee9ff073081540a
+      options: --user root
+    services:
+      db:
+        image: postgres:16@sha256:33f923b05f64ca54ac4401c01126a6b92afe839a0aa0a52bc5aeb5cc958e5f20
+        env:
+          POSTGRES_USER: odoo
+          POSTGRES_PASSWORD: odoo
+          POSTGRES_DB: postgres
+        options: >-
+          --health-cmd "pg_isready -U odoo"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login branding survives `website`
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/odoo-data
+          odoo \
+            --db_host=db --db_port=5432 --db_user=odoo --db_password=odoo \
+            --data-dir=/tmp/odoo-data \
+            --addons-path="${GITHUB_WORKSPACE}/addons,/usr/lib/python3/dist-packages/odoo/addons" \
+            -d ci_theme_website \
+            -i website,sapian_theme --without-demo=all \
+            --test-enable --test-tags '/sapian_theme:TestSapianThemeLogin' \
+            --workers=0 --max-cron-threads=0 \
+            --stop-after-init --log-level=test 2>&1 | tee /tmp/theme-website.log
+
+          # PROVE THE CONDITION WAS REALLY CREATED. Without this the job could
+          # pass by running the login tests on a database where `website` failed
+          # to install — green for the same reason the bug was invisible.
+          if ! grep -qE "loading website/" /tmp/theme-website.log; then
+            echo "::error::No sign that the website module was loaded. This job's whole purpose is testing WITH website installed; it proves nothing otherwise."
+            exit 1
+          fi
+
+          # Assert the runner reported, and reported the expected suite.
+          if ! grep -q "odoo\.tests\.result:" /tmp/theme-website.log; then
+            echo "::error::The test runner never reported a result line — no tests were executed."
+            exit 1
+          fi
+          if grep -qE "tests\.result: ([1-9][0-9]* failed|0 failed, [1-9][0-9]* error)" /tmp/theme-website.log; then
+            echo "::error::Login branding did NOT survive the website module."
+            exit 1
+          fi
+
+          # A floor, so a renamed or removed test class cannot pass by selecting
+          # nothing. TestSapianThemeLogin has 4 tests at this commit.
+          MIN_LOGIN_TESTS=4
+          EXECUTED=$(grep -oE "odoo\.tests\.stats: sapian_theme: [0-9]+ tests" /tmp/theme-website.log \
+                     | grep -oE "[0-9]+ tests" | grep -oE "^[0-9]+" || echo 0)
+          echo "Executed ${EXECUTED} sapian_theme tests with website installed (floor ${MIN_LOGIN_TESTS})"
+          if [ "${EXECUTED}" -lt "${MIN_LOGIN_TESTS}" ]; then
+            echo "::error::Only ${EXECUTED} tests ran; expected at least ${MIN_LOGIN_TESTS}. The selection is broken, so a green result means nothing."
+            exit 1
+          fi
