@@ -160,9 +160,9 @@ jobs:
             --data-dir=/tmp/odoo-data \
             --addons-path="${GITHUB_WORKSPACE}/addons,/usr/lib/python3/dist-packages/odoo/addons" \
             -d ci_test \
-            -i sapian_demo_trader,sapian_demo_pharma,sapian_theme,sapian_dress_rehearsal,l10n_et_calendar \
+            -i sapian_demo_trader,sapian_demo_pharma,sapian_theme,sapian_dress_rehearsal,l10n_et_calendar,l10n_et_calendar_account,l10n_et_calendar_purchase \
             --test-enable \
-            --test-tags '/sapian_core,/l10n_et_base,/l10n_et_payroll,/l10n_et_reports,/vertical_pharma,/sapian_demo_trader,/sapian_demo_pharma,/sapian_theme,/sapian_dress_rehearsal,/l10n_et_calendar' \
+            --test-tags '/sapian_core,/l10n_et_base,/l10n_et_payroll,/l10n_et_reports,/vertical_pharma,/sapian_demo_trader,/sapian_demo_pharma,/sapian_theme,/sapian_dress_rehearsal,/l10n_et_calendar,/l10n_et_calendar_account,/l10n_et_calendar_purchase' \
             --workers=0 --max-cron-threads=0 \
             --stop-after-init --log-level=test 2>&1 | tee /tmp/odoo-test.log
           # `set -o pipefail` already makes a non-zero odoo exit fail this step.
@@ -189,8 +189,8 @@ jobs:
             echo "::error::The Odoo test runner never reported a result line — no tests were executed. A suite that runs nothing must not report success."
             exit 1
           fi
-          # MIN_EXPECTED_TESTS is a FLOOR, not the exact count (342 at this
-          # commit, after adding l10n_et_calendar's 27 to the selection).
+          # MIN_EXPECTED_TESTS is a FLOOR, not the exact count (377 at this
+          # commit, after adding l10n_et_calendar and its two bridges).
           # Raise it as the suite grows. Only ever
           # lower it in a commit that says which tests went away and why —
           # lowering it to make CI pass is how this guard gets quietly disabled.
@@ -198,7 +198,7 @@ jobs:
           # NOTE: this job has no browser, so the app rail's browser_js tests
           # skip here. They are covered by the `rail-render` job, which installs
           # Chrome and fails if the browser did not actually report.
-          MIN_EXPECTED_TESTS=317
+          MIN_EXPECTED_TESTS=350
           EXECUTED=$(grep -oE "odoo\.tests\.stats: [A-Za-z0-9_]+: [0-9]+ tests" /tmp/odoo-test.log \
                      | awk '$4 == "tests" { total += $3 } END { print total + 0 }')
           echo "Executed ${EXECUTED} tests (floor ${MIN_EXPECTED_TESTS}):"
@@ -309,6 +309,60 @@ jobs:
           fi
           grep -q "odoo\.tests\.stats: l10n_et_calendar: " /tmp/calendar-again.log \
             || { echo "::error::No calendar tests ran on reinstall."; exit 1; }
+
+      - name: A bridge appears only when BOTH its sides are present
+        shell: bash
+        # auto_install is a claim about what happens on somebody else's
+        # database, and "it worked on mine" is not evidence: the interesting
+        # case is the one where a bridge appears where it should not, on a
+        # client who installed Accounting and never asked for a calendar.
+        #
+        # So this walks the three states on a separate database and asserts the
+        # module states at each one, rather than asserting the manifests say
+        # auto_install: True — which they would say either way.
+        run: |
+          set -euo pipefail
+          ARGS="--db_host=db --db_port=5432 --db_user=odoo --db_password=odoo
+                --data-dir=/tmp/odoo-data
+                --addons-path=${GITHUB_WORKSPACE}/addons,/usr/lib/python3/dist-packages/odoo/addons
+                --workers=0 --max-cron-threads=0 --stop-after-init"
+          PROBE='print("SAPIAN-BRIDGE " + " ".join("%s=%s" % (m.name, m.state) for m in env["ir.module.module"].search([("name","in",["account","purchase","l10n_et_calendar","l10n_et_calendar_account","l10n_et_calendar_purchase"])], order="name")))'
+
+          expect () {   # expect <label> <expected SAPIAN-BRIDGE line>
+            echo "${PROBE}" | odoo shell ${ARGS} -d ci_bridges --log-level=warn 2>&1 \
+              | tee /tmp/bridge.log >/dev/null
+            grep -q "SAPIAN-BRIDGE " /tmp/bridge.log \
+              || { echo "::error::[$1] the shell never reported — nothing was checked."; exit 1; }
+            ACTUAL=$(grep -o "SAPIAN-BRIDGE .*" /tmp/bridge.log | tail -1)
+            echo "  [$1] ${ACTUAL}"
+            if [ "${ACTUAL}" != "$2" ]; then
+              echo "::error::[$1] expected: $2"
+              exit 1
+            fi
+          }
+
+          # 1. Accounting, and no calendar: neither bridge may appear.
+          odoo ${ARGS} -d ci_bridges -i account --log-level=warn
+          expect "account alone" "SAPIAN-BRIDGE account=installed l10n_et_calendar=uninstalled l10n_et_calendar_account=uninstalled l10n_et_calendar_purchase=uninstalled purchase=uninstalled"
+
+          # 2. Add the calendar: the INVOICE bridge appears by itself, and the
+          #    purchase one stays away because purchase is not installed.
+          odoo ${ARGS} -d ci_bridges -i l10n_et_calendar --log-level=warn
+          expect "calendar added" "SAPIAN-BRIDGE account=installed l10n_et_calendar=installed l10n_et_calendar_account=installed l10n_et_calendar_purchase=uninstalled purchase=uninstalled"
+
+          # 3. Add purchase: now the second bridge appears too.
+          odoo ${ARGS} -d ci_bridges -i purchase --log-level=warn
+          expect "purchase added" "SAPIAN-BRIDGE account=installed l10n_et_calendar=installed l10n_et_calendar_account=installed l10n_et_calendar_purchase=installed purchase=installed"
+
+          # 4. Uninstall both bridges: their columns go with them, and the
+          #    calendar itself is untouched.
+          echo 'env["ir.module.module"].search([("name","in",["l10n_et_calendar_account","l10n_et_calendar_purchase"])]).button_immediate_uninstall(); env.cr.commit()' \
+            | odoo shell ${ARGS} -d ci_bridges --log-level=warn 2>&1 | tail -3
+          echo 'env.cr.execute("SELECT table_name, column_name FROM information_schema.columns WHERE table_name IN (%s, %s)", ("account_move", "purchase_order")); left = sorted(r for r in env.cr.fetchall() if r[1].startswith("l10n_et_")); print("SAPIAN-BRIDGE-UNINST leftover=%d %s" % (len(left), left))' \
+            | odoo shell ${ARGS} -d ci_bridges --log-level=warn 2>&1 | tee /tmp/bridge-uninst.log | grep SAPIAN-BRIDGE-UNINST
+          grep -q "SAPIAN-BRIDGE-UNINST leftover=0 " /tmp/bridge-uninst.log \
+            || { echo "::error::Uninstalling a bridge left its columns behind."; exit 1; }
+          expect "bridges removed" "SAPIAN-BRIDGE account=installed l10n_et_calendar=installed l10n_et_calendar_account=uninstalled l10n_et_calendar_purchase=uninstalled purchase=installed"
 
   theme-with-website:
     name: Theme login vs website

@@ -42,11 +42,30 @@ month is one prefix filter. Measured, not guessed: a mirrored date costs ~22 MB
 per million rows, two cost ~36 MB, and the index turns a 30 ms sequential scan
 into 7.9 ms. Module README carries the numbers and the collation caveat.
 
+**On documents.** Two auto-installing bridges — `l10n_et_calendar_account`
+(invoice date, due date) and `l10n_et_calendar_purchase` (order deadline,
+expected arrival) — put the dates on the form, in the list and on the printed
+PDF, with the company setting deciding which calendar prints. Each bridge is
+two field declarations and two view inheritances and **no logic at all**: a
+rule implemented twice in two bridges is a rule that will diverge, and these
+would diverge on a date.
+
+The purchase side forced the mixin to grow one thing. `date_order` and
+`date_planned` are **Datetimes**, Odoo stores those as naive UTC, and Ethiopia
+is UTC+3 — so an order placed at 01:00 in Addis (22:00 UTC the day before)
+would have been filed a day early. The conversion through Ethiopian local time
+lives in the mixin, keyed off the source field's own type, with both sides of
+the midnight boundary tested; setting the timezone to UTC turns four tests red.
+
 CI gains a `calendar-standalone` job, because the module's central claim is that
 it stands alone and the integration job installs it beside everything else we
 ship: it installs the calendar on a database with nothing else of ours,
 asserts that from `ir_module_module`, uninstalls it, asserts the columns went
-with it, and reinstalls.
+with it, and reinstalls. A second step in that job walks the three states an
+auto-install bridge has to get right — Accounting alone (no bridge), plus the
+calendar (the invoice bridge appears by itself, the purchase one does not),
+plus Purchase (the second appears) — and then uninstalls both and asserts the
+columns went with them.
 
 ### The demo you rehearse on is now the demo you show (2026-08-14)
 Two flagged-but-unfixed items, and a third gap found while answering the

@@ -97,6 +97,29 @@ is a dict rather than a single pair from the start:
 * the cost is one column and one index **per date** — see the measurement
   below.
 
+### Date sources and Datetime sources
+
+An invoice date is a `Date`. A purchase order's deadline and expected arrival
+are `Datetime`s. The mixin reads the source field's own type and handles the
+difference itself, so a bridge never has to:
+
+```
+2025-07-07 22:00 UTC  =  2025-07-08 01:00 in Addis Ababa
+                      =  Hamle 1, 2017 EC     (what is stored)
+                      =  Sene 30, 2017 EC     (what a naive .date() would store)
+```
+
+Odoo stores Datetimes as naive UTC and Ethiopia is UTC+3, so every order
+entered after 21:00 UTC would be filed a day early. The conversion runs through
+`ETHIOPIAN_TZ`, which is **fixed** rather than read from a setting: "what
+Ethiopian date was this?" is a question about the day in Ethiopia, Ethiopia has
+one timezone and has never observed daylight saving, and a per-user timezone
+would make a stored value depend on who saved the record while a per-company one
+would silently invalidate every stored mirror the day somebody edited it.
+
+Both sides of the midnight boundary are tested (20:59:59 and 21:00:00 UTC), and
+setting `ETHIOPIAN_TZ` to UTC turns three tests red — proven, not assumed.
+
 ### What is stored, and why it is not the pretty string
 
 The stored value is canonical and format-independent: `2017-11-01`. Not
@@ -202,6 +225,24 @@ handed a chart of accounts along with them.
 `base_setup` is there because the two settings live on the Settings page, whose
 view this module inherits. Referencing another module's XML id without
 depending on it works only for as long as somebody else happens to install it.
+
+## Where the dates actually appear
+
+Nowhere, on their own — this module ships the mixin, not the documents. Two
+auto-installing bridges put the dates on records, each depending on the
+calendar and on one Odoo app:
+
+| bridge | model | dates |
+|---|---|---|
+| `l10n_et_calendar_account` | `account.move` | invoice date, due date |
+| `l10n_et_calendar_purchase` | `purchase.order` | order deadline, expected arrival |
+
+`auto_install: True` means a bridge appears by itself exactly when both its
+sides are installed, and stays away otherwise — which is what keeps this module
+standing alone. Each bridge is two field declarations and two view
+inheritances, with **no logic**: if a bridge appears to need a method, that is
+the mixin missing something, because a rule implemented twice in two bridges is
+a rule that will diverge.
 
 ## Running the tests
 

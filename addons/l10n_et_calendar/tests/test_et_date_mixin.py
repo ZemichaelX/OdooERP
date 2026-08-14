@@ -33,7 +33,7 @@ A shipped probe model would put two real columns on a real table in every client
 database for the sake of a test, which is worse.
 """
 
-from datetime import date
+from datetime import date, datetime
 
 from odoo import fields, models
 from odoo.exceptions import AccessError
@@ -46,7 +46,12 @@ PROBE = "l10n.et.calendar.probe"
 
 
 class L10nEtCalendarProbe(models.Model):
-    """A two-date host. Invoice date plus due date is the ORDINARY case.
+    """A two-date host, plus a Datetime one.
+
+    Invoice date plus due date is the ORDINARY case, and both are Dates. The
+    third field is a Datetime because a purchase order's deadline and expected
+    arrival are Datetimes, and the difference is exactly where a one-day error
+    would come from.
 
     `_module = None` keeps this class out of the metaclass's module registry —
     without it the class would be filed under `l10n_et_calendar` at import time
@@ -61,13 +66,16 @@ class L10nEtCalendarProbe(models.Model):
     _l10n_et_date_map = {
         "start_date": "l10n_et_start_date",
         "end_date": "l10n_et_end_date",
+        "deadline": "l10n_et_deadline",
     }
 
     name = fields.Char()
     start_date = fields.Date()
     end_date = fields.Date()
+    deadline = fields.Datetime()
     l10n_et_start_date = l10n_et_mirror_field("Start (ET)")
     l10n_et_end_date = l10n_et_mirror_field("End (ET)")
+    l10n_et_deadline = l10n_et_mirror_field("Deadline (ET)")
 
 
 @tagged("post_install", "-at_install")
@@ -132,6 +140,50 @@ class TestL10nEtDateMixin(TransactionCase):
         record = self._make(date(2025, 7, 8), date(2025, 8, 7))
         record.end_date = False
         self.assertFalse(record.l10n_et_end_date)
+
+    # ---- Datetime sources, and the one-day error they invite ----------------
+
+    def test_a_datetime_is_converted_in_ethiopian_local_time(self):
+        """The trap. Odoo stores Datetimes as naive UTC, and Ethiopia is UTC+3.
+
+        22:00 UTC on 7 July 2025 is 01:00 on 8 July in Addis Ababa. Taking
+        `.date()` off the stored value would file it under Sene 30 — one day
+        early, on a purchase order, which is precisely the failure this module
+        exists to prevent.
+        """
+        record = self.probe.create({"name": "late evening"})
+        record.deadline = datetime(2025, 7, 7, 22, 0, 0)
+        self.assertEqual(record.l10n_et_deadline, "2017-11-01", "Hamle 1, in Addis")
+
+        # and the same instant read naively would have been the day before
+        self.assertEqual(
+            self.probe._l10n_et_canonical(date(2025, 7, 7)),
+            "2017-10-30",
+            "Sene 30 — what a naive .date() would have stored",
+        )
+
+    def test_the_datetime_day_boundary_is_21_00_utc(self):
+        """Midnight in Addis, either side. Below it the previous Ethiopian day,
+        at it the next one — asserted rather than assumed, because an off-by-one
+        hour here is an off-by-one day on a document."""
+        record = self.probe.create({"name": "boundary"})
+        record.deadline = datetime(2025, 7, 7, 20, 59, 59)
+        self.assertEqual(record.l10n_et_deadline, "2017-10-30", "23:59:59, Sene 30")
+        record.deadline = datetime(2025, 7, 7, 21, 0, 0)
+        self.assertEqual(record.l10n_et_deadline, "2017-11-01", "00:00, Hamle 1")
+
+    def test_a_datetime_and_a_date_on_the_same_record_are_both_right(self):
+        """The mixin decides per field from the field's own type, so a model
+        carrying both kinds does not need to tell it which is which."""
+        record = self.probe.create(
+            {
+                "name": "mixed",
+                "start_date": date(2025, 7, 8),
+                "deadline": datetime(2025, 7, 7, 22, 0, 0),
+            }
+        )
+        self.assertEqual(record.l10n_et_start_date, "2017-11-01")
+        self.assertEqual(record.l10n_et_deadline, "2017-11-01")
 
     # ---- STORED: really in a column -----------------------------------------
 

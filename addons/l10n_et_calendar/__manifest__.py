@@ -25,6 +25,11 @@
     "data": [
         "views/res_config_settings_views.xml",
     ],
+    # CLAUDE.md rule 9: noted rather than assumed. pytz is already a hard
+    # requirement of Odoo itself, so this adds nothing to install — it is
+    # declared because the mixin imports it to turn a Datetime into the day it
+    # was in Ethiopia, and a reader should not have to grep for that.
+    "external_dependencies": {"python": ["pytz"]},
     # No new models with records, so no ir.model.access.csv: the mixin is
     # abstract and the two settings are fields on res.company, which carries
     # its own access rules. CLAUDE.md rule 8 is satisfied by there being

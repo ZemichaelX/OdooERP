@@ -62,12 +62,30 @@ method rather than a second stored field, so a mirrored date costs exactly one
 column.
 """
 
+import pytz
+
 from odoo import api, fields, models
 
 from ..reference import et_calendar as cal
 
 #: The canonical stored form. Ten characters, fixed width, sortable.
 CANONICAL_LENGTH = 10
+
+#: Ethiopia's civil timezone, used to turn a Datetime source into a day.
+#:
+#: Odoo stores Datetime fields as naive UTC. Taking `.date()` off one of those
+#: is wrong by a day for a third of every Ethiopian evening: an order placed at
+#: 01:00 on 8 July in Addis is stored as 22:00 on 7 July UTC, and a naive
+#: conversion would file it under Sene 30 rather than Hamle 1 — the "wrong by
+#: one day, and trusted" failure this module exists to avoid.
+#:
+#: It is FIXED rather than read from a company or a user setting on purpose.
+#: "What Ethiopian date was this?" is a question about the day in Ethiopia, and
+#: Ethiopia has one timezone and has never observed daylight saving. A user
+#: setting would also make a stored value depend on who saved the record, and a
+#: company setting would silently invalidate every stored mirror the day
+#: somebody edited it.
+ETHIOPIAN_TZ = pytz.timezone("Africa/Addis_Ababa")
 
 
 def l10n_et_mirror_field(string, **overrides):
@@ -115,18 +133,37 @@ class L10nEtDateMixin(models.AbstractModel):
 
         A False source gives a False mirror rather than a placeholder: an
         invoice with no due date must not grow a due date in Ethiopian.
+
+        The source may be a Date or a Datetime — an invoice date is a Date, a
+        purchase order deadline is a Datetime — and the difference is handled
+        here rather than in each bridge, because getting it wrong is a one-day
+        error and a bridge is supposed to be a declaration.
         """
         for record in self:
             for source, target in record._l10n_et_date_map.items():
                 value = record[source]
-                record[target] = self._l10n_et_canonical(value) if value else False
+                if not value:
+                    record[target] = False
+                    continue
+                is_datetime = record._fields[source].type == "datetime"
+                record[target] = self._l10n_et_canonical(value, is_datetime=is_datetime)
 
     # ------------------------------------------------------------- conversion
 
     @api.model
-    def _l10n_et_canonical(self, value):
-        """The stored form: ``2017-11-01``. Never localised, never formatted."""
-        ethiopian = cal.gregorian_to_ethiopian(fields.Date.to_date(value))
+    def _l10n_et_canonical(self, value, is_datetime=False):
+        """The stored form: ``2017-11-01``. Never localised, never formatted.
+
+        A Datetime is converted to the day it was in ETHIOPIA before the
+        calendar arithmetic runs — see :data:`ETHIOPIAN_TZ` for why that is a
+        fixed timezone and not a setting.
+        """
+        if is_datetime:
+            moment = fields.Datetime.to_datetime(value)
+            day = pytz.utc.localize(moment).astimezone(ETHIOPIAN_TZ).date()
+        else:
+            day = fields.Date.to_date(value)
+        ethiopian = cal.gregorian_to_ethiopian(day)
         return "%04d-%02d-%02d" % (ethiopian.year, ethiopian.month, ethiopian.day)
 
     @api.model
