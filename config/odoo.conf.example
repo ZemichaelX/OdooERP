@@ -22,8 +22,10 @@
 ; =============================================================================
 
 [options]
-; Custom addons first, then Odoo's bundled addons.
-addons_path = /mnt/extra-addons,/usr/lib/python3/dist-packages/odoo/addons
+; Custom addons first, then vendored third-party addons, then Odoo's bundled
+; ones. /mnt/vendor holds pinned upstream code that is never edited in place —
+; see vendor/README.md, and scripts/check_vendor.sh which enforces it.
+addons_path = /mnt/extra-addons,/mnt/vendor,/usr/lib/python3/dist-packages/odoo/addons
 data_dir = /var/lib/odoo
 
 ; --- Security / production hardening ---

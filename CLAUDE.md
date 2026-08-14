@@ -31,6 +31,10 @@ in a future multi-tenant SaaS (no hard-coded company assumptions; respect `compa
 
 ## Repo layout
 - addons/          custom modules (l10n_et_*, sapian_*)
+- vendor/          third-party addons copied VERBATIM at a pinned upstream commit.
+                   Never edited in place; never linted as ours (our .pylintrc
+                   requires our own author). `scripts/check_vendor.sh` proves each
+                   tree still hashes to its pin. See vendor/README.md.
 - docker/          Dockerfile, docker-compose
 - config/          odoo.conf.example — TEMPLATE ONLY, never a real value
 - scripts/         provisioning, backup helpers

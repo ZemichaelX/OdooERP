@@ -19,6 +19,19 @@ jobs:
       - name: Install tooling
         run: pip install --quiet ruff black pylint pylint-odoo pytest python-dateutil
 
+      - name: The vendor guard still discriminates
+        # scripts/lint.sh runs the vendor integrity check itself, so a developer
+        # who edits vendored code is stopped at pre-push rather than here. What
+        # is CI-only is the SELF-TEST: it breaks the vendored tree on purpose,
+        # four ways, and requires the check to go red each time before restoring
+        # it. That mutates the working tree, which is fine on a throwaway runner
+        # and rude on someone's laptop mid-push.
+        #
+        # It runs BEFORE the check it is proving, so a guard that had quietly
+        # stopped discriminating fails here rather than waving the real check
+        # through.
+        run: ./scripts/check_vendor.sh --self-test
+
       - name: Lint (ruff, black, pylint-odoo)
         # ONE DEFINITION, shared with the pre-push hook: .githooks/pre-push runs
         # this same script. Both the floors ("is there anything to lint at all")
@@ -134,7 +147,7 @@ jobs:
           odoo \
             --db_host=db --db_port=5432 --db_user=odoo --db_password=odoo \
             --data-dir=/tmp/odoo-data \
-            --addons-path="${GITHUB_WORKSPACE}/addons,/usr/lib/python3/dist-packages/odoo/addons" \
+            --addons-path="${GITHUB_WORKSPACE}/addons,${GITHUB_WORKSPACE}/vendor/oca_web,/usr/lib/python3/dist-packages/odoo/addons" \
             -d ci_test \
             -i sapian_demo_trader,sapian_demo_pharma,sapian_theme,sapian_dress_rehearsal,l10n_et_calendar,l10n_et_calendar_account,l10n_et_calendar_purchase \
             --test-enable \
@@ -227,7 +240,7 @@ jobs:
           # `odoo shell` (the subcommand has to come first).
           ARGS="--db_host=db --db_port=5432 --db_user=odoo --db_password=odoo
                 --data-dir=/tmp/odoo-data
-                --addons-path=${GITHUB_WORKSPACE}/addons,/usr/lib/python3/dist-packages/odoo/addons
+                --addons-path=${GITHUB_WORKSPACE}/addons,${GITHUB_WORKSPACE}/vendor/oca_web,/usr/lib/python3/dist-packages/odoo/addons
                 --workers=0 --max-cron-threads=0 --stop-after-init"
 
           # 1. install alone, with its tests
@@ -300,7 +313,7 @@ jobs:
           set -euo pipefail
           ARGS="--db_host=db --db_port=5432 --db_user=odoo --db_password=odoo
                 --data-dir=/tmp/odoo-data
-                --addons-path=${GITHUB_WORKSPACE}/addons,/usr/lib/python3/dist-packages/odoo/addons
+                --addons-path=${GITHUB_WORKSPACE}/addons,${GITHUB_WORKSPACE}/vendor/oca_web,/usr/lib/python3/dist-packages/odoo/addons
                 --workers=0 --max-cron-threads=0 --stop-after-init"
           PROBE='print("SAPIAN-BRIDGE " + " ".join("%s=%s" % (m.name, m.state) for m in env["ir.module.module"].search([("name","in",["account","purchase","l10n_et_calendar","l10n_et_calendar_account","l10n_et_calendar_purchase"])], order="name")))'
 
@@ -389,7 +402,7 @@ jobs:
           odoo \
             --db_host=db --db_port=5432 --db_user=odoo --db_password=odoo \
             --data-dir=/tmp/odoo-data \
-            --addons-path="${GITHUB_WORKSPACE}/addons,/usr/lib/python3/dist-packages/odoo/addons" \
+            --addons-path="${GITHUB_WORKSPACE}/addons,${GITHUB_WORKSPACE}/vendor/oca_web,/usr/lib/python3/dist-packages/odoo/addons" \
             -d ci_theme_website \
             -i website,sapian_theme --without-demo=all \
             --test-enable --test-tags '/sapian_theme:TestSapianThemeLogin,/sapian_theme:TestLoginPageAsAVisitor' \
@@ -487,7 +500,7 @@ jobs:
           odoo \
             --db_host=db --db_port=5432 --db_user=odoo --db_password=odoo \
             --data-dir=/tmp/odoo-data \
-            --addons-path="${GITHUB_WORKSPACE}/addons,/usr/lib/python3/dist-packages/odoo/addons" \
+            --addons-path="${GITHUB_WORKSPACE}/addons,${GITHUB_WORKSPACE}/vendor/oca_web,/usr/lib/python3/dist-packages/odoo/addons" \
             -d ci_rail \
             -i sapian_theme,contacts,crm,project,hr,stock,sale_management,purchase \
             --without-demo=all \
