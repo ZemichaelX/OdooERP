@@ -27,8 +27,42 @@ DEFAULT_SOURCE_NOTE = (
     "WHT 3% goods >20,000 / services >10,000; 30% punitive when EITHER the TIN "
     "or the business licence is missing; 15% foreign digital services. "
     "Thresholds gate ALL WHT including punitive. Accountant-confirmed Jul 2026 "
-    "(Proc 979/2016 art. 92 lineage + Aug 2025 rules)."
+    "(Proc 979/2016 art. 92 lineage + Aug 2025 rules). "
+    "Corroborated by PwC's Ethiopia withholding-tax summary: domestic 3% with "
+    "ETB 20,000 goods / ETB 10,000 services thresholds, 30% where no TIN."
 )
+
+# CORROBORATION, NOT AUTHORITY.
+#
+# PwC's Ethiopia withholding-tax summary independently confirms the figures
+# already held here: the domestic rate at 3%, the thresholds at ETB 20,000
+# (goods) and ETB 10,000 (services), and the no-TIN rate at 30% — matching
+# DEFAULT_WHT_RATE_STANDARD, DEFAULT_WHT_THRESHOLD_GOODS,
+# DEFAULT_WHT_THRESHOLD_SERVICE and DEFAULT_WHT_RATE_PUNITIVE in
+# reference/et_tax_calc.py.
+#
+# A second source agreeing does not promote a summary table to a source of
+# truth. The PROCLAMATIONS remain the authority and every rate here still needs
+# re-verification against gazetted text before a go-live. What the corroboration
+# buys is that the next person does not have to re-derive these four numbers
+# from scratch to satisfy themselves — which is why it is written down here
+# rather than in a chat log.
+#
+# It also does NOT license adding rates. Ethiopia withholds on dividends,
+# royalties, interest, management and technical fees, and levies a social
+# welfare levy; none is implemented, and none may be added from a summary table.
+# Each needs rate, base, threshold, effective date and a proclamation citation
+# established first (reference-calculator-first rule). Adding a rate on the
+# strength of a summary is exactly the failure the core 2%/35% deactivation
+# fixes.
+#
+# OPEN DISCREPANCY, deliberately left alone: `_l10n_et_ensure_default` seeds
+# effective_from = date(2025, 8, 1), while the knowledge base records the
+# domestic WHT change as effective 7 August 2025 (Nehase 1, 2017 EC). These
+# cannot both be right, and 1 Aug 2025 is Hamle 24 — mid-Ethiopian-month, which
+# no verified Ethiopian effective date has been. Neither artefact is changed
+# here; the correct date is being established from a primary source. Until then,
+# treat any WHT decision dated 1-6 Aug 2025 as unverified.
 
 
 class L10nEtWhtConfig(models.Model):
