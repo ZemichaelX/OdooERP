@@ -168,3 +168,89 @@ ensure_runtime_conf() {
   fi
   return 0
 }
+
+# verify_login_page <compose-command> <db-name> <repo-root>
+#
+# Assert that the login page THIS DATABASE serves is ours: branded button in
+# every state, our attribution and not Odoo's, no public sign-up offer, and a
+# support contact that reaches the page if one is configured.
+#
+# ONE DEFINITION, called by build_demo.sh and provision_client.sh. It lived
+# inline in build_demo.sh only, and the consequence was that the demo was
+# checked while the thing we actually sell was not: a client provisioned
+# without sapian_theme served Odoo's own footer and nothing said so.
+#
+# Returns 0 when everything holds, 1 otherwise, printing the CHECK lines either
+# way so an operator can see what was measured rather than only that it failed.
+verify_login_page() {
+  local compose="$1" db="$2" repo_root="$3"
+  local out failed=0
+
+  out="$(${compose} run --rm -T odoo odoo shell -d "${db}" --no-http --stop-after-init \
+         < "${repo_root}/scripts/lib/check_login_page.py" 2>&1 || true)"
+  printf '%s\n' "${out}" | grep -E '^(CHECK|NOTE) ' || true
+
+  _login_check() {  # <grep pattern> <what went wrong>
+    if ! printf '%s\n' "${out}" | grep -q "$1"; then
+      log_error "!! $2"
+      failed=1
+    fi
+  }
+
+  # Ordered so "did it render at all" comes first: every absence check below is
+  # meaningless on an empty page.
+  _login_check '^CHECK theme=installed$' \
+    "sapian_theme is NOT installed on '${db}', so this tenant has Odoo's login"$'\n'"   page, Odoo's footer and no app rail. The theme carries the de-branding;"$'\n'"   a tenant without it is being handed Odoo."
+  _login_check '^CHECK login_http=200$' \
+    "The login page did not return 200. Nothing below was checked on a real page."
+
+  local bytes
+  bytes="$(printf '%s\n' "${out}" | sed -n 's/^CHECK login_bytes=//p' | tr -d '\r')"
+  if [ -z "${bytes}" ] || [ "${bytes}" -lt 2000 ]; then
+    log_error "!! The login page came back at ${bytes:-0} bytes — too small to be the real"$'\n'"   page, and small enough that every 'must not contain' check would pass"$'\n'"   by having nothing in it."
+    failed=1
+  fi
+
+  local expected rgb
+  expected="$(printf '%s\n' "${out}" | sed -n 's/^CHECK brand_expected=//p' | tr -d '\r')"
+  rgb="$(printf '%s\n' "${out}" | sed -n 's/^CHECK brand_expected_rgb=//p' | tr -d '\r')"
+  if [ -z "${expected}" ]; then
+    log_error "!! Could not read the brand colour from sapian_theme — the theme is not"$'\n'"   importable, so none of the colour checks below actually ran."
+    failed=1
+  else
+    _login_check "^CHECK login_primary=${expected}\$" \
+      "The sign-in button is not the brand colour. The frontend bundle never"$'\n'"   consults \$o-brand-primary — see sapian_frontend.scss."
+    _login_check "^CHECK login_disabled=${expected}\$" \
+      "The sign-in button's DISABLED colour is not the brand — which is the"$'\n'"   colour it turns the moment somebody clicks it, because login.js adds"$'\n'"   \`disabled\` while the request is in flight."
+    _login_check "^CHECK login_focus_rgb=${rgb}\$" \
+      "The sign-in button's FOCUS RING is not the brand. Anyone who tabs into"$'\n'"   the form sees Odoo purple."
+  fi
+
+  _login_check '^CHECK login_powered_sapian=1$' \
+    "The login footer does not say 'Powered by SapianERP'. The page a client"$'\n'"   opens every morning is unsigned — or still signed by somebody else."
+  _login_check '^CHECK login_mark=1$' \
+    "The Sapian mark is not on the login page beside the attribution."
+  _login_check '^CHECK login_odoo_refs=0$' \
+    "The login page still attributes the product to Odoo, or still links to"$'\n'"   odoo.com."
+  _login_check '^CHECK login_signup=0$' \
+    "The login page offers ACCOUNT CREATION to anonymous visitors."
+  _login_check '^CHECK login_signup_scope=b2b$' \
+    "Public sign-up is not invitation-only on this database. Odoo's default is"$'\n'"   b2c — free sign up."
+
+  # The support contact is per-deployment, so it is NOT required to be set.
+  # What is required is that a configured one reaches the page: that turns the
+  # check into something meaningful on a demo (which sets one) and on a fresh
+  # client tenant (which has not been told the number yet) alike.
+  if printf '%s\n' "${out}" | grep -q '^CHECK login_support_configured=1$'; then
+    _login_check '^CHECK login_support_rendered=1$' \
+      "A support contact IS configured but does not appear in the served page."
+  else
+    log_line ">> NOTE no support contact configured on '${db}' — the login page and the"
+    log_line ">>      backend footer will show no way to get help. Set one with:"
+    log_line ">>      ${compose} run --rm -T odoo odoo shell -d ${db} --no-http --stop-after-init <<<\\"
+    log_line ">>        \"env['ir.config_parameter'].sudo().set_param('sapian_theme.support_contact', '+251 ...'); env.cr.commit()\""
+  fi
+
+  unset -f _login_check
+  return "${failed}"
+}

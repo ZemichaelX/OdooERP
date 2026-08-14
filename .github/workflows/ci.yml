@@ -19,41 +19,17 @@ jobs:
       - name: Install tooling
         run: pip install --quiet ruff black pylint pylint-odoo pytest python-dateutil
 
-      - name: Assert there is something to lint
-        # Every check in this job PASSES ON AN EMPTY TREE. Measured, not assumed:
-        #   black --check addons        -> exit 0, "No Python files ... Nothing to do"
-        #   ruff check addons tests_fast-> exit 0, "warning: No Python files found"
-        #   the XML/CSV/manifest step   -> prints "OK" having validated nothing
-        # So a renamed, moved or half-checked-out addons/ sails through the whole
-        # job green. (pytest is the exception: it exits 5 on zero collected.)
-        # Floors are well under the real counts — they catch "the tree is gone",
-        # not "someone deleted a file".
-        run: |
-          set -euo pipefail
-          MIN_PY_FILES=80      # 114 at this commit
-          MIN_XML_FILES=30     # 46
-          MIN_CSV_FILES=5      # 9
-          MIN_MANIFESTS=5      # 9
-          py=$(find addons tests_fast -name '*.py' | wc -l)
-          xml=$(find addons -name '*.xml' | wc -l)
-          csv=$(find addons -name '*.csv' | wc -l)
-          man=$(find addons -maxdepth 2 -name '__manifest__.py' | wc -l)
-          echo "py=${py} (floor ${MIN_PY_FILES})  xml=${xml} (${MIN_XML_FILES})  csv=${csv} (${MIN_CSV_FILES})  manifests=${man} (${MIN_MANIFESTS})"
-          fail=0
-          [ "${py}"  -ge "${MIN_PY_FILES}"   ] || { echo "::error::Only ${py} Python files found — the source tree is missing, so every lint step below would pass by checking nothing."; fail=1; }
-          [ "${xml}" -ge "${MIN_XML_FILES}"  ] || { echo "::error::Only ${xml} XML files found — the validator would report OK having parsed nothing."; fail=1; }
-          [ "${csv}" -ge "${MIN_CSV_FILES}"  ] || { echo "::error::Only ${csv} CSV files found — same."; fail=1; }
-          [ "${man}" -ge "${MIN_MANIFESTS}"  ] || { echo "::error::Only ${man} manifests found — same."; fail=1; }
-          [ "${fail}" -eq 0 ]
-
-      - name: Ruff
-        run: ruff check addons tests_fast
-
-      - name: Black
-        run: black --check addons
-
-      - name: pylint-odoo
-        run: pylint addons
+      - name: Lint (ruff, black, pylint-odoo)
+        # ONE DEFINITION, shared with the pre-push hook: .githooks/pre-push runs
+        # this same script. Both the floors ("is there anything to lint at all")
+        # and the three tools live in it, and it gates on EXIT CODES.
+        #
+        # It replaces three separate `run:` steps plus a floors step. Those were
+        # not wrong, but they were a second definition of lint that a developer
+        # could not run, and the gap showed: a pylint warning that a local run
+        # had already produced reached CI, because the local check read pylint's
+        # "rated at 10.00/10" instead of its exit status of 4.
+        run: bash scripts/lint.sh
 
       - name: Reference calculator golden tests (no Odoo needed)
         # pytest exits 5 when it collects NOTHING, so the total-wipe case is

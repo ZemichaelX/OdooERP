@@ -527,6 +527,15 @@ website replaces the login card with its own layout whose footer calls
 `web.brand_promotion`. Overriding the shared message template fixes every
 surface that emits it, once.
 
+**The customer portal is deliberately in scope, and must stay there.** It reads
+like over-reach, so the reasoning is written down in the template itself as
+well: the login page is seen by the client's own staff, who know what software
+they bought; the **portal is seen by the client's customers** — the quotation
+they accept, the invoice they pay, the delivery they track. It is the one
+screen in the product a third party looks at, which makes it *more*
+brand-sensitive than the login page, not less. De-branding the login page and
+leaving the portal alone fixes the private screen and leaves the public one.
+
 ## The backend footer
 
 A fixed bar across the bottom of every backend page: `© <year> <Company>. All

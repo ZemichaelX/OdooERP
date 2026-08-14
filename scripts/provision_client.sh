@@ -17,7 +17,17 @@
 set -euo pipefail
 
 DB_NAME="${1:?usage: provision_client.sh <db_name> [modules]}"
-MODULES="${2:-sapian_core,l10n_et_base,l10n_et_payroll,l10n_et_reports}"
+# sapian_theme is in the DEFAULT set, not an upsell.
+#
+# It stopped being decoration: it now carries the de-branding (the login
+# page says "Powered by SapianERP" and not "Powered by Odoo", on the login
+# page AND on the customer portal), the login layout, the app rail that
+# makes the app icons visible on desktop at all, the support contact, and
+# the backend footer. A tenant provisioned without it is handed Odoo — with
+# a link to odoo.com on the page their staff open every morning.
+#
+# Pass a second argument to override the whole list, as before.
+MODULES="${2:-sapian_core,sapian_theme,l10n_et_base,l10n_et_payroll,l10n_et_reports}"
 COUNTRY_CODE="${SAPIAN_COUNTRY:-et}"   # override for a non-Ethiopian tenant
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=scripts/lib/preflight.sh
@@ -45,12 +55,12 @@ echo ">> Provisioning client DB: ${DB_NAME}"
 echo ">> Country: ${COUNTRY_CODE} | Modules: ${MODULES}"
 
 # --- Phase 1: create the DB with base only (no chart yet) ----------------------
-echo ">> [1/4] Creating database (base only)..."
+echo ">> [1/5] Creating database (base only)..."
 $COMPOSE run --rm odoo \
   odoo -d "${DB_NAME}" -i base --without-demo=all --stop-after-init
 
 # --- Phase 2: set the company country BEFORE any chart loads -------------------
-echo ">> [2/4] Setting company country to '${COUNTRY_CODE}'..."
+echo ">> [2/5] Setting company country to '${COUNTRY_CODE}'..."
 printf "%s\n" \
   "company = env['res.company'].search([], limit=1)" \
   "country = env['res.country'].search([('code','=','${COUNTRY_CODE}'.upper())], limit=1)" \
@@ -60,7 +70,7 @@ printf "%s\n" \
   | $COMPOSE run --rm -T odoo odoo shell -d "${DB_NAME}" --no-http
 
 # --- Phase 3: install the real modules — 'et' chart auto-loads now -------------
-echo ">> [3/4] Installing modules (chart auto-loads for the country)..."
+echo ">> [3/5] Installing modules (chart auto-loads for the country)..."
 $COMPOSE run --rm odoo \
   odoo -d "${DB_NAME}" -i "${MODULES}" --without-demo=all --stop-after-init
 
@@ -80,7 +90,7 @@ $COMPOSE run --rm odoo \
 # auth_signup.invitation_scope, and a literal of either name is a string that
 # can silently stop matching. It prints what it wrote, so a run that did
 # nothing does not look like a run that worked.
-echo ">> [4/4] Closing public sign-up (invitation only)..."
+echo ">> [4/5] Closing public sign-up (invitation only)..."
 SIGNUP_OUT="$(printf "%s\n" \
   "field = env['res.config.settings']._fields.get('auth_signup_uninvited')" \
   "key = getattr(field, 'config_parameter', None) or 'auth_signup.invitation_scope'" \
@@ -92,6 +102,19 @@ printf '%s\n' "${SIGNUP_OUT}" | grep -E '^SIGNUP ' || true
 if ! printf '%s\n' "${SIGNUP_OUT}" | grep -q '^SIGNUP .*=b2b$'; then
   echo "!! Public sign-up is NOT closed on ${DB_NAME} — the login page will offer" >&2
   echo "   account creation to anyone who can reach it. Read back: none." >&2
+  exit 1
+fi
+
+# --- Phase 5: the login page this tenant actually serves ---------------------
+# THE SAME CHECK build_demo.sh RUNS, from the same file. A config line saying
+# `-i sapian_theme` is exactly what an unthemed tenant would also have: the
+# demo was verified from the served bytes for a week while the thing we sell
+# was verified from nothing at all, and the gap was a client login page still
+# carrying Odoo's footer. Verify the artefact, never the config line.
+echo ">> [5/5] Verifying the login page this tenant serves..."
+if ! verify_login_page "${COMPOSE}" "${DB_NAME}" "${REPO_ROOT}"; then
+  echo "!! ${DB_NAME} does not serve a SapianERP-branded login page. Do not hand" >&2
+  echo "   this tenant over." >&2
   exit 1
 fi
 
