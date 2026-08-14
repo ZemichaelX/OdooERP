@@ -197,6 +197,53 @@ it is **brand-as-ink** that breaks, not the buttons. White text on a brand
 *fill* is 4.77:1 in either mode — button fills are fine. The failure is the
 brand used as text or as an accent line against a dark surface.
 
+## The design lesson: prefer assets to template inheritance
+
+Installing `website` proved this the expensive way, and the two halves of the
+login page came out differently:
+
+| Feature | Mechanism | Survived `website`? |
+|---|---|---|
+| Sign-in button colour | **asset-level CSS** — a scoped rule in `sapian_frontend.scss` | **yes** |
+| Company logo | template xpath on `web.login_layout` | **no** — vanished silently |
+| Support-contact line | template xpath on `web.login_layout` | **no** — vanished silently |
+
+`website` inherits `web.login_layout` at **priority 20** and replaces the entire
+`t[@t-call]` subtree with its own wrapper. Every node our xpaths anchored into —
+the card, the card-body, the stock logo div — ceased to exist, and everything we
+had injected went with them. Nothing errored. The page rendered, unbranded.
+
+The CSS rule survived because a stylesheet does not care who built the DOM. It
+matches whatever is there.
+
+**So: on a layout that other modules also inherit, prefer asset-level styling.
+When inheritance is unavoidable, expect a priority contest and test for it.**
+
+Three concrete rules that follow, each of which cost a measured failure:
+
+1. **Anchor in the least contested template.** The branding now lives in
+   `web.login` (the page *content*), not `web.login_layout` (the *card*).
+   Content is passed through `<t t-out="0"/>` into whichever wrapper wins, so it
+   survives both the stock card and website's. Only the stock-logo deletion
+   still touches the layout, because that node exists nowhere else.
+2. **A priority bump is not automatically the fix.** Raising ours above
+   website's 20 was tried: the login tests went from 2 failures to **4**, and at
+   render time the page returned **HTTP 500** — `Element ... cannot be located
+   in parent view`. Applying later means operating on a subtree that has already
+   been thrown away. Where order *does* matter, state the priority explicitly
+   and say what number it is defending against.
+3. **A stored priority is not reset when the XML stops specifying it.** A
+   database that ever carried a different value keeps it through every later
+   upgrade — measured. Same class of trap as `web_icon_data` surviving the
+   removal of `web_icon`. Specifying the number is what lets such a database
+   heal itself.
+
+The guard that now enforces this is the `theme-with-website` CI job: it installs
+`website` *with* `sapian_theme` and runs `TestSapianThemeLogin`. Before it
+existed the login tests passed on every CI run while being broken in any
+database that had `website` — which is not academic, since `website_sale` pulls
+`website` in and is a plausible client purchase.
+
 ## Check these on upgrade
 
 Ordered by how likely they are to break, worst first. All three fail *silently*
