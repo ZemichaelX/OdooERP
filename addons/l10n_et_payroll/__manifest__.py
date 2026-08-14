@@ -14,7 +14,19 @@
     # (static/description/icon.png) so it renders as a tile rather than a bare
     # label. See brand/icons/README.md.
     "application": True,
-    "depends": ["hr", "account", "l10n_et_base", "sapian_core"],
+    # STANDALONE. `depends` describes what the CODE requires, not what a
+    # customer buys. A Stage A dependency audit found ZERO references to
+    # sapian_core anywhere in this module — no sapian.module.catalog, no
+    # sapian.onboarding.wizard, no sapian_core xml id, no group, no import; the
+    # only `groups=` attributes here are account.*, base.* and hr.*. Since
+    # sapian_core is application:True, declaring it also put the SapianERP tile
+    # in every database that installed payroll.
+    #
+    # That "Payroll+HR ships with the SapianERP core" rule is real, but it is
+    # PRODUCT PACKAGING and belongs in sapian.module.catalog, not here. Proven
+    # standalone: installed on a database where sapian_core is 'uninstalled',
+    # full suite green. Do not re-add sapian_core without a code reference.
+    "depends": ["hr", "account", "l10n_et_base"],
     "data": [
         "security/ir.model.access.csv",
         "security/l10n_et_payroll_security.xml",
