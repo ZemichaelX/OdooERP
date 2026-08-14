@@ -4,6 +4,65 @@ All notable changes to SapianERP. Epics per `docs/plan-2026/10-claude-code-roadm
 
 ## [Unreleased]
 
+### The demo tenant is a demo again — `sapian_demo_trader` (2026-08-14)
+Three gaps found while writing the user guide, each of which forced an apology
+mid-demo.
+
+**An empty Sales pipeline.** The Sales app opened on nothing, so there was no
+quotation to walk from quote to invoice — the most ordinary thing an ERP is
+bought to do. Now three drafts, one sent, and one confirmed and delivered but
+deliberately **not invoiced**, so there is a real order to press *Create
+Invoice* on live. Three new Ethiopian customers (Rift Valley Contractors,
+Hawassa Homes, Tsehay Hardware), all with TINs, at the catalogue's own sourced
+prices. **Nothing in the pipeline posts to the ledger**, so every VAT, WHT and
+payroll golden is untouched by construction rather than by luck.
+
+**And the reason the pipeline looked empty was worse than empty.** Odoo's Sales
+app opens on `sale.action_quotations_with_onboarding`, context
+`{'search_default_my_quotation': 1}` — a default filter of `user_id = uid`.
+Provisioning runs through `odoo shell` as OdooBot, so every order was stamped
+with OdooBot as salesperson and the demo login opened Sales on zero rows — at
+which point **Odoo renders its onboarding SAMPLE DATA over the list**: ghosted
+quotations for Henry Campbell and Thomas Passot, priced in dollars, under a
+"Beat competitors with stunning quotations!" video. American names and USD in
+software sold as Ethiopian, and it survived because "there are orders in the
+database" was true. Screenshotted on a built demo before the fix. The
+salesperson is now set explicitly on every order, and the test asserts it
+through the same filter the app applies.
+
+**A payroll run that showed a flat progressive tax.** A run and three payslips
+did exist — the gap was narrower than reported but real: they occupied only 3 of
+the 6 PAYE bands in Proclamation 1395/2025 and never reached the top one, so the
+progressive table could not be pointed at. The roster is now six employees with
+job titles, one per band: Cleaner 1,800 (0%) · Office Assistant 3,500 (15%) ·
+Storekeeper 6,000 (20%) · Sales Officer 10,000 (25%) · Driver & Loader
+10,000 + 2,000 overtime (30%) · General Manager 25,000 (35%). Two people on the
+same 10,000 basic landing in different bands is the demonstration that an input
+line moves the tax while the pension base does not follow it. Totals move to
+gross 58,300, PAYE 11,525, pension 3,941/6,193, net 42,834, journal 64,493 —
+**hand-computed in the test docstring, not read out of a run**, and produced by
+the real engine from wages, never written as literal amounts.
+
+**Odoo's default logo.** `uses_default_logo` was True, so every demo invoice
+carried the Odoo wordmark while the branding claim was being made in the same
+session. The tenant now carries its own generated geometric mark
+(`static/img/selam_logo.png`) — **deliberately not the Sapian logo**: Selam
+General Trading is the demo CLIENT, and printing the vendor's brand on the
+client's letterhead teaches a prospect the opposite of white-labelling. The
+guard asserts `uses_default_logo is False`, not that `logo` is non-empty —
+`res.company.logo` has `default=_get_logo` so it is *always* non-empty, and a
+"non-empty" check passes on exactly the broken state.
+
+Guards added as invariants rather than counts: every band in the company's own
+effective-dated PAYE table must be occupied by a payslip (a future proclamation
+adding a band makes this fail, which is correct); the pipeline must hold drafts,
+a sent quotation and a confirmed order, with no invoice on the uninvoiced ones.
+
+The module README described a **different tenant entirely** — Fasika
+Supermarket, teff, Awash Agro, a VAT credit of −2,850, none of it in the code —
+and has been rewritten against what the module actually creates. It is what a
+salesperson reads the night before a demo.
+
 ### The app rail — `sapian_theme` (2026-08-14)
 **Odoo 19's desktop apps menu draws no icons.** `web.NavBar.AppsMenu` has two
 branches: the small-screen one renders `<img t-attf-src="{{app.webIconData}}"/>`,
