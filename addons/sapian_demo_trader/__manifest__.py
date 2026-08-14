@@ -12,7 +12,7 @@
     "category": "Localization/Ethiopia",
     "license": "LGPL-3",
     # Exactly what the demo demonstrates, and nothing else. Every catalog entry
-    # the provisioner PICKS (the core and common tiers — see DEMO_CATALOG_TIERS
+    # the provisioner PICKS (its own reachable dependencies — see _demo_installable_names
     # in models/sapian_demo_trader.py) must be listed here, because module
     # installation is forbidden while the registry is loading and inside tests,
     # so the wizard's install step has to be a no-op. Adding a core/common

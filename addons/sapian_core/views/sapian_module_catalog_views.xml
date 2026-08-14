@@ -41,6 +41,18 @@
                             <field name="company_id" groups="base.group_multi_company"/>
                         </group>
                     </group>
+                    <!-- The bundle, visible. A consultant deciding what a client
+                         gets must be able to see and edit inclusion without
+                         reading the seed code. `required_by_ids` is the reverse
+                         side, readonly: it answers "why did this get installed
+                         when I did not pick it?" -->
+                    <group string="Bundled modules">
+                        <field name="requires_ids" widget="many2many_tags"
+                               options="{'no_create': True}"
+                               domain="[('company_id', '=', company_id), ('id', '!=', id)]"/>
+                        <field name="required_by_ids" widget="many2many_tags"
+                               readonly="1" invisible="not required_by_ids"/>
+                    </group>
                     <group string="Description">
                         <field name="description" nolabel="1"/>
                     </group>

@@ -52,11 +52,32 @@ PERIOD_TO = "2026-07-31"
 # menu of a tenant built for a 2–5 person hardware shop, and the menu bar is in
 # every frame of a screen recording.
 #
-# They are NOT hidden: all 15 entries are still seeded, so the catalog shows 7
-# enabled and 8 available. "Here is what you are buying, here is what is there
-# when you want it" is a better answer to "so it does manufacturing?" than
-# pretending the apps do not exist.
-DEMO_CATALOG_TIERS = ("core", "common")
+# They are NOT hidden: every catalog entry is still seeded, so the catalog shows
+# what is enabled alongside what is available. "Here is what you are buying, here
+# is what is there when you want it" is a better answer to "so it does
+# manufacturing?" than pretending the apps do not exist.
+#
+# HOW THE DEMO PICKS, and why it is no longer by tier.
+#
+# The contract is: every entry handed to the wizard is already a manifest
+# dependency of this module, so the wizard's install step is a guaranteed no-op
+# and no registry replacement happens mid-provision. Tier used to be a proxy for
+# that — core+common happened to coincide with this module's dependencies while
+# the catalog held 15 curated entries.
+#
+# It stopped coinciding the moment the catalog became the FULL app catalogue:
+# `common` now contains crm, project, point_of_sale, calendar, contacts, board
+# and the hr_* apps, none of which this module depends on. Picking by tier would
+# have handed the wizard nine modules to install mid-load — exactly the failure
+# the contract exists to prevent.
+#
+# So the demo now picks on the PROPERTY ITSELF: catalog entries that are
+# reachable dependencies of sapian_demo_trader. The guarantee is true by
+# construction rather than by a coincidence nobody re-checked.
+#
+# DEMO_CATALOG_TIERS is deliberately GONE rather than left unused: a constant
+# that no longer selects anything is a comment that looks like code, and the
+# next reader would reasonably assume tiers still drive the demo.
 
 # Odoo default/demo placeholder companies: a demo DB's company switcher must
 # only show real companies, and a fresh login must land in the real one.
@@ -90,6 +111,26 @@ class SapianDemoTrader(models.AbstractModel):
         return self._provision_demo_tenant(adopt_existing=True)
 
     @api.model
+    def _demo_installable_names(self):
+        """Technical names this module already brings in, transitively.
+
+        The set the demo may safely hand to the onboarding wizard: every one is
+        a manifest dependency, hence already installed when this module loads,
+        hence a no-op for the wizard's install step (which only touches modules
+        in state 'uninstalled').
+        """
+        module_model = self.env["ir.module.module"].sudo()
+        demo_module = module_model.search([("name", "=", "sapian_demo_trader")], limit=1)
+        reachable = set()
+        frontier = demo_module
+        while frontier:
+            reachable.update(frontier.mapped("name"))
+            names = frontier.mapped("dependencies_id.name")
+            frontier = module_model.search(
+                [("name", "in", names), ("name", "not in", list(reachable))]
+            )
+        return reachable
+
     def _provision_demo_tenant(self, company_name=DEMO_COMPANY_NAME, adopt_existing=False):
         """Provision the full demo tenant (idempotent by company name).
 
@@ -215,11 +256,11 @@ class SapianDemoTrader(models.AbstractModel):
 
         The wizard applies profile, branding, catalog and Ethiopian defaults.
         No module installation can occur here: the wizard is handed the
-        ``DEMO_CATALOG_TIERS`` entries only, and every one of those is a
+        entries that are already its own dependencies, and every one of those is a
         manifest dependency of this module, so the wizard's install step is a
         guaranteed no-op (no registry replacement mid-provision). The
         `optional` tier is seeded into the catalog but not picked, so it shows
-        as available-and-not-enabled — see DEMO_CATALOG_TIERS.
+        as available-and-not-enabled — see _demo_installable_names.
 
         With ``adopt_existing`` the database's single company is reused, which
         is what yields a one-company demo. It RAISES if that company already
@@ -259,7 +300,9 @@ class SapianDemoTrader(models.AbstractModel):
         if not company:
             company = self.env["res.company"].create({"name": company_name})
         catalog = self.env["sapian.module.catalog"]._ensure_default_catalog(company)
-        picks = catalog.filtered(lambda entry: entry.tier in DEMO_CATALOG_TIERS)
+        picks = catalog.filtered(
+            lambda entry: entry.technical_name in self._demo_installable_names()
+        )
         wizard = (
             self.env["sapian.onboarding.wizard"]
             .with_company(company)

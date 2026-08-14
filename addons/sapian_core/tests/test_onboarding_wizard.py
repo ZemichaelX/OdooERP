@@ -43,7 +43,12 @@ class TestOnboardingWizard(TransactionCase):
         entries = self.env["sapian.module.catalog"].search(
             [("company_id", "=", self.company.id)]
         )
-        self.assertEqual(len(entries), 15, "standard catalog not seeded")
+        # Derived from STANDARD_CATALOG, never a literal. The catalog grew
+        # from 15 entries to 38 when the full app catalogue was seeded, and
+        # a hardcoded count turns every such change into a false failure —
+        # which teaches people to edit the number instead of reading it.
+        expected_count = len(self.env["sapian.module.catalog"].STANDARD_CATALOG)
+        self.assertEqual(len(entries), expected_count, "standard catalog not fully seeded")
         expected = entries.filtered("enabled") or entries.filtered(lambda e: e.tier == "core")
         self.assertEqual(set(wizard.module_catalog_ids.ids), set(expected.ids))
         # Optional Community apps are seeded but never pre-ticked for their tier:
@@ -60,8 +65,16 @@ class TestOnboardingWizard(TransactionCase):
     def test_catalog_seeding_is_idempotent(self):
         catalog = self.env["sapian.module.catalog"]
         catalog._ensure_default_catalog(self.company)
+        first = catalog.search_count([("company_id", "=", self.company.id)])
         catalog._ensure_default_catalog(self.company)
-        self.assertEqual(catalog.search_count([("company_id", "=", self.company.id)]), 15)
+        second = catalog.search_count([("company_id", "=", self.company.id)])
+        # The property is "a second run adds nothing", not "there are N".
+        self.assertEqual(second, first, "re-seeding duplicated catalog entries")
+        self.assertEqual(
+            first,
+            len(catalog.STANDARD_CATALOG),
+            "seeding did not create one entry per STANDARD_CATALOG row",
+        )
 
     def test_catalog_enabled_mirrors_installed_state(self):
         """Enabled is a status mirror: seeding and the upgrade-time sync both
