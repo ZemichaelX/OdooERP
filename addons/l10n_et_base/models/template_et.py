@@ -9,10 +9,14 @@ CSVs) run first — so the functions below both ADD records from this module's
 mis-typed ``account_type`` of the core VAT/WHT accounts) without touching core files.
 """
 
+import logging
+
 from odoo import api, models
 from odoo.addons.account.models.chart_template import template
 
 from .l10n_et_wht_config import DEFAULT_SOURCE_NOTE, TEMPLATE_TAX_XMLID_BY_KIND
+
+_logger = logging.getLogger(__name__)
 
 # Core l10n_et ships these accounts with the wrong account_type (and a typo'd name
 # on 3006). Fresh chart loads get the fixes via the template merge; on companies
@@ -26,6 +30,35 @@ CORE_ACCOUNT_FIXES = {
     "300600": {"account_type": "liability_current", "name": "Withholding Tax Payable"},
     "300700": {"account_type": "liability_current"},
     "300800": {"account_type": "liability_current"},
+}
+
+# Core l10n_et ships withholding taxes at rates Ethiopian law does not support.
+# They sit in the same selection list as our correct ones, so an accountant
+# raising a vendor bill is offered six withholding options of which two are
+# wrong. Nothing crashes: the WHT summary then reports the wrong figure
+# *correctly*, which is the silent-failure shape this repo keeps meeting.
+#
+#   2% WH  — the domestic withholding rate has been 3% since the Aug 2025
+#            change; 2% is the superseded rate. Choosing it UNDER-withholds.
+#   35% WH — no 35% withholding rate exists in Ethiopian law at all. The
+#            punitive no-TIN/no-licence rate is 30%. (35% is the top PAYE
+#            marginal band, which is probably where it came from.)
+#
+# Verified against odoo/addons/l10n_et/data/template/account.tax-et.csv at
+# Odoo 19 and corroborated by PwC's Ethiopia withholding-tax summary.
+#
+# DEACTIVATED, NOT DELETED OR RENAMED. Bills already posted under the old 2%
+# must keep their tax record: the move lines reference it, and the WHT summary
+# reads it back to report history. active=False removes a tax from selection
+# on NEW documents while leaving every existing line intact and reportable.
+# Deleting would orphan those lines; renaming would silently restate history.
+#
+# Not our rates to fix upstream: we never modify l10n_et.
+CORE_TAX_DEACTIVATIONS = {
+    "id_tax02": "2% WH (sale) — superseded by the 3% domestic rate, Aug 2025",
+    "id_tax05": "2% WH (purchase) — superseded by the 3% domestic rate, Aug 2025",
+    "id_tax13": "35% WH (sale) — no such Ethiopian withholding rate exists",
+    "id_tax12": "35% WH (purchase) — no such Ethiopian withholding rate exists",
 }
 
 
@@ -59,7 +92,48 @@ class AccountChartTemplate(models.AbstractModel):
             company = company or self.env.company
             self.env["l10n.et.wht.config"]._l10n_et_ensure_default(company)
             self.env["l10n.et.cash.cap.config"]._l10n_et_ensure_default(company)
+            self._l10n_et_base_deactivate_unsupported_core_taxes(company)
         return result
+
+    @api.model
+    def _l10n_et_base_deactivate_unsupported_core_taxes(self, company):
+        """Take the unsupported core withholding rates out of selection.
+
+        Called from BOTH paths — `_post_load_data` for a fresh chart load and
+        `_l10n_et_base_reload_for_company` for a company that loaded chart 'et'
+        earlier. Deliberately ONE implementation rather than the CSV-override
+        trick used for account fields: the two paths must not be able to drift,
+        and a company at a client site reaches this through the reload path,
+        which is the one that actually matters.
+
+        Idempotent, and it only ever deactivates. A tax someone re-enabled by
+        hand is deactivated again on the next upgrade, on purpose: these rates
+        are not a preference. If a proclamation ever reinstates one, it comes
+        out of this dict with a citation — not from a manual toggle nobody
+        wrote down.
+
+        Returns the taxes it changed, so callers and tests can assert on the
+        work done rather than on the absence of an error.
+        """
+        chart_template = self.with_company(company)
+        deactivated = self.env["account.tax"]
+        for xmlid, reason in CORE_TAX_DEACTIVATIONS.items():
+            # active_test=False: once deactivated, a plain ref() will not find
+            # the record again, and the second run would silently do nothing
+            # while looking successful.
+            tax = chart_template.with_context(active_test=False).ref(
+                xmlid, raise_if_not_found=False
+            )
+            if tax and tax.active:
+                tax.active = False
+                deactivated |= tax
+                _logger.info(
+                    "l10n_et_base: deactivated core tax %s on company %s — %s",
+                    xmlid,
+                    company.display_name,
+                    reason,
+                )
+        return deactivated
 
     @api.model
     def _l10n_et_base_reload_for_company(self, company):
@@ -115,3 +189,5 @@ class AccountChartTemplate(models.AbstractModel):
                     tax.write(values)
         self.env["l10n.et.wht.config"]._l10n_et_ensure_default(company)
         self.env["l10n.et.cash.cap.config"]._l10n_et_ensure_default(company)
+        # Same call as the fresh-load path. A client site reaches the fix here.
+        self._l10n_et_base_deactivate_unsupported_core_taxes(company)
