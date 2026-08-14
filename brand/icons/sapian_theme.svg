@@ -1,12 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
- <path d="M256 60 C340 168 400 232 400 306 a144 144 0 0 1 -288 0
-          C112 232 172 168 256 60 Z" fill="#5A7C83"/>
- <clipPath id="d"><path d="M256 60 C340 168 400 232 400 306
-   a144 144 0 0 1 -288 0 C112 232 172 168 256 60 Z"/></clipPath>
- <g clip-path="url(#d)">
-   <rect x="112" y="40" width="144" height="240" fill="#14454F"/>
-   <rect x="256" y="40" width="144" height="240" fill="#2F7E4F"/>
-   <rect x="112" y="280" width="144" height="200" fill="#C05628"/>
-   <rect x="256" y="280" width="144" height="200" fill="#E39A42"/>
- </g>
+ <path d="M256 26 C356 150 452 232 452 320 A196 196 0 0 1 60 320
+          C60 232 156 150 256 26 Z" fill="#DD622C"/>
+ <path d="M256 26 C356 150 452 232 452 320 A196 196 0 0 1 256 516 Z" fill="#1F8CA3"/>
+ <circle cx="256" cy="330" r="66" fill="#FFFFFF" opacity=".92"/>
 </svg>
