@@ -254,3 +254,91 @@ verify_login_page() {
   unset -f _login_check
   return "${failed}"
 }
+
+# ---------------------------------------------------------------------------
+# verify_launcher <compose-command> <db-name> <repo-root>
+#
+# Assert that THIS DATABASE will actually put a user on the app launcher, in
+# the house brand, when they log in.
+#
+# ONE DEFINITION, called by build_demo.sh and provision_client.sh — the same
+# arrangement as verify_login_page, and for the same reason. Installing
+# web_responsive is exactly what a tenant that lands on the Module Catalog
+# would also have in its config: the module owns the field, but the admin of a
+# demo or a client tenant is created in the `-i base` phase BEFORE the module
+# exists, so the product default never reaches the one user who is in every
+# screen recording. Measured, not assumed — see
+# addons/sapian_theme/models/res_users.py. Verify the artefact, never the
+# config line.
+#
+# The RENDERED proof (a browser logging in and seeing a teal launcher) lives in
+# sapian_theme's browser tests and the launcher-defaults CI job. This is the
+# part a provisioning script can prove without a browser, and it is the part
+# that breaks.
+#
+# Returns 0 when everything holds, 1 otherwise, printing the CHECK lines either
+# way so an operator can see what was measured rather than only that it failed.
+verify_launcher() {
+  local compose="$1" db="$2" repo_root="$3"
+  local out failed=0
+
+  out="$(${compose} run --rm -T odoo odoo shell -d "${db}" --no-http --stop-after-init \
+         < "${repo_root}/scripts/lib/check_launcher.py" 2>&1 || true)"
+  printf '%s\n' "${out}" | grep -E '^CHECK ' || true
+
+  _launcher_check() {  # <grep pattern> <what went wrong>
+    if ! printf '%s\n' "${out}" | grep -q "$1"; then
+      log_error "!! $2"
+      failed=1
+    fi
+  }
+
+  # "Did anything run at all" first: every count below reads as healthy on an
+  # empty output.
+  _launcher_check '^CHECK launcher_module=installed$' \
+    "web_responsive is NOT installed on '${db}', so there is no app launcher."$'\n'"   Users land on whatever the default app is — on our databases that is a"$'\n'"   configuration screen."
+
+  local users
+  users="$(printf '%s\n' "${out}" | sed -n 's/^CHECK launcher_users=//p' | tr -d '\r')"
+  if [ -z "${users}" ] || [ "${users}" -lt 1 ]; then
+    log_error "!! Found ${users:-no} internal users on '${db}'. Nothing below was checked"$'\n'"   against anybody, so a clean result here would mean nothing."
+    failed=1
+  fi
+
+  # The stored values, not the setting that was meant to write them. NOFIELD is
+  # reported as its own value precisely so that "0 users are missing it" cannot
+  # be produced by a database where the field does not exist.
+  _launcher_check '^CHECK launcher_users_not_redirected=0$' \
+    "Internal users on '${db}' will NOT land on the app launcher — see the"$'\n'"   CHECK launcher_not_redirected_logins line above. Apply the defaults with:"$'\n'"   env['res.users']._sapian_apply_launcher_defaults(dry_run=False)"
+  _launcher_check '^CHECK launcher_users_not_branded=0$' \
+    "Internal users on '${db}' get the launcher in web_responsive's lilac"$'\n'"   rather than the house brand — see CHECK launcher_not_branded_logins."
+
+  _launcher_check '^CHECK launcher_css=True$' \
+    "The launcher's CSS is not in the served backend bundle, so the grid cannot"$'\n'"   render whatever the user settings say."
+
+  # The colour, read out of the compiled bundle rather than out of the SCSS.
+  local expected community milk
+  expected="$(printf '%s\n' "${out}" | sed -n 's/^CHECK brand_expected=//p' | tr -d '\r')"
+  community="$(printf '%s\n' "${out}" | sed -n 's/^CHECK launcher_community_colour=//p' | tr -d '\r')"
+  milk="$(printf '%s\n' "${out}" | sed -n 's/^CHECK launcher_milk_colour=//p' | tr -d '\r')"
+  if [ -z "${expected}" ]; then
+    log_error "!! Could not read the brand colour from sapian_theme — the theme is not"$'\n'"   importable, so the launcher colour was not actually checked."
+    failed=1
+  elif [ "${community}" != "$(printf '%s' "${expected}" | tr 'a-f' 'A-F')" ]; then
+    log_error "!! The launcher background in the served bundle is '${community}', not the"$'\n'"   brand '${expected}'. The demo or tenant opens on somebody else's colour."
+    failed=1
+  fi
+  # And the check discriminates: if the two themes ever compiled to the same
+  # colour, matching the brand above would prove nothing about which theme the
+  # users are actually on. Only meaningful when both rules actually compiled —
+  # when the module is absent both read ABSENT, and saying "they are the same
+  # colour" about two rules that do not exist is a true sentence that points at
+  # the wrong problem.
+  if [ "${community}" != "ABSENT" ] && [ -n "${milk}" ] && [ "${milk}" = "${community}" ]; then
+    log_error "!! The 'milk' and 'community' launcher themes compile to the SAME colour"$'\n'"   (${milk}), so the brand check above cannot tell them apart."
+    failed=1
+  fi
+
+  unset -f _launcher_check
+  return "${failed}"
+}

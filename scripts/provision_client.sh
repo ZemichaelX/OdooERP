@@ -27,7 +27,13 @@ DB_NAME="${1:?usage: provision_client.sh <db_name> [modules]}"
 # a link to odoo.com on the page their staff open every morning.
 #
 # Pass a second argument to override the whole list, as before.
-MODULES="${2:-sapian_core,sapian_theme,l10n_et_base,l10n_et_payroll,l10n_et_reports}"
+# web_responsive joins the default set for the same reason sapian_theme did.
+# It is the product's NAVIGATION: without it Odoo 19's desktop apps menu is a
+# plain text dropdown and login lands on the Module Catalog, so a tenant
+# provisioned without it opens on a configuration screen every morning. It is
+# vendored at a pinned commit (vendor/README.md) and its per-user defaults are
+# applied in phase 5 below — installing it is not enough on its own.
+MODULES="${2:-sapian_core,sapian_theme,web_responsive,l10n_et_base,l10n_et_payroll,l10n_et_reports}"
 COUNTRY_CODE="${SAPIAN_COUNTRY:-et}"   # override for a non-Ethiopian tenant
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=scripts/lib/preflight.sh
@@ -55,12 +61,12 @@ echo ">> Provisioning client DB: ${DB_NAME}"
 echo ">> Country: ${COUNTRY_CODE} | Modules: ${MODULES}"
 
 # --- Phase 1: create the DB with base only (no chart yet) ----------------------
-echo ">> [1/5] Creating database (base only)..."
+echo ">> [1/6] Creating database (base only)..."
 $COMPOSE run --rm odoo \
   odoo -d "${DB_NAME}" -i base --without-demo=all --stop-after-init
 
 # --- Phase 2: set the company country BEFORE any chart loads -------------------
-echo ">> [2/5] Setting company country to '${COUNTRY_CODE}'..."
+echo ">> [2/6] Setting company country to '${COUNTRY_CODE}'..."
 printf "%s\n" \
   "company = env['res.company'].search([], limit=1)" \
   "country = env['res.country'].search([('code','=','${COUNTRY_CODE}'.upper())], limit=1)" \
@@ -70,7 +76,7 @@ printf "%s\n" \
   | $COMPOSE run --rm -T odoo odoo shell -d "${DB_NAME}" --no-http
 
 # --- Phase 3: install the real modules — 'et' chart auto-loads now -------------
-echo ">> [3/5] Installing modules (chart auto-loads for the country)..."
+echo ">> [3/6] Installing modules (chart auto-loads for the country)..."
 $COMPOSE run --rm odoo \
   odoo -d "${DB_NAME}" -i "${MODULES}" --without-demo=all --stop-after-init
 
@@ -90,7 +96,7 @@ $COMPOSE run --rm odoo \
 # auth_signup.invitation_scope, and a literal of either name is a string that
 # can silently stop matching. It prints what it wrote, so a run that did
 # nothing does not look like a run that worked.
-echo ">> [4/5] Closing public sign-up (invitation only)..."
+echo ">> [4/6] Closing public sign-up (invitation only)..."
 SIGNUP_OUT="$(printf "%s\n" \
   "field = env['res.config.settings']._fields.get('auth_signup_uninvited')" \
   "key = getattr(field, 'config_parameter', None) or 'auth_signup.invitation_scope'" \
@@ -105,16 +111,49 @@ if ! printf '%s\n' "${SIGNUP_OUT}" | grep -q '^SIGNUP .*=b2b$'; then
   exit 1
 fi
 
-# --- Phase 5: the login page this tenant actually serves ---------------------
+# --- Phase 5: the launcher this tenant's users actually land on --------------
+# Installing web_responsive is NOT enough, and the reason is measured rather
+# than argued: the admin was created back in phase [1/6] by `-i base`, at which
+# point `is_redirect_home` does not exist on res.users, so sapian_theme's
+# product default never sees it and web_responsive's column default (False,
+# 'milk') wins. The only user this tenant is handed over with would land on the
+# Module Catalog, in Odoo's lilac — see
+# addons/sapian_theme/models/res_users.py.
+#
+# This is provisioning, not a migration: it is called by name, it moves only
+# users still on web_responsive's own defaults, and it prints the count, so a
+# run that moved nobody is distinguishable from a run that worked.
+echo ">> [5/6] Putting this tenant's users on the app launcher..."
+LAUNCHER_OUT="$(printf "%s\n" \
+  "moved = env['res.users']._sapian_apply_launcher_defaults(dry_run=False)" \
+  "env.cr.commit()" \
+  "print('LAUNCHER moved=%d' % len(moved))" \
+  | $COMPOSE run --rm -T odoo odoo shell -d "${DB_NAME}" --no-http 2>&1)"
+printf '%s\n' "${LAUNCHER_OUT}" | grep -E '^LAUNCHER ' || true
+if ! printf '%s\n' "${LAUNCHER_OUT}" | grep -qE '^LAUNCHER moved=[0-9]+$'; then
+  echo "!! The launcher defaults step never reported on ${DB_NAME}. It did not run," >&2
+  echo "   so this tenant's users may still land on a configuration screen." >&2
+  exit 1
+fi
+
+# --- Phase 6: the login page and the launcher this tenant actually serves -----
 # THE SAME CHECK build_demo.sh RUNS, from the same file. A config line saying
 # `-i sapian_theme` is exactly what an unthemed tenant would also have: the
 # demo was verified from the served bytes for a week while the thing we sell
 # was verified from nothing at all, and the gap was a client login page still
 # carrying Odoo's footer. Verify the artefact, never the config line.
-echo ">> [5/5] Verifying the login page this tenant serves..."
+echo ">> [6/6] Verifying the login page and launcher this tenant serves..."
 if ! verify_login_page "${COMPOSE}" "${DB_NAME}" "${REPO_ROOT}"; then
   echo "!! ${DB_NAME} does not serve a SapianERP-branded login page. Do not hand" >&2
   echo "   this tenant over." >&2
+  exit 1
+fi
+
+# THE SAME CHECK build_demo.sh RUNS, from the same file — see verify_launcher
+# in scripts/lib/preflight.sh.
+if ! verify_launcher "${COMPOSE}" "${DB_NAME}" "${REPO_ROOT}"; then
+  echo "!! ${DB_NAME} will not put its users on the app launcher. Do not hand this" >&2
+  echo "   tenant over — it opens on a configuration screen." >&2
   exit 1
 fi
 

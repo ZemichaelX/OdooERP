@@ -227,6 +227,50 @@ Three properties are deliberate:
   including an admin who will still land on the Module Catalog until someone
   sets the field. Rewriting a stored preference is a migration, not a default.
 
+### Installing the module is not enough — measured
+
+`default_get` fills a value only where none was given, so it never reaches a
+user that already exists. On the databases we actually ship, that is the admin:
+
+```
+[1] odoo -d demo -i base                    admin created here.
+                                            'is_redirect_home' in u._fields = False
+[3] odoo -d demo -i ...,web_responsive      admin      -> False / milk
+                                            new user   -> True  / community
+```
+
+Both `build_demo.sh` and `provision_client.sh` create the company and the admin
+in an `-i base` phase, *before* the module that owns the field exists, so the
+column default wins for the one user who is in every screen recording and every
+handover. A build that installs the launcher and stops has a launcher nobody
+lands on.
+
+So provisioning applies them explicitly:
+
+```python
+env['res.users']._sapian_apply_launcher_defaults(dry_run=False)
+```
+
+It is a provisioning command, not a migration: called by name, never on install,
+`dry_run=True` by default, and it logs the logins it moved so a run that moved
+nobody is distinguishable from a run that worked. It is idempotent, it skips
+`share` users, and it deliberately does **not** claim to tell a deliberate
+opt-out from the shipped default — `is_redirect_home = False` is the same stored
+value either way, which is exactly why the dry run prints the list first.
+
+**For a tenant that already exists** (including the `sapianerp` build database),
+that one call is the whole fix:
+
+```bash
+docker compose -f docker/docker-compose.yml run --rm -T odoo \
+  odoo shell -d <db> --no-http --stop-after-init <<'PY'
+env['res.users']._sapian_apply_launcher_defaults(dry_run=False)
+env.cr.commit()
+PY
+```
+
+Drop `dry_run=False` to see who would move without moving them.
+
 ### How they are guarded
 
 `tests/test_launcher_defaults.py`, and the guard is **the page, not the field**.
@@ -276,9 +320,18 @@ would therefore stay green if the launcher started covering the rail
 permanently, or stopped covering it and let the rail paint over the app grid.
 Both are things a client sees immediately and CI would not.
 
-These classes are tagged `-standard` and selected by the bare `sapian_launcher`
-tag, because they need `web_responsive` installed and this module does not
-depend on it. `/module` and `/module:Class` selectors implicitly require the
+Provisioning has its own guard, from the artefact rather than the config line:
+`verify_launcher` (`scripts/lib/preflight.sh` + `scripts/lib/check_launcher.py`)
+is called by both build scripts and reads the stored user values and the
+compiled backend bundle — the launcher's CSS is present, and the `community`
+theme's background carries the brand hex while `milk`'s does not, so "the brand
+is in there somewhere" cannot pass by matching a rule no user's theme selects.
+Proved to discriminate by resetting a tenant's admin to the upstream values and
+watching it go red.
+
+The browser classes are tagged `-standard` and selected by the bare
+`sapian_launcher` tag, because they need `web_responsive` installed and this
+module does not depend on it. `/module` and `/module:Class` selectors implicitly require the
 `standard` tag (`odoo/tests/tag_selector.py`), so they never run — and never
 *skip* — in a suite with no launcher to look at. The `launcher-defaults` CI job
 installs both on the demo tenant's module set and greps the log for the marker
