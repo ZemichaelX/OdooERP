@@ -343,6 +343,19 @@ verify_launcher() {
   _launcher_check '^CHECK launcher_users_not_branded=0$' \
     "Internal users on '${db}' get the launcher in web_responsive's lilac"$'\n'"   rather than the house brand — see CHECK launcher_not_branded_logins."
 
+  # 5b. THE HOME ACTION, which outranks both of the settings above and is not
+  #     visible in either of them. `res.users.action_id` reaches the client as
+  #     session_info['home_action_id']; the action service falls back to it when
+  #     the URL carries no action, loadState() then returns true, and
+  #     WebClient.loadRouterState skips _loadDefaultApp — the only method
+  #     web_responsive patches and the only place is_redirect_home is read.
+  #     Measured: the launcher paints correctly, and 357 ms later the client is
+  #     on /odoo/action-<home>. Both checks above are green throughout.
+  _launcher_check '^CHECK launcher_home_action_on_wire=false$' \
+    "The page this database serves carries a HOME ACTION in session_info, so"$'\n'"   the client will load it and leave the launcher a second after login —"$'\n'"   with the two checks above still green. See CHECK"$'\n'"   launcher_home_action_logins. Clear it with:"$'\n'"   env['res.users']._sapian_apply_launcher_defaults(dry_run=False)"
+  _launcher_check '^CHECK launcher_users_with_home_action=0$' \
+    "Internal users on '${db}' carry a home action, which takes the screen"$'\n'"   away from the launcher on login — see CHECK launcher_home_action_logins."
+
   # 6. The colour, read out of the delivered stylesheet.
   local expected community milk
   expected="$(printf '%s\n' "${out}" | sed -n 's/^CHECK brand_expected=//p' | tr -d '\r')"

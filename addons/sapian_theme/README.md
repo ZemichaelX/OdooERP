@@ -300,6 +300,68 @@ PY
 
 Drop `dry_run=False` to see who would move without moving them.
 
+### The third field, which outranks both and is not one of them
+
+`res.users.action_id` — **Home Action**, on the Preferences tab of the user form
+— decides the landing page *before* either setting above is consulted, by a
+path that never reaches `web_responsive`:
+
+```
+session_info['home_action_id']              base/models/ir_http.py
+  -> user.homeActionId                      web/static/src/core/user.js
+  -> action_service._getActionParams()      falls back to it when the URL
+                                            carries no action
+  -> loadState() returns TRUE
+  -> WebClient.loadRouterState() SKIPS _loadDefaultApp()
+```
+
+`_loadDefaultApp` is the only method `web_responsive` patches, and that patch is
+the only code in the stack that reads `is_redirect_home`. So a user with a home
+action never reaches the branch that would honour the launcher.
+
+What it looks like is why it went unnoticed. `AppsMenu.setup()` opens the
+launcher on its own, off `user.context.is_redirect_to_home`, independently of
+`_loadDefaultApp` — so **the launcher paints, correctly, with every tile**. Then
+the home action's controller mounts, fires `ACTION_MANAGER:UI-UPDATED`, and
+`AppsMenu` closes itself on that event. Measured on `demo_selam` at 1366x900,
+admin with `is_redirect_home = True` and the Module Catalog as home action:
+
+| t | URL | what is on screen |
+|---|---|---|
+| 1205 ms | `/odoo` | launcher visible, 12 tiles |
+| 1442 ms | `/odoo` | list view mounted underneath |
+| 1562 ms | `/odoo/action-101` | launcher gone |
+
+Roughly one second of a correct launcher, then a configuration screen, with
+nobody touching the mouse. With `action_id` empty the same measurement holds at
+the launcher indefinitely — 8 boots at 6× CPU throttling and 300 ms latency, 12
+tiles every time, no navigation.
+
+The destination is the Module Catalog for a reason that is worth writing down,
+because it makes two different faults look identical: `sapian_core`'s root menu
+is `sequence 5`, so **SapianERP is the first app**; its first leaf is Onboarding,
+whose server action routes to the module catalogue once
+`sapian_onboarding_done` is set. So both this fault and a plain
+`is_redirect_home = False` land on `/odoo/action-101`, and the URL alone does not
+tell you which one you have.
+
+`_sapian_apply_launcher_defaults` therefore **clears the home action** on the
+users it moves, and treats a home action as a reason to move a user. Writing
+`is_redirect_home = True` and leaving `action_id` behind manufactures exactly
+this defect — a stored setting that says launcher and a page that shows a list
+view. It is the one thing the command removes that a person deliberately chose,
+so the dry run names it per user (`login -> action name`) rather than counting
+it. Nothing in this repository sets `action_id`; a person does, in Preferences.
+
+Two smaller measured facts, both asserted in the tests because both are
+counter-intuitive:
+
+- Creating a user *with* a home action leaves `is_redirect_home = True`, not
+  False. `_compute_redirect_home` is a stored **editable** compute, and our
+  `default_get` supplies an explicit `True` at create time, which wins. Upstream's
+  compute does not protect us.
+- *Writing* `action_id` onto an existing user does flip the flag to False.
+
 ### How they are guarded
 
 `tests/test_launcher_defaults.py`, and the guard is **the page, not the field**.
@@ -334,6 +396,32 @@ the vendor tree-hash pin on upstream's. Asserting that upstream's test *fails*
 was tried and removed — on a database with `account` it errors before running
 rather than failing, for reasons in `vendor/README.md`, "Known divergence".
 
+**Landing once is not the assertion.** Every line above samples inside the first
+second, which is exactly the window in which the home-action defect looks
+perfect. `TestLauncherStaysOnTheLauncher` therefore gives its user a home
+action, hands it to the provisioning command, waits for the client to go quiet,
+and then **sits still for another 2.5 s** before it looks — at
+`location.pathname` as well as the DOM, because the URL is what an operator
+reports and what a screen recording shows.
+
+```
+SAPIAN-LAUNCHER-STAYS user=launcher.stays.user earlyUrl=/odoo earlyLauncher=true
+                      url=/odoo launcher=true items=6 actionLoaded=false action=""
+```
+
+It was proved to discriminate against the code before this change, in a browser,
+not asserted to:
+
+```
+SAPIAN-LAUNCHER-STAYS user=launcher.stays.user earlyUrl=/odoo earlyLauncher=true
+                      url=/odoo/users launcher=false items=0 actionLoaded=true action="Users"
+FAIL: the client navigated away from the launcher on its own:
+      /odoo -> /odoo/users (action "Users"). Nobody clicked anything.
+```
+
+Note `earlyLauncher=true` in the red run: the launcher did render first. That is
+the whole reason a single sample cannot catch this.
+
 The same file adds the assertion the rail's own suite does not make: with the
 launcher open the rail is **covered**, and on dismiss it is reachable again,
 with its tile count unchanged throughout.
@@ -357,6 +445,24 @@ theme's background carries the brand hex while `milk`'s does not, so "the brand
 is in there somewhere" cannot pass by matching a rule no user's theme selects.
 Proved to discriminate by resetting a tenant's admin to the upstream values and
 watching it go red.
+
+It also reads the **home action off the wire** — `"home_action_id"` in the
+`session_info` embedded in the served `/odoo` page — rather than the field. That
+is the byte the client reads to make this decision, and it is the only check in
+the set that notices the defect above. On `demo_selam` with the home action set:
+
+```
+CHECK launcher_users_not_redirected=0        <- green
+CHECK launcher_users_not_branded=0           <- green
+CHECK launcher_home_action_on_wire=101       <- red
+CHECK launcher_users_with_home_action=1
+CHECK launcher_home_action_logins=admin -> Module Catalog
+VERIFY_LAUNCHER_EXIT=1
+```
+
+and after `_sapian_apply_launcher_defaults(dry_run=False)`,
+`launcher_home_action_on_wire=false` with exit 0. Two checks that were green
+throughout, and a tenant that navigated away from the launcher every login.
 
 The browser classes are tagged `-standard` and selected by the bare
 `sapian_launcher` tag, because they need `web_responsive` installed and this

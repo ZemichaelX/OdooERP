@@ -145,6 +145,18 @@ provisioning and then verify the outcome from the served artefact
 (`verify_launcher` in `scripts/lib/preflight.sh`). See
 `addons/sapian_theme/README.md` for the measurement behind that.
 
+Setting its two fields is not sufficient either. `res.users.action_id` — base's
+"Home Action", nothing to do with this module — is consulted by Odoo 19 *before*
+`is_redirect_home` and by a path that never enters `web_responsive`:
+`session_info['home_action_id']` makes `loadState()` return true, so
+`WebClient.loadRouterState` skips `_loadDefaultApp`, which is the only method
+this module patches. The launcher still paints — `AppsMenu.setup()` opens itself
+independently — and is then replaced about 350 ms later. Upstream models the two
+as mutually exclusive from both ends (`_compute_redirect_home` forces the flag
+off when a home action is set; the user view renders the checkbox with
+`invisible="action_id"`), so the provisioning command clears the home action on
+the users it moves.
+
 One consequence for CI: this module's own `at_install` test cannot run on a
 database that carries `account`. `-u web_responsive` reloads it at position
 39/82, before `account`, and `BaseCommon.setUpClass` then hits a NOT NULL

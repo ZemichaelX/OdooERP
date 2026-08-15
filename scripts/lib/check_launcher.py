@@ -121,6 +121,30 @@ html = page.get_data(as_text=True)
 print("CHECK launcher_page_http=%s" % page.status_code)
 print("CHECK launcher_page_bytes=%d" % len(html))
 
+# THE HOME ACTION, READ OFF THE WIRE.
+#
+# `res.users.action_id` decides the landing page before either launcher setting
+# is consulted, by a path that never reaches web_responsive: session_info
+# carries it as `home_action_id`, the action service falls back to it when the
+# URL has no action, `loadState()` then returns true, and
+# `WebClient.loadRouterState` therefore skips `_loadDefaultApp` — the only
+# method web_responsive patches and the only place `is_redirect_home` is read.
+#
+# So this is not "assert the field is empty" restated. It is the byte the
+# client reads to make this exact decision, taken from the page the browser is
+# served — the same standard as everything else in this file. A tenant can show
+# `launcher_users_not_redirected=0` and still navigate away one second after
+# login; only this line notices.
+home = re.search(r'"home_action_id":\s*([^,}\s]+)', html)
+print("CHECK launcher_home_action_on_wire=%s" % (home.group(1) if home else "ABSENT"))
+homed = users.filtered("action_id")
+print("CHECK launcher_users_with_home_action=%d" % len(homed))
+if homed:
+    print(
+        "CHECK launcher_home_action_logins=%s"
+        % ", ".join(sorted("%s -> %s" % (u.login, u.action_id.name) for u in homed))
+    )
+
 js_urls = re.findall(r'src="(/web/assets/[^"]*\.js)"', html)
 css_urls = re.findall(r'(?:href|data-src)="(/web/assets/[^"]*\.css)"', html)
 # The backend bundle, not the frontend one: an unauthenticated page serves

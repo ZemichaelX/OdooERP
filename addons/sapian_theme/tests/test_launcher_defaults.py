@@ -210,6 +210,82 @@ class TestLauncherProvisioningCommand(TransactionCase):
         second = self.env["res.users"]._sapian_apply_launcher_defaults(dry_run=False)
         self.assertFalse(second, "a second run found work to do, so it is not idempotent")
 
+    def test_it_clears_the_home_action_that_outranks_both_fields(self):
+        """`action_id` decides the landing before either field is consulted.
+
+        Odoo 19 puts it in `session_info['home_action_id']`, the action service
+        falls back to it when the URL carries no action, `loadState()` then
+        returns true — and `WebClient.loadRouterState` skips `_loadDefaultApp`,
+        which is the only method web_responsive patches and the only place
+        `is_redirect_home` is read. So a user with a home action never reaches
+        the launcher branch at all.
+
+        Writing True over that produces a user whose settings say launcher and
+        whose screen shows a list view a second after login. The provisioning
+        command therefore treats a home action as both a reason to move a user
+        and something the move removes.
+        """
+        if not self._has_fields():
+            return
+        home = self.env.ref("base.action_res_users")
+        homed = self.env["res.users"].create(
+            {
+                "login": "provisioning.homeaction.user",
+                "name": "Has A Home Action",
+                "action_id": home.id,
+            }
+        )
+        # MEASURED, and the reason this is not merely theoretical: our own
+        # `default_get` supplies is_redirect_home=True at create time, and an
+        # explicit value beats an editable stored compute. So web_responsive's
+        # `_compute_redirect_home` does NOT protect us here — creating a user
+        # with a home action produces the lying pair by itself.
+        self.assertTrue(
+            homed.is_redirect_home,
+            "premise changed: the product default no longer wins over "
+            "_compute_redirect_home, so this fixture is not the state a tenant "
+            "is found in",
+        )
+
+        moved = self.env["res.users"]._sapian_apply_launcher_defaults(dry_run=False)
+        self.assertIn(homed, moved)
+        self.assertFalse(
+            homed.action_id,
+            "the home action survived, so this user still lands on it and the "
+            "launcher flag below is a value the page never delivers",
+        )
+        # And the flag actually took: `is_redirect_home` is a stored EDITABLE
+        # compute depending on action_id, so writing both in one call could
+        # have left the compute holding the pen. Asserted, not reasoned about.
+        self.assertTrue(homed.is_redirect_home)
+        self.assertEqual(homed.apps_menu_theme, "community")
+
+    def test_a_dry_run_names_the_home_action_it_would_remove(self):
+        """The one thing here that destroys a deliberate choice must be legible.
+
+        A count of users tells an operator nothing about what they are about to
+        lose; the login and the action's name do.
+        """
+        if not self._has_fields():
+            return
+        home = self.env.ref("base.action_res_users")
+        homed = self.env["res.users"].create(
+            {
+                "login": "provisioning.dryhome.user",
+                "name": "Dry Home",
+                "action_id": home.id,
+            }
+        )
+        with self.assertLogs("odoo.addons.sapian_theme.models.res_users", "INFO") as logs:
+            would_move = self.env["res.users"]._sapian_apply_launcher_defaults()
+        self.assertIn(homed, would_move)
+        # `.id`, not the recordset: `res.users.action_id` points at the
+        # ir.actions.actions BASE table, so the same row browses as a different
+        # model than the act_window it was read from and never compares equal.
+        self.assertEqual(homed.action_id.id, home.id, "a DRY RUN wrote to the database")
+        reported = "\n".join(logs.output)
+        self.assertIn("provisioning.dryhome.user -> %s" % home.name, reported)
+
     def test_it_leaves_portal_and_public_users_alone(self):
         """`share = True` users never see a backend launcher.
 
@@ -458,6 +534,123 @@ class TestLauncherLandingOnTheWire(LauncherBrowserCase):
         user = self.make_user(login, default_apps_menu_theme="milk")
         self.assertEqual(user.apps_menu_theme, "milk")
         self.run_landing(login, MILK_CONTROL)
+
+
+# ---------------------------------------------------------------------------
+# The landing has to HOLD, not merely happen.
+# ---------------------------------------------------------------------------
+
+# Measured on demo_selam, admin with is_redirect_home=True and a home action:
+#
+#   1205 ms   /odoo             launcher visible, 12 tiles
+#   1442 ms   /odoo             list view mounted underneath
+#   1562 ms   /odoo/action-101  launcher gone
+#
+# Every assertion above this line samples inside the first window and passes.
+# The launcher renders correctly and is then replaced, which is why this guard
+# waits for the client to go quiet and then sits still for another 2.5 seconds
+# before it looks. It also reads `location.pathname`, because the URL is the
+# thing an operator actually reported and the thing a screen recording shows.
+STAYS_PUT_JS = """
+(async () => {
+    const settled = async () => {
+        const deadline = Date.now() + 20000;
+        while (Date.now() < deadline) {
+            %ACTION_PROBE%
+            if (actionLoaded || document.querySelector('.app-menu-container')) {
+                return;
+            }
+            await new Promise((r) => setTimeout(r, 150));
+        }
+    };
+    await settled();
+
+    const early = {
+        url: location.pathname,
+        launcher: !!document.querySelector('.app-menu-container'),
+    };
+
+    // THE DWELL. Not a guess at a duration: the whole defect is that the
+    // override arrives AFTER the launcher has painted, so a check that samples
+    // once cannot see it. 2500 ms is comfortably past the 357 ms gap measured
+    // above, on a machine an order of magnitude slower than the one that
+    // produced it.
+    await new Promise((r) => setTimeout(r, 2500));
+
+    %ACTION_PROBE%
+    const container = document.querySelector('.app-menu-container');
+    const items = container ? container.querySelectorAll('.o-app-menu-item').length : 0;
+
+    console.log('SAPIAN-LAUNCHER-STAYS user=%USER%'
+        + ' earlyUrl=' + early.url + ' earlyLauncher=' + early.launcher
+        + ' url=' + location.pathname
+        + ' launcher=' + !!container + ' items=' + items
+        + ' actionLoaded=' + actionLoaded + ' action="' + actionName + '"');
+
+    if (!early.launcher) {
+        throw new Error('the launcher never appeared at all, so this test is '
+            + 'not measuring what it claims to; landed on ' + early.url);
+    }
+    if (location.pathname !== '/odoo') {
+        throw new Error('the client navigated away from the launcher on its '
+            + 'own: ' + early.url + ' -> ' + location.pathname
+            + ' (action "' + actionName + '"). Nobody clicked anything.');
+    }
+    if (!container) {
+        throw new Error('the launcher was replaced in place — still at /odoo, '
+            + 'but the app grid is gone and "' + actionName + '" is loaded');
+    }
+    if (actionLoaded) {
+        throw new Error('an action loaded behind the launcher: "' + actionName
+            + '" — it will take the screen as soon as the launcher closes');
+    }
+    if (!items) {
+        throw new Error('the launcher is still there but empty');
+    }
+
+    console.log('test successful');
+})();
+"""
+
+
+@tagged("post_install", "-at_install", "-standard", "sapian_launcher")
+class TestLauncherStaysOnTheLauncher(LauncherBrowserCase):
+    """A provisioned user lands on the launcher AND IS STILL THERE 2.5s later.
+
+    WHY THE FIXTURE SETS A HOME ACTION
+    ----------------------------------
+    Because that is the only thing in this stack that produces the defect, and
+    a guard that cannot go red is decoration (CLAUDE.md). The user is created
+    with `action_id` set, then handed to the same provisioning command the build
+    scripts call — so this measures the command's output, not a hand-made state.
+
+    Against the code before this change the command wrote `is_redirect_home =
+    True`, left the home action alone, and this test fails with
+    `/odoo -> /odoo/action-N`. Proof of that red run is in the PR body.
+    """
+
+    browser_size = "1366x900"
+
+    def test_a_provisioned_user_stays_on_the_launcher(self):
+        login = "launcher.stays.user"
+        user = self.make_user(login)
+        # The state a tenant is actually found in: somebody set a home action
+        # in Preferences, which switches the flag off by web_responsive's own
+        # compute.
+        user.action_id = self.env.ref("base.action_res_users").id
+        self.assertFalse(user.is_redirect_home)
+
+        moved = self.env["res.users"]._sapian_apply_launcher_defaults(dry_run=False)
+        self.assertIn(user, moved, "provisioning did not consider this user at all")
+        self.env.flush_all()
+
+        code = STAYS_PUT_JS.replace("%USER%", login).replace("%ACTION_PROBE%", ACTION_PROBE)
+        self.browser_js(
+            "/odoo",
+            code,
+            "!!document.querySelector('.o_main_navbar')",
+            login=login,
+        )
 
 
 # ---------------------------------------------------------------------------
