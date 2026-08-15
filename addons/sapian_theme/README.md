@@ -115,6 +115,48 @@ Icons render at 24px, not the 39px in the spec table: a 39px icon in a 44px row
 leaves 2.5px of vertical air and forces the row taller than the 44px the same
 table specifies. The row height was taken as the binding constraint.
 
+### CI runs the rail against 36 apps, not 14
+
+The rail job used to install eight modules and get **14 root apps**, and at 14
+apps *everything fits*: `scrollHeight` never exceeds `clientHeight`. So every
+scroll and truncation assertion was either forced artificially
+(`TestSapianAppRailOverflow` sets a height) or vacuous (`RAIL_RENDERS_JS`
+scrolled a rail with nothing to scroll). Nothing in CI exercised a naturally
+overflowing rail at the scale we ship — and both rail defects found on
+2026-08-15 were about behaviour at that scale, both found by accident.
+
+**14 apps is a configuration no client will ever run.** The job now installs
+`sapian.module.catalog`'s own set — the same one `build_demo.sh --all-apps`
+uses — with the country-before-chart phase the provisioning scripts do, and
+gets **36**:
+
+```
+apps=36 tiles=36 loaded=36 visibleWithoutScrolling=19
+overflows=true lastReachableByScrolling=true allVisibleWithoutScrolling=false
+```
+
+**19 of 36 visible. It overflows naturally.**
+
+Two job-level assertions keep it that way, and both were proved red against a
+real 14-app log before being trusted:
+
+| Assertion | 14 apps | 36 apps |
+|---|---|---|
+| `MIN_RAIL_TILES=30` | RED — 14 < 30 | PASS |
+| `overflows=true` present | RED — vacuous | PASS |
+
+The second matters more than the first. A job that still had the apps but
+stopped overflowing — a shorter row, a taller viewport — would satisfy every
+marker while the reachability assertion quietly went back to proving nothing.
+
+**The cost, measured rather than estimated.** Same machine, same suite: 14 apps
+157s, 36 apps 425s. Calibrated against CI's own 14-app step (145s there vs 157s
+here, so CI runs at 0.92×), the projected job is **8m41s against 4m58s**. The
+14-app job is REPLACED rather than joined, so runner minutes go 20m01s ->
+23m44s (**+19%**) and wall clock 4m58s -> 8m41s. The 14-app job's only unique
+coverage was "few modules installed", which the theme-alone step already
+provides.
+
 ### Measuring a client mid-boot — the defect that has now bitten twice
 
 `browser_js`'s ready condition is satisfied as soon as the element you asked
