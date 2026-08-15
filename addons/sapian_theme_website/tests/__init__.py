@@ -1,2 +1,3 @@
 # -*- coding: utf-8 -*-
 from . import test_public_signup
+from . import test_login_chrome

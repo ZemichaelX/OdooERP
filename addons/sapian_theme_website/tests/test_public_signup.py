@@ -212,11 +212,18 @@ class TestPublicSignupOnTheWire(HttpCase, PublicSignupCase):
         """The suppression is scoped to /web/login and nothing else.
 
         `/web/signup` and `/web/reset_password` extend `web.login_layout` and
-        not `web.login`, so the login form's own mark never reaches them and
-        `brand_promotion_message` is their ONLY attribution. Scoping the
-        suppression one character wider — a prefix on `/web/log` rather than an
-        exact match — would leave both unsigned, which is why this test exists
-        alongside the one above.
+        not `web.login`. Scoping the suppression one character wider — a prefix
+        on `/web/log` rather than an exact match — would leave both unsigned,
+        which is why this test exists alongside the one above.
+
+        WHERE THEIR ONE ATTRIBUTION COMES FROM CHANGED, and this test is what
+        noticed. It used to be `brand_promotion_message`, rendered in the
+        website footer that wrapped these pages. Removing that wrapper — the
+        point of `views/login_layout.xml` — took their only signature with it
+        and this assertion went red at 0. The attribution now lives in the
+        login card's own footer (`sapian_theme/views/login_templates.xml`),
+        which all three auth pages share, so the count is one again and is one
+        with or without `website` installed.
         """
         self._allow("1")  # so /web/signup is reachable rather than redirected
         for path in ("/web/signup", "/web/reset_password"):

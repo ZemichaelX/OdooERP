@@ -31,12 +31,27 @@
          NOT error, but the login tests went from 2 failures to 4 — worse. Our
          specs then operate on a subtree that website has already thrown away.
 
-         The fix is to stop anchoring the branding in the contested layout at
-         all. Everything that must survive lives in `web.login`, whose content
-         is passed through `t-out="0"` into whichever wrapper wins — the stock
-         card, or website's. The login FORM is the anchor because a login page
-         cannot stop containing its own login form; it is the one node here that
-         cannot be optioned away.
+         The fix WAS to stop anchoring the branding in the contested layout at
+         all: everything that had to survive moved into `web.login`, whose
+         content is passed through `t-out="0"` into whichever wrapper wins — the
+         stock card, or website's. The login FORM is the anchor because a login
+         page cannot stop containing its own login form; it is the one node here
+         that cannot be optioned away.
+
+         THAT IS NOW HALF THE STORY. `sapian_theme_website` deactivates
+         website's inheritance outright (its views/login_layout.xml explains
+         why: the login page was being served inside the marketing site's
+         header and footer), so the card is no longer contested — it is the
+         same card in both configurations.
+
+         The logo and the support line STAY on the form. They are content, they
+         read correctly where the form is, and moving them would be churn for
+         its own sake. The ATTRIBUTION moved back to the card footer, because
+         the form anchor reached /web/login alone while the card footer also
+         reaches /web/signup and /web/reset_password — see the comment on that
+         xpath below. Which is the general rule for this file: anchor a thing
+         where every page that needs it will find it, and say which pages those
+         are.
 
          Matched on `contains(@t-attf-class, 'oe_login_form')` and NOT on
          `hasclass('oe_login_form')`. The class is COMPUTED —
@@ -96,11 +111,27 @@
              also holds the "Manage Databases" link, which is a real feature and
              must survive. Nothing else in this template points at odoo.com.
 
-             The replacement is NOT put here. When `website` is installed it
-             replaces this whole card (see the header of this file), footer
-             included, and anything anchored here vanishes with it. Ours lives
-             in `login_sapian` below, anchored on the login form. -->
-        <xpath expr="//a[contains(@href, 'odoo.com')]" position="replace"/>
+             OURS REPLACES IT, IN PLACE — and that is a change. It used to be
+             anchored on the login form in `login_sapian` below, because
+             `website` replaced this whole card and anything left here vanished
+             with it. `sapian_theme_website` now deactivates that inheritance
+             (see its views/login_layout.xml), so the card exists in every
+             configuration and the workaround has outlived its cause.
+
+             Moving it back is not tidying. On the form it reached /web/login
+             only, because /web/signup and /web/reset_password extend
+             web.login_layout and never render `web.login`. With the website
+             footer gone those two pages had NO attribution at all — measured,
+             as a failure of `test_the_other_auth_pages_keep_theirs`, which is
+             the assertion that caught it. Here, one line serves all three. -->
+        <xpath expr="//a[contains(@href, 'odoo.com')]" position="replace">
+            <span class="o_sapian_powered">
+                <a href="https://sapiantech.com" target="_blank" rel="noopener">
+                    <t t-call="sapian_theme.mark"/>
+                    <span>Powered by SapianERP</span>
+                </a>
+            </span>
+        </xpath>
     </template>
 
     <template id="login_sapian" inherit_id="web.login"
@@ -140,24 +171,15 @@
             </div>
         </xpath>
 
-        <!-- Our attribution, replacing the one removed above.
-
-             Anchored on the login FORM for the same reason everything else
-             here is: `website` throws the card away, and with it the stock
-             footer this would otherwise live in. On a database without
-             `website` the result is the same line in the same place.
-
-             The mark is INLINE (sapian_theme.mark) so it inherits `color` from
-             this block, which sapian_frontend.scss sets to the one palette
-             value. An <img> could not do that — see that template's comment. -->
-        <xpath expr="//form[contains(@t-attf-class, 'oe_login_form')]" position="after">
-            <div class="text-center small mt-3 o_sapian_powered">
-                <a href="https://sapiantech.com" target="_blank" rel="noopener">
-                    <t t-call="sapian_theme.mark"/>
-                    <span>Powered by SapianERP</span>
-                </a>
-            </div>
-        </xpath>
+        <!-- THE ATTRIBUTION IS NO LONGER HERE. It moved back into the card
+             footer in `login_layout_sapian` above, where it replaces "Powered
+             by Odoo" in place and therefore reaches /web/signup and
+             /web/reset_password as well as /web/login. The reason it was ever
+             anchored on the form — `website` destroying the card — was removed
+             by `sapian_theme_website`. Left as a note rather than deleted
+             silently, because the form anchor is the kind of thing that looks
+             arbitrary and gets "restored" by someone reading the git history
+             without the cause. -->
 
     </template>
 
