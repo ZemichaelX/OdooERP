@@ -102,6 +102,12 @@ STATUTORY_DATES = [
         _addon("l10n_et_base", "models", "l10n_et_wht_config.py"),
         "date(2025, 8, 1)",
     ),
+    (
+        "social welfare levy — Council of Ministers Regulation 519/2022",
+        date(2022, 8, 6),
+        _addon("l10n_et_base", "models", "l10n_et_social_welfare_levy_config.py"),
+        "date(2022, 8, 6)",
+    ),
 ]
 
 # THE OPEN QUESTIONS, keyed by the seed literal. Kept separate from the data so
@@ -121,6 +127,18 @@ OPEN_DISCREPANCIES = {
         "Hamle 1. A Gregorian 1st where an Ethiopian 1st was expected. Needs "
         "the Negarit Gazeta, not arithmetic. Found 2026-08-14 by this test on "
         "its first run."
+    ),
+    "date(2022, 8, 6)": (
+        "6 August 2022 is Hamle 30, 2014 EC — the LAST day of an Ethiopian "
+        "month, one day before Nehase 1 (7 August 2022). Regulation 519/2022 "
+        "states 6 August 2022 as the commencement date and it was gazetted on "
+        "22 August 2022, so unlike the two seeds below this is not obviously a "
+        "transcription error — a regulation may commence mid-month, and this "
+        "test does not override a gazette. It is enumerated and left visible "
+        "because the pattern is striking: this date and the WHT seed are both "
+        "within a day of a Nehase 1. Needs the Negarit Gazeta text, which could "
+        "not be retrieved in the environment this was written in. "
+        "Flagged 2026-08-14 when the levy was implemented."
     ),
     "date(2025, 8, 1)": (
         "1 August 2025 is Hamle 25, 2017 EC — mid-Ethiopian-month. The "

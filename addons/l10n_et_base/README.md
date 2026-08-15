@@ -38,6 +38,33 @@ Epic 3 of `docs/plan-2026/10-claude-code-roadmap.md`; functional spec
   breaching the daily per-party total either warn (audit message on the payment)
   or block (`ValidationError`) — configurable, no code release needed.
 
+### Social welfare levy on imports (Reg. 519/2022)
+**3% of the aggregate CIF value of imported goods**, effective **6 August 2022**
+(gazetted 22 August 2022), Council of Ministers Regulation No. 519/2022.
+Effective-dated `l10n.et.social.welfare.levy.config` (rate + mandatory
+`source_note`), seeded per company at chart load; a rate change is a NEW record.
+
+Three things about it, all easy to get backwards, all enforced rather than
+merely documented:
+
+| property | how it is held |
+|---|---|
+| **in addition** to duty, excise, VAT, surtax | its own tax record; the posted total is CIF + levy |
+| **a cost, NOT creditable** against income tax | the tax posts to `5931` *Social Welfare Levy on Imports* (**expense**), and `_check_tax_posts_to_a_cost_account` refuses a configuration whose tax posts to a receivable |
+| **enters nobody else's base** | `include_base_amount = False` **and** `is_base_affected = False`, asserted against posted amounts on a real bill, not against the checkboxes |
+| **no threshold** | stated explicitly in the reference calculator and pinned by `test_there_is_no_threshold` — the neighbouring WHT rules do have thresholds, which is the invitation to invent one here |
+
+Exempt (no levy, reason recorded): diplomatic privilege · goods already subject
+to import surtax under Regulation 133/2007 · goods excluded by a Ministry of
+Finance directive.
+
+> **A published competitor guide describes this as an "Import Advance Income
+> Tax, 3% of CIF, offset against income tax".** No authority for such a tax was
+> found — it is absent from PwC's Ethiopian import-tax page and from the Art. 92
+> withholding categories. That reading would capitalise 3% of every consignment
+> as a receivable that is never recovered. It is refused by a constraint, and
+> the attempt is exercised by a test.
+
 ### Partner compliance fields
 TIN (10-digit format-validated + normalized via the reference calculator), VAT
 registration no., business licence no. + expiry (expired ⇒ punitive WHT),
@@ -65,7 +92,9 @@ tab.
   cash cap, partner compliance, effective dating, trial balance.
 
 ## Follow-ups (out of this epic)
-MAT 2.5% informational computation · VAT registration-threshold (2M) warning ·
+Withholding on dividends, interest, royalties, management and technical fees —
+rates are known, effective dates are not, and no rule enters the code without
+one · MAT 2.5% informational computation · VAT registration-threshold (2M) warning ·
 NBE FX reference-rate import · WHT remittance-30-day reminder · tax-report tags
 for the new WHT codes (Epic 5 `l10n_et_reports`) · Amharic `.po`.
 

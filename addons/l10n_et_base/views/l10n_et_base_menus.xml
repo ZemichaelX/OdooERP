@@ -12,4 +12,8 @@
               action="action_l10n_et_cash_cap_config"
               parent="menu_l10n_et_base_config"
               sequence="20"/>
+    <menuitem id="menu_l10n_et_swl_config"
+              action="action_l10n_et_swl_config"
+              parent="menu_l10n_et_base_config"
+              sequence="30"/>
 </odoo>

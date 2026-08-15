@@ -53,7 +53,9 @@ class ResCompany(models.Model):
         companies = super().create(vals_list)
         wht_config = self.env["l10n.et.wht.config"].sudo()
         cash_cap_config = self.env["l10n.et.cash.cap.config"].sudo()
+        levy_config = self.env["l10n.et.social.welfare.levy.config"].sudo()
         for company in companies:
             wht_config._l10n_et_ensure_default(company)
             cash_cap_config._l10n_et_ensure_default(company)
+            levy_config._l10n_et_ensure_default(company)
         return companies

@@ -281,3 +281,159 @@ def validate_tin(tin: str | None) -> TinResult:
     if len(set(normalized)) == 1:
         return TinResult(False, "", f"TIN {normalized} is a placeholder value.")
     return TinResult(True, normalized, "Valid TIN format.")
+
+
+# =============================================================================
+# SOCIAL WELFARE LEVY — Council of Ministers Regulation No. 519/2022
+# =============================================================================
+#
+# THE FOUR THINGS THAT ARE ESTABLISHED
+#   rate        3% (0.03)
+#   base        the aggregate CIF value of the imported goods
+#   instrument  Council of Ministers Regulation No. 519/2022, "Social Welfare
+#               Levy on Imported Goods"
+#   effective   6 August 2022 (gazetted 22 August 2022)
+#
+# HOW IT BEHAVES — the part that is easy to get exactly backwards
+#
+#   IN ADDITION.  It is levied on top of customs duty, excise, VAT and surtax,
+#   not instead of any of them.
+#
+#   A COST, NOT A RECEIVABLE.  It is NOT creditable against income tax. This is
+#   the single most important line in this file. A competitor's published tax
+#   guide describes an "Import Advance Income Tax, 3% of CIF, offset against
+#   income tax"; no authority for such a tax was found — it is absent from
+#   PwC's Ethiopian import-tax page and from the Art. 92 withholding
+#   categories. Implementing it that way books 3% of every consignment an
+#   importer brings in as a recoverable ASSET that will never be recovered,
+#   overstating assets and understating cost of goods on every import. The
+#   result object therefore carries an explicit ``creditable`` field which is
+#   hard-wired False, so a caller cannot get this wrong by omission.
+#
+#   IT IS NOT IN ANYBODY ELSE'S BASE.  The levy does not form part of the base
+#   for computing any other import tax. The Odoo layer expresses this with
+#   include_base_amount = False on the tax record; here it means the base
+#   passed in is the CIF value and nothing downstream should add this result to
+#   another tax's base.
+#
+#   NO THRESHOLD.  Stated out loud because the neighbouring WHT rules in this
+#   same file DO have thresholds (20,000 goods / 10,000 services) and the
+#   symmetry invites inventing one. Regulation 519/2022 sets none: a CIF of
+#   ETB 1 attracts ETB 0.03. ``test_there_is_no_threshold`` pins this.
+#
+# CORROBORATION, NOT AUTHORITY. Published summaries of the regulation agree on
+# the rate, the CIF base and the three exemptions. The regulation text itself
+# could not be retrieved in the environment this was written in, so it is not
+# quoted here and the figures still need checking against the gazetted text
+# before a client go-live — the same standing rule as every other rate in this
+# file.
+
+DEFAULT_SWL_RATE = 0.03  # 3% of CIF, Reg. 519/2022
+
+#: First date the levy applies. Gazetted 22 Aug 2022, effective 6 Aug 2022.
+#: In the Ethiopian calendar that is HAMLE 30, 2014 EC — day 30, the last day of
+#: the month, NOT a month boundary. Every Ethiopian effective date this project
+#: has verified against a proclamation lands on day 1, so this is enumerated in
+#: tests_fast/test_et_statutory_dates_land_on_month_1.py and left FAILING
+#: (xfail, strict) until the gazette settles it. It is not "fixed" here.
+DEFAULT_SWL_EFFECTIVE_FROM = (2022, 8, 6)
+
+#: The three exemptions in Reg. 519/2022. Modelled as a closed set rather than a
+#: boolean so a bill records WHY it was exempt — an exemption with no reason is
+#: indistinguishable from a bug, and the auditor asks which one.
+SWL_EXEMPT_DIPLOMATIC = "diplomatic"
+SWL_EXEMPT_SURTAX_133_2007 = "surtax_133_2007"
+SWL_EXEMPT_MOF_DIRECTIVE = "mof_directive"
+SWL_EXEMPTIONS = {
+    SWL_EXEMPT_DIPLOMATIC: "Goods imported by persons/organisations with diplomatic privilege.",
+    SWL_EXEMPT_SURTAX_133_2007: "Goods already subject to import surtax under Regulation 133/2007.",
+    SWL_EXEMPT_MOF_DIRECTIVE: "Goods excluded by a Ministry of Finance directive.",
+}
+
+
+@dataclass
+class SocialWelfareLevyResult:
+    """Outcome of a social welfare levy evaluation for one import.
+
+    ``creditable`` is part of the RESULT, not a parameter, and is always False.
+    It exists so that the treatment is carried to every call site rather than
+    living only in a comment: a caller that posts ``amount`` has the answer to
+    "is this an asset?" in its hand.
+    """
+
+    applicable: bool
+    rate: float
+    base: float
+    amount: float
+    reason: str
+    #: NEVER True. The levy is a cost of the import, not a recoverable tax.
+    creditable: bool = False
+
+
+def compute_social_welfare_levy(
+    cif_value: float,
+    *,
+    on_date=None,
+    exemption: str | None = None,
+    rate: float = DEFAULT_SWL_RATE,
+    effective_from=None,
+) -> SocialWelfareLevyResult:
+    """Return the social welfare levy on one import (Reg. 519/2022).
+
+    ``cif_value`` is the aggregate cost-insurance-freight value of the goods, in
+    ETB, and is the WHOLE base: no duty, no excise, no VAT is added to it, and
+    the levy itself is added to nobody else's base.
+
+    ``on_date`` is the date the levy is assessed on (the customs declaration
+    date in practice). When given together with ``effective_from``, an import
+    before the commencement date attracts nothing — historical documents keep
+    their historical treatment, which is the whole reason the date is a
+    parameter and not a constant baked into the arithmetic.
+
+    ``exemption`` is one of :data:`SWL_EXEMPTIONS` or None. An unknown value
+    raises rather than being treated as "not exempt": a typo'd exemption code
+    that silently charges the levy is a wrong invoice, and one that silently
+    waives it is an underpayment.
+
+    ``rate`` and ``effective_from`` are parameters because they are
+    CONFIGURATION (CLAUDE.md rule 4). The Odoo layer passes them from
+    effective-dated records; the defaults here are the Reg. 519/2022 values.
+
+    Non-finite CIF values raise ``ValueError`` — a NaN base would compute a NaN
+    levy and post it, and tax code must fail loudly rather than fail open.
+    """
+    if not math.isfinite(cif_value):
+        raise ValueError(f"cif_value must be finite, got {cif_value!r}")
+    if exemption is not None and exemption not in SWL_EXEMPTIONS:
+        raise ValueError(
+            f"Unknown social welfare levy exemption: {exemption!r}. "
+            f"Known: {sorted(SWL_EXEMPTIONS)}"
+        )
+
+    base = _round2(cif_value)
+    if base <= 0:
+        return SocialWelfareLevyResult(False, 0.0, base, 0.0, "Non-positive CIF — no levy.")
+
+    if exemption is not None:
+        return SocialWelfareLevyResult(
+            False, 0.0, base, 0.0, f"Exempt: {SWL_EXEMPTIONS[exemption]}"
+        )
+
+    if on_date is not None and effective_from is not None and on_date < effective_from:
+        return SocialWelfareLevyResult(
+            False,
+            0.0,
+            base,
+            0.0,
+            f"Import dated {on_date} predates the levy's commencement ({effective_from}).",
+        )
+
+    amount = _times_rate(base, rate)
+    return SocialWelfareLevyResult(
+        True,
+        rate,
+        base,
+        amount,
+        f"Social welfare levy {rate * 100:.0f}% of CIF (Reg. 519/2022). "
+        f"A COST of the import — not creditable against income tax.",
+    )

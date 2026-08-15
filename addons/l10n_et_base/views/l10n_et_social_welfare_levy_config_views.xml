@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_l10n_et_swl_config_list" model="ir.ui.view">
+        <field name="name">l10n.et.social.welfare.levy.config.list</field>
+        <field name="model">l10n.et.social.welfare.levy.config</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="effective_from"/>
+                <field name="effective_to"/>
+                <field name="rate"/>
+                <field name="tax_id"/>
+                <field name="source_note"/>
+                <field name="company_id" groups="base.group_multi_company"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_l10n_et_swl_config_form" model="ir.ui.view">
+        <field name="name">l10n.et.social.welfare.levy.config.form</field>
+        <field name="model">l10n.et.social.welfare.levy.config</field>
+        <field name="arch" type="xml">
+            <form>
+                <sheet>
+                    <!-- The treatment, on the screen an accountant configures
+                         it from. It is the thing a competitor's published
+                         guide gets backwards, and a note in a Python docstring
+                         is not read by the person choosing the tax here. -->
+                    <div class="alert alert-info" role="status">
+                        The social welfare levy is <b>3% of the CIF value</b> of
+                        imported goods (Council of Ministers Regulation
+                        No. 519/2022, effective 6 August 2022). It is charged
+                        <b>in addition</b> to customs duty, excise, VAT and
+                        surtax; it does <b>not</b> form part of the base for
+                        computing any of them; and it is
+                        <b>not creditable against income tax</b> — it is a cost
+                        of the import, so its tax account must be an expense
+                        account. There is <b>no threshold</b>.
+                    </div>
+                    <group>
+                        <group string="Validity">
+                            <field name="effective_from"/>
+                            <field name="effective_to"/>
+                            <field name="company_id" groups="base.group_multi_company"/>
+                        </group>
+                        <group string="Levy">
+                            <field name="rate"/>
+                            <field name="tax_id"/>
+                            <field name="source_note"/>
+                        </group>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_l10n_et_swl_config" model="ir.actions.act_window">
+        <field name="name">Social Welfare Levy</field>
+        <field name="res_model">l10n.et.social.welfare.levy.config</field>
+        <field name="view_mode">list,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Configure the social welfare levy on imported goods.
+            </p><p>
+                Regulation 519/2022: 3% of CIF, effective 6 August 2022.
+                A future rate change is a NEW record with a new effective date —
+                never an edit to this one, which would rewrite imports already
+                cleared at the old rate.
+            </p>
+        </field>
+    </record>
+</odoo>

@@ -335,3 +335,166 @@ def test_csv_safe_cell_leaves_numbers_and_text():
     assert calc.csv_safe_cell("0011223344") == "0011223344"
     assert calc.csv_safe_cell(None) == ""
     assert calc.csv_safe_cell(1234.5) == "1234.5"
+
+
+# --------------------------------------------------------------------------------------
+# SOCIAL WELFARE LEVY — Council of Ministers Regulation No. 519/2022
+#
+# 3% of the aggregate CIF value of imported goods, effective 6 August 2022.
+#
+# The golden set below exists to pin the four things that a summary table would
+# get wrong, and one of them is a treatment rather than a number: the levy is a
+# COST, never a receivable. A competitor's published guide calls this an
+# "Import Advance Income Tax ... offset against income tax", which would book
+# 3% of every consignment as a recoverable asset. test_the_levy_is_never_
+# creditable is the guard against that reading getting in here later.
+# --------------------------------------------------------------------------------------
+SWL_SAMPLE_CIF = 1_250_000.00   # a plausible container of imported goods, ETB
+SWL_SAMPLE_LEVY = 37_500.00     # 3% of the above
+
+
+def test_levy_on_a_sample_import():
+    result = calc.compute_social_welfare_levy(SWL_SAMPLE_CIF)
+    assert result.applicable is True
+    assert result.rate == 0.03
+    assert result.base == SWL_SAMPLE_CIF
+    assert result.amount == SWL_SAMPLE_LEVY
+    assert "519/2022" in result.reason
+
+
+@pytest.mark.parametrize(
+    "cif,expected",
+    [
+        (1.00, 0.03),
+        (100.00, 3.00),
+        (999.99, 30.00),          # 29.9997 -> half-up to cents
+        (10_000.00, 300.00),
+        (1_250_000.00, 37_500.00),
+        (9_999_999.99, 300_000.00),
+    ],
+)
+def test_levy_amounts(cif, expected):
+    assert calc.compute_social_welfare_levy(cif).amount == expected
+
+
+def test_there_is_no_threshold():
+    """STATED EXPLICITLY so nobody later invents one.
+
+    The withholding rules in the same reference file DO have thresholds — ETB
+    20,000 on goods, ETB 10,000 on services — and the symmetry is an invitation
+    to assume this levy has one too. Regulation 519/2022 sets NO threshold and
+    NO de-minimis: a CIF of one birr attracts three cents.
+
+    If a threshold is ever introduced it arrives as a new effective-dated
+    configuration record with its own gazette citation, and this test changes
+    with a comment saying which instrument introduced it.
+    """
+    for tiny in (0.01, 0.34, 1.00, 100.00):
+        result = calc.compute_social_welfare_levy(tiny)
+        assert result.applicable is True, f"CIF {tiny} must attract the levy"
+    # And the WHT thresholds are demonstrably NOT applied here: a CIF well under
+    # both of them still attracts the levy.
+    assert calc.compute_social_welfare_levy(5_000.00).amount == 150.00
+    assert calc.DEFAULT_WHT_THRESHOLD_SERVICE == 10_000.0   # the one not applied
+
+
+def test_the_levy_is_never_creditable():
+    """THE TREATMENT, pinned. It is a cost, not a recoverable receivable.
+
+    Asserted on every path — charged, exempt, pre-commencement, zero base —
+    because the failure being guarded against is a caller reading `amount` and
+    posting it to an asset account.
+    """
+    cases = [
+        calc.compute_social_welfare_levy(SWL_SAMPLE_CIF),
+        calc.compute_social_welfare_levy(SWL_SAMPLE_CIF, exemption=calc.SWL_EXEMPT_DIPLOMATIC),
+        calc.compute_social_welfare_levy(
+            SWL_SAMPLE_CIF,
+            on_date=(2022, 8, 5),
+            effective_from=calc.DEFAULT_SWL_EFFECTIVE_FROM,
+        ),
+        calc.compute_social_welfare_levy(0.0),
+    ]
+    for result in cases:
+        assert result.creditable is False, result.reason
+
+
+@pytest.mark.parametrize(
+    "exemption",
+    ["diplomatic", "surtax_133_2007", "mof_directive"],
+)
+def test_the_three_exemptions(exemption):
+    """The exempt path: no levy, and a reason saying WHICH exemption."""
+    result = calc.compute_social_welfare_levy(SWL_SAMPLE_CIF, exemption=exemption)
+    assert result.applicable is False
+    assert result.amount == 0.0
+    assert result.rate == 0.0
+    assert result.base == SWL_SAMPLE_CIF, "the base is still recorded on an exempt import"
+    assert result.reason.startswith("Exempt: ")
+
+
+def test_the_exemption_set_is_exactly_the_regulation_s_three():
+    assert set(calc.SWL_EXEMPTIONS) == {
+        "diplomatic",
+        "surtax_133_2007",
+        "mof_directive",
+    }
+
+
+def test_an_unknown_exemption_raises_rather_than_charging_or_waiving():
+    """Fail loudly. A typo'd code that silently charges is a wrong invoice; one
+    that silently waives is an underpayment."""
+    with pytest.raises(ValueError, match="Unknown social welfare levy exemption"):
+        calc.compute_social_welfare_levy(SWL_SAMPLE_CIF, exemption="diplomatc")
+
+
+def test_the_commencement_date_is_a_parameter_and_gates_the_levy():
+    """6 August 2022, Reg. 519/2022. An import the day before attracts nothing.
+
+    Dates are compared as plain tuples here so the reference module stays free
+    of any date library beyond the standard one — the Odoo layer passes real
+    dates, which compare the same way.
+    """
+    assert calc.DEFAULT_SWL_EFFECTIVE_FROM == (2022, 8, 6)
+    before = calc.compute_social_welfare_levy(
+        SWL_SAMPLE_CIF, on_date=(2022, 8, 5), effective_from=calc.DEFAULT_SWL_EFFECTIVE_FROM
+    )
+    assert before.applicable is False
+    assert before.amount == 0.0
+    assert "predates" in before.reason
+
+    on_the_day = calc.compute_social_welfare_levy(
+        SWL_SAMPLE_CIF, on_date=(2022, 8, 6), effective_from=calc.DEFAULT_SWL_EFFECTIVE_FROM
+    )
+    assert on_the_day.applicable is True, "the commencement date itself is INCLUSIVE"
+    assert on_the_day.amount == SWL_SAMPLE_LEVY
+
+
+def test_the_rate_is_a_parameter_so_a_change_is_configuration():
+    """CLAUDE.md rule 4. A future rate arrives as a new configuration record,
+    never as an edit to this function."""
+    assert calc.compute_social_welfare_levy(SWL_SAMPLE_CIF, rate=0.05).amount == 62_500.00
+
+
+def test_a_non_positive_or_non_finite_base():
+    assert calc.compute_social_welfare_levy(0.0).applicable is False
+    assert calc.compute_social_welfare_levy(-1.0).applicable is False
+    with pytest.raises(ValueError, match="cif_value must be finite"):
+        calc.compute_social_welfare_levy(float("nan"))
+
+
+def test_the_levy_is_not_computed_on_anything_but_cif():
+    """The base is the CIF value alone.
+
+    Expressed as arithmetic rather than prose: the levy on a CIF of 1,250,000
+    is the same whether or not duty, excise and VAT exist on the same import.
+    There is no parameter through which another tax could enter this base —
+    which is the point, and is why the function takes a single scalar.
+    """
+    duty = 437_500.00        # e.g. 35% customs duty
+    vat = 253_125.00         # e.g. 15% VAT on (CIF + duty)
+    assert calc.compute_social_welfare_levy(SWL_SAMPLE_CIF).amount == SWL_SAMPLE_LEVY
+    # the naive "levy on the duty-and-VAT-inclusive value" reading, for contrast
+    inflated = calc.compute_social_welfare_levy(SWL_SAMPLE_CIF + duty + vat).amount
+    assert inflated != SWL_SAMPLE_LEVY
+    assert inflated == 58_218.75
