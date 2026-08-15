@@ -627,7 +627,7 @@ jobs:
             -i sapian_theme,contacts,crm,project,hr,stock,sale_management,purchase \
             --without-demo=all \
             --test-enable \
-            --test-tags '/sapian_theme:TestSapianAppRailRendered,/sapian_theme:TestSapianAppRailOverflow,/sapian_theme:TestSapianAppRailKeepsScroll,/sapian_theme:TestSapianAppRailSmallScreen,/sapian_theme:TestAppRailDataOverHttp,/sapian_theme:TestSapianBackendFooterRendered,/sapian_theme:TestSapianBackendFooterSmallScreen,/sapian_theme:TestBackendFooterDataOverHttp' \
+            --test-tags '/sapian_theme:TestSapianAppRailRendered,/sapian_theme:TestSapianAppRailOverflow,/sapian_theme:TestSapianAppRailKeepsScroll,/sapian_theme:TestSapianAppRailSmallScreen,/sapian_theme:TestAppRailDataOverHttp,/sapian_theme:TestSapianBackendFooterRendered,/sapian_theme:TestSapianBackendFooterSmallScreen,/sapian_theme:TestBackendFooterDataOverHttp,/sapian_theme:TestSapianSidebarStates,/sapian_theme:TestSapianSidebarStatesDiscriminate,/sapian_theme:TestSapianSidebarCollapse,/sapian_theme:TestSapianSidebarKeyboard' \
             --workers=0 --max-cron-threads=0 \
             --stop-after-init --log-level=test 2>&1 | tee /tmp/rail.log
 
@@ -646,7 +646,7 @@ jobs:
           # printed by console.log from INSIDE the page, so they cannot be
           # produced by a skip, by a missing browser, or by an empty selection.
           echo "--- what the browser reported ---"
-          grep -E "SAPIAN-(RAIL|FOOTER)" /tmp/rail.log | sed 's/^/  /' || true
+          grep -E "SAPIAN-(RAIL|FOOTER|SIDEBAR)" /tmp/rail.log | sed 's/^/  /' || true
           for marker in \
             "SAPIAN-RAIL viewport=" \
             "SAPIAN-RAIL-DISCRIMINATION restored -> clean" \
@@ -655,7 +655,16 @@ jobs:
             "SAPIAN-RAIL-SMALL viewport=" \
             "SAPIAN-FOOTER text=" \
             "SAPIAN-FOOTER-DISCRIMINATION removed -> " \
-            "SAPIAN-FOOTER-SMALL shown=false"; do
+            "SAPIAN-FOOTER-SMALL shown=false" \
+            "SAPIAN-SIDEBAR width=200" \
+            "rowHeight=44" \
+            "activeColor=\"rgb(255, 255, 255)\"" \
+            "SAPIAN-SIDEBAR-DISCRIMINATION identical-states -> " \
+            "SAPIAN-SIDEBAR-DISCRIMINATION under-the-footer -> " \
+            "SAPIAN-SIDEBAR-DISCRIMINATION restored -> clean" \
+            "SAPIAN-SIDEBAR-COLLAPSE wide=200 narrow=56 wideAgain=200" \
+            "SAPIAN-SIDEBAR-KEYBOARD rowFocusable=true focusVisible=true" \
+            "tag=BUTTON"; do
             if ! grep -qF "${marker}" /tmp/rail.log; then
               echo "::error::The browser never reported '${marker}'. The rail tests did not run in a browser — most likely Chrome was missing and browser_js skipped."
               exit 1
@@ -671,6 +680,22 @@ jobs:
           echo "Rail tiles rendered: ${TILES} (floor ${MIN_RAIL_TILES})"
           if [ "${TILES}" -lt "${MIN_RAIL_TILES}" ]; then
             echo "::error::The rail rendered ${TILES} tiles; expected at least ${MIN_RAIL_TILES}. The install list did not create the apps this job exists to draw."
+            exit 1
+          fi
+
+          # THE SIDEBAR'S SCROLL SURVIVED THE COLLAPSE, read as three equal
+          # numbers rather than as "the test passed". Collapsing is a re-render
+          # for a reason unrelated to which app you are in, and that is exactly
+          # the shape that used to reset scrollTop to 0 (PR #35).
+          SCROLL=$(grep -oE "SAPIAN-SIDEBAR-COLLAPSE .*scroll=[0-9]+/[0-9]+/[0-9]+" /tmp/rail.log \
+                   | grep -oE "scroll=[0-9]+/[0-9]+/[0-9]+" | head -1)
+          echo "Sidebar scroll across collapse/expand: ${SCROLL}"
+          case "${SCROLL}" in
+            scroll=0/*) echo "::error::The sidebar never scrolled, so the collapse test proved nothing about the scroll position."; exit 1 ;;
+            "") echo "::error::The sidebar collapse test reported no scroll figures."; exit 1 ;;
+          esac
+          if [ "$(echo "${SCROLL}" | grep -oE "[0-9]+" | sort -u | wc -l)" -ne 1 ]; then
+            echo "::error::Collapsing the sidebar moved the scroll position: ${SCROLL}"
             exit 1
           fi
 

@@ -35,6 +35,8 @@ run cannot produce that line.
 
 from odoo.tests import HttpCase, tagged
 
+from .. import brand
+
 # ---------------------------------------------------------------------------
 # The check itself, defined once and used by both the assertion and the
 # discrimination proof. It RETURNS a problem list rather than throwing, so the
@@ -531,3 +533,455 @@ class TestAppRailDataOverHttp(HttpCase):
             "root apps reach the browser with no webIconData, so the rail has "
             "nothing to draw for them: %s" % ", ".join(iconless),
         )
+
+
+# ---------------------------------------------------------------------------
+# THE LABELLED SIDEBAR — docs/SPEC-navigation-chrome.md section 1.
+#
+# Same shape as the rail checks above: ONE report function returning problems,
+# used by the assertion and by the discrimination proof, so the guard is
+# exercised against a deliberately broken DOM rather than trusted.
+#
+# The numbers here ARE hardcoded, unlike the tile count. They are not an
+# incidental property of the database — they are the specification, and a
+# sidebar that quietly became 180px wide with 40px rows would have stopped
+# being the thing that was designed. The brand is read from the palette file at
+# test time so a re-brand moves the expectation with the product.
+# ---------------------------------------------------------------------------
+SIDEBAR_REPORT_JS = """
+function sapianSidebarReport() {
+    const problems = [];
+    const rail = document.querySelector('.o_sapian_rail');
+    if (!rail) {
+        problems.push('no .o_sapian_rail element in the DOM');
+        return { problems };
+    }
+    const rows = [...rail.querySelectorAll('.o_sapian_rail_app')];
+    const active = rail.querySelector('.o_sapian_rail_app_active');
+    const inactive = rows.find((r) => !r.classList.contains('o_sapian_rail_app_active'));
+    if (!active) {
+        problems.push('no active row — the state this section exists for is unreachable');
+        return { problems };
+    }
+    if (!inactive) {
+        problems.push('every row is active, so there is nothing to compare against');
+        return { problems };
+    }
+
+    const skin = (el) => {
+        const s = getComputedStyle(el);
+        return { bg: s.backgroundColor, color: s.color };
+    };
+    const activeSkin = skin(active);
+    const inactiveSkin = skin(inactive);
+
+    // THE POINT OF THE SECTION. The competitor's active and inactive links have
+    // byte-identical computed styles; there is no way to tell which app you are
+    // in from their sidebar. Compared from getComputedStyle, never from the
+    // class list — the class list is exactly what THEY also have.
+    if (activeSkin.bg === inactiveSkin.bg && activeSkin.color === inactiveSkin.color) {
+        problems.push('active and inactive rows are styled identically ('
+            + activeSkin.bg + ' / ' + activeSkin.color + ')');
+    }
+    if (activeSkin.bg !== '%BRAND%') {
+        problems.push('the active row is filled ' + activeSkin.bg
+            + ', not the brand %BRAND%');
+    }
+    if (activeSkin.color !== 'rgb(255, 255, 255)') {
+        problems.push('the active row label is ' + activeSkin.color + ', not white');
+    }
+
+    // EVERY row, not a representative one. A single mis-sized row is a real
+    // defect, and a guard that samples rows[0] cannot be broken on purpose
+    // anywhere else — which is how the discrimination proof caught this check
+    // being weaker than it looked.
+    let rowHeight = 0;
+    rows.forEach((row) => {
+        const h = Math.round(row.getBoundingClientRect().height);
+        rowHeight = rowHeight || h;
+        if (h !== 44) {
+            problems.push('row "' + (row.getAttribute('aria-label') || '?')
+                + '" is ' + h + 'px tall, not 44px');
+        }
+        const label = row.querySelector('.o_sapian_rail_label');
+        if (!label) {
+            problems.push('row "' + (row.getAttribute('aria-label') || '?')
+                + '" has no label element');
+            return;
+        }
+        const ls = getComputedStyle(label);
+        if (ls.fontSize !== '13px') {
+            problems.push('label font-size is ' + ls.fontSize + ', not 13px');
+        }
+        if (ls.fontWeight !== '600') {
+            problems.push('label font-weight is ' + ls.fontWeight + ', not 600');
+        }
+    });
+
+    const collapsed = rail.classList.contains('o_sapian_rail_collapsed');
+    const width = Math.round(rail.getBoundingClientRect().width);
+    const expected = collapsed ? 56 : 200;
+    if (width !== expected) {
+        problems.push('the sidebar is ' + width + 'px wide '
+            + (collapsed ? 'collapsed' : 'expanded') + ', not ' + expected + 'px');
+    }
+
+    // It must reserve its own space rather than sit on the content.
+    const body = document.querySelector('.o_web_client');
+    const padding = Math.round(parseFloat(getComputedStyle(body).paddingLeft) || 0);
+    if (padding !== width) {
+        problems.push('the web client is padded ' + padding + 'px for a '
+            + width + 'px sidebar');
+    }
+
+    if (!rail.querySelector('.o_sapian_rail_toggle')) {
+        problems.push('no collapse toggle — the competitor has no collapse '
+            + 'control either, and that is one of the things we are fixing');
+    }
+
+    // AND IT MUST NOT SIT UNDER THE FIXED FOOTER. Flagged during the
+    // web_responsive evaluation: the sidebar is top:0/bottom:0 and the footer
+    // takes the bottom 28px, so without a clearance the last row is reachable
+    // by scrolling and unreadable once you get there.
+    const footer = document.querySelector('.o_sapian_footer');
+    if (footer) {
+        const fb = footer.getBoundingClientRect();
+        const rb = rail.getBoundingClientRect();
+        if (rb.bottom > fb.top + 0.5) {
+            problems.push('the sidebar runs to ' + Math.round(rb.bottom)
+                + 'px, under a footer that starts at ' + Math.round(fb.top) + 'px');
+        }
+    }
+
+    return { problems, width, rowHeight, collapsed,
+             activeBg: activeSkin.bg, activeColor: activeSkin.color,
+             inactiveBg: inactiveSkin.bg, inactiveColor: inactiveSkin.color,
+             rows: rows.length, padding };
+}
+"""
+
+SIDEBAR_STATES_JS = SIDEBAR_REPORT_JS + """
+(async () => {
+    const settle = (ms) => new Promise((r) => setTimeout(r, ms || 400));
+    // Land in a real app so there IS an active row. Clicking the sidebar is
+    // also the only way to be sure the row we measure is the one the menu
+    // service considers current.
+    const rows = [...document.querySelectorAll('.o_sapian_rail_app')];
+    rows[Math.min(2, rows.length - 1)].click();
+    for (let i = 0; i < 40 && !document.querySelector('.o_sapian_rail_app_active'); i++) {
+        await settle(150);
+    }
+    await settle(600);
+
+    const report = sapianSidebarReport();
+    console.log('SAPIAN-SIDEBAR width=' + report.width
+        + ' rows=' + report.rows + ' rowHeight=' + report.rowHeight
+        + ' padding=' + report.padding
+        + ' activeBg="' + report.activeBg + '" activeColor="' + report.activeColor + '"'
+        + ' inactiveBg="' + report.inactiveBg + '"'
+        + ' distinct=' + (report.activeBg !== report.inactiveBg));
+
+    if (report.problems.length) {
+        throw new Error('sidebar: ' + report.problems.join(' | '));
+    }
+    console.log('test successful');
+})();
+"""
+
+SIDEBAR_DISCRIMINATES_JS = SIDEBAR_REPORT_JS + """
+(async () => {
+    const settle = (ms) => new Promise((r) => setTimeout(r, ms || 400));
+    const rows = [...document.querySelectorAll('.o_sapian_rail_app')];
+    rows[Math.min(2, rows.length - 1)].click();
+    for (let i = 0; i < 40 && !document.querySelector('.o_sapian_rail_app_active'); i++) {
+        await settle(150);
+    }
+    await settle(600);
+
+    const rail = document.querySelector('.o_sapian_rail');
+    const active = rail.querySelector('.o_sapian_rail_app_active');
+    const inactive = [...rail.querySelectorAll('.o_sapian_rail_app')]
+        .find((r) => !r.classList.contains('o_sapian_rail_app_active'));
+
+    const breaks = [
+        ['identical-states', () => {
+            // EXACTLY the competitor's sidebar: the class is there, the
+            // styling is not.
+            active.style.backgroundColor = getComputedStyle(inactive).backgroundColor;
+            active.style.color = getComputedStyle(inactive).color;
+            active.querySelector('.o_sapian_rail_label').style.color =
+                getComputedStyle(inactive).color;
+        }],
+        ['wrong-row-height', () => { active.style.height = '60px'; }],
+        ['wrong-label-size', () => {
+            active.querySelector('.o_sapian_rail_label').style.fontSize = '11px';
+        }],
+        ['no-toggle', () => { rail.querySelector('.o_sapian_rail_toggle').remove(); }],
+        ['under-the-footer', () => { rail.style.bottom = '0px'; }],
+        ['narrow-sidebar', () => { rail.style.width = '180px'; }],
+    ];
+
+    for (const [name, breakIt] of breaks) {
+        const before = rail.getAttribute('style') || '';
+        const activeBefore = active.getAttribute('style') || '';
+        const labelBefore =
+            active.querySelector('.o_sapian_rail_label').getAttribute('style') || '';
+        const toggle = rail.querySelector('.o_sapian_rail_toggle');
+        const toggleAnchor = toggle ? toggle.nextSibling : null;
+
+        breakIt();
+        await settle(200);
+        const report = sapianSidebarReport();
+        if (!report.problems.length) {
+            throw new Error('DISCRIMINATION FAILED: the sidebar check passed '
+                + 'with ' + name);
+        }
+        console.log('SAPIAN-SIDEBAR-DISCRIMINATION ' + name + ' -> '
+            + report.problems[0]);
+
+        // Put it back.
+        rail.setAttribute('style', before);
+        active.setAttribute('style', activeBefore);
+        active.querySelector('.o_sapian_rail_label').setAttribute('style', labelBefore);
+        if (toggle && !rail.contains(toggle)) {
+            rail.insertBefore(toggle, toggleAnchor);
+        }
+        await settle(200);
+    }
+
+    // And it recovers. A check that complained unconditionally would have
+    // passed every case above while proving nothing.
+    const clean = sapianSidebarReport();
+    if (clean.problems.length) {
+        throw new Error('the sidebar check does not recover once the DOM is '
+            + 'restored: ' + clean.problems.join(' | '));
+    }
+    console.log('SAPIAN-SIDEBAR-DISCRIMINATION restored -> clean');
+    console.log('test successful');
+})();
+"""
+
+SIDEBAR_COLLAPSE_JS = SIDEBAR_REPORT_JS + """
+(async () => {
+    const settle = (ms) => new Promise((r) => setTimeout(r, ms || 400));
+    const rail = document.querySelector('.o_sapian_rail');
+    const toggle = rail.querySelector('.o_sapian_rail_toggle');
+    const rows = [...rail.querySelectorAll('.o_sapian_rail_app')];
+    rows[Math.min(2, rows.length - 1)].click();
+    for (let i = 0; i < 40 && !document.querySelector('.o_sapian_rail_app_active'); i++) {
+        await settle(150);
+    }
+    await settle(600);
+
+    const width = () => Math.round(rail.getBoundingClientRect().width);
+    const labelsShown = () => [...rail.querySelectorAll('.o_sapian_rail_label')]
+        .filter((l) => getComputedStyle(l).display !== 'none').length;
+    const tiles = () => rail.querySelectorAll('.o_sapian_rail_app').length;
+
+    const wide = width();
+    const labelsWide = labelsShown();
+    const tilesWide = tiles();
+
+    // FORCE OVERFLOW, then scroll to the bottom. Collapsing is a re-render for
+    // a reason that has nothing to do with which app you are in, and the whole
+    // point of scrollCurrentIntoView's guard is that such a re-render must not
+    // throw the user's position away. Measured here as well as in
+    // TestSapianAppRailKeepsScroll, because the toggle is a NEW way to trigger
+    // exactly the re-render that used to lose it.
+    const rowHeight = rows[0].getBoundingClientRect().height;
+    rail.style.height = Math.max(120, Math.floor(rowHeight * (rows.length / 2))) + 'px';
+    await settle(200);
+    if (rail.scrollHeight <= rail.clientHeight) {
+        rail.style.height = '';
+        throw new Error('could not force the sidebar to overflow, so the '
+            + 'scroll assertion below would prove nothing');
+    }
+    rail.scrollTop = rail.scrollHeight;
+    await settle(200);
+    const scrollBefore = rail.scrollTop;
+    if (!scrollBefore) {
+        rail.style.height = '';
+        throw new Error('scrollTop stayed 0 after scrolling to the bottom');
+    }
+
+    toggle.click();
+    await settle(700);
+    const narrow = width();
+    const scrollAfterCollapse = rail.scrollTop;
+    const labelsNarrow = labelsShown();
+    const tilesNarrow = tiles();
+    const collapsedReport = sapianSidebarReport();
+
+    toggle.click();
+    await settle(700);
+    const wideAgain = width();
+    const scrollAfterExpand = rail.scrollTop;
+    rail.style.height = '';
+    await settle(200);
+
+    console.log('SAPIAN-SIDEBAR-COLLAPSE wide=' + wide + ' narrow=' + narrow
+        + ' wideAgain=' + wideAgain
+        + ' labels=' + labelsWide + '/' + labelsNarrow
+        + ' tiles=' + tilesWide + '/' + tilesNarrow
+        + ' scroll=' + scrollBefore + '/' + scrollAfterCollapse + '/'
+        + scrollAfterExpand);
+
+    if (narrow >= wide) {
+        throw new Error('collapsing did not narrow the sidebar: ' + wide
+            + ' -> ' + narrow);
+    }
+    if (wideAgain !== wide) {
+        throw new Error('expanding did not restore the width: ' + wide
+            + ' -> ' + narrow + ' -> ' + wideAgain);
+    }
+    if (labelsNarrow !== 0) {
+        throw new Error(labelsNarrow + ' labels are still displayed when collapsed');
+    }
+    if (!labelsWide) {
+        throw new Error('no labels are displayed when expanded, so the '
+            + 'collapsed assertion above proves nothing');
+    }
+    if (tilesNarrow !== tilesWide) {
+        throw new Error('collapsing changed the app count from ' + tilesWide
+            + ' to ' + tilesNarrow + ' — labels must be hidden, not removed');
+    }
+    if (scrollAfterCollapse !== scrollBefore || scrollAfterExpand !== scrollBefore) {
+        throw new Error('toggling the sidebar threw away the scroll position: '
+            + scrollBefore + ' -> ' + scrollAfterCollapse + ' -> '
+            + scrollAfterExpand);
+    }
+    if (collapsedReport.problems.length) {
+        throw new Error('collapsed sidebar: ' + collapsedReport.problems.join(' | '));
+    }
+    console.log('test successful');
+})();
+"""
+
+SIDEBAR_KEYBOARD_JS = """
+(async () => {
+    const settle = (ms) => new Promise((r) => setTimeout(r, ms || 400));
+    const rail = document.querySelector('.o_sapian_rail');
+    const toggle = rail.querySelector('.o_sapian_rail_toggle');
+    const first = rail.querySelector('.o_sapian_rail_app');
+
+    // FOCUSABLE AT ALL. tabIndex -1 with no href would be reachable by script
+    // and not by a keyboard, which is the failure this catches.
+    first.focus();
+    if (document.activeElement !== first) {
+        throw new Error('a sidebar row cannot take focus at all');
+    }
+    // `:focus-visible` only matches for keyboard-ish focus, so ask for it by
+    // name rather than hoping .focus() produced it.
+    const ring = first.matches(':focus-visible')
+        ? getComputedStyle(first)
+        : null;
+    const outlineWidth = ring ? ring.outlineWidth : '0px';
+    const outlineStyle = ring ? ring.outlineStyle : 'none';
+
+    toggle.focus();
+    if (document.activeElement !== toggle) {
+        throw new Error('the collapse toggle cannot take focus');
+    }
+    const wide = Math.round(rail.getBoundingClientRect().width);
+    // A real <button> answers Enter without any key handling of our own. A div
+    // with a click handler would not, and that is the point of the assertion.
+    toggle.dispatchEvent(new KeyboardEvent('keydown',
+        { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true }));
+    toggle.click();   // what the browser does for us on Enter over a button
+    await settle(700);
+    const narrow = Math.round(rail.getBoundingClientRect().width);
+    toggle.click();
+    await settle(700);
+
+    console.log('SAPIAN-SIDEBAR-KEYBOARD rowFocusable=true'
+        + ' focusVisible=' + !!ring
+        + ' outline="' + outlineWidth + ' ' + outlineStyle + '"'
+        + ' toggleWidth=' + wide + '->' + narrow
+        + ' tag=' + toggle.tagName);
+
+    if (toggle.tagName !== 'BUTTON') {
+        throw new Error('the collapse control is a <' + toggle.tagName
+            + '>, so it is not keyboard-operable without handlers of our own');
+    }
+    if (!ring) {
+        throw new Error('a focused sidebar row does not match :focus-visible, '
+            + 'so a keyboard user gets no ring');
+    }
+    if (outlineStyle === 'none' || parseFloat(outlineWidth) < 1) {
+        throw new Error('the focus ring is invisible: outline ' + outlineWidth
+            + ' ' + outlineStyle);
+    }
+    if (narrow >= wide) {
+        throw new Error('the toggle did not act on activation: ' + wide
+            + ' -> ' + narrow);
+    }
+    console.log('test successful');
+})();
+"""
+
+
+class SidebarBrowserCase(HttpCase):
+    """Shared setup: tours off, and the brand read from the palette."""
+
+    browser_size = "1366x900"
+
+    def setUp(self):
+        super().setUp()
+        admin = self.env.ref("base.user_admin")
+        if "tour_enabled" in admin._fields:
+            admin.sudo().tour_enabled = False
+        # The launcher would cover the sidebar, and this file measures the
+        # sidebar. Same reason the occlusion test sets it.
+        if "is_redirect_home" in admin._fields:
+            admin.sudo().is_redirect_home = False
+        self.env.flush_all()
+
+    def brand_css_rgb(self):
+        """The brand as the browser will report it, read from the palette.
+
+        Hardcoding the hex here would leave this test asserting the old colour
+        after a re-brand — and passing, because it would still differ from the
+        inactive row.
+        """
+        value = brand.brand_primary().lstrip("#")
+        return "rgb(%d, %d, %d)" % tuple(int(value[i : i + 2], 16) for i in (0, 2, 4))
+
+    def run_sidebar(self, code):
+        self.browser_js(
+            "/odoo",
+            code.replace("%BRAND%", self.brand_css_rgb()),
+            "!!document.querySelector('.o_sapian_rail .o_sapian_rail_app')",
+            login="admin",
+        )
+
+
+@tagged("post_install", "-at_install")
+class TestSapianSidebarStates(SidebarBrowserCase):
+    """Rest, hover and active are distinguishable — SPEC section 1."""
+
+    def test_the_active_row_is_visibly_the_active_row(self):
+        self.run_sidebar(SIDEBAR_STATES_JS)
+
+
+@tagged("post_install", "-at_install")
+class TestSapianSidebarStatesDiscriminate(SidebarBrowserCase):
+    """And the check above notices when each of those things is broken."""
+
+    def test_the_sidebar_check_goes_red_for_each_thing_it_checks(self):
+        self.run_sidebar(SIDEBAR_DISCRIMINATES_JS)
+
+
+@tagged("post_install", "-at_install")
+class TestSapianSidebarCollapse(SidebarBrowserCase):
+    """The collapse toggle, and what it must not disturb."""
+
+    def test_collapsing_narrows_the_sidebar_and_keeps_everything_else(self):
+        self.run_sidebar(SIDEBAR_COLLAPSE_JS)
+
+
+@tagged("post_install", "-at_install")
+class TestSapianSidebarKeyboard(SidebarBrowserCase):
+    """Keyboard reachable, with a ring you can actually see — SPEC section 7."""
+
+    def test_rows_and_the_toggle_are_keyboard_operable(self):
+        self.run_sidebar(SIDEBAR_KEYBOARD_JS)
