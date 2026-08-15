@@ -56,7 +56,24 @@ Their measured values are given only as a reference point for proportion.
 | Label | Poppins 13px, weight 700, `#334756` | 13px, weight 600, `#14454F` |
 | Row | padding `10px 11px`, height 61.6px | tighter — 44px row, labels do not need that much air |
 | Overflow | scrolls, 1361px of content in a 646px panel | scrolls, ordered by menu sequence (decided in PR #25) |
-| Bottom | client logo, **clipped off-screen at x = −39px** | client logo, correctly positioned and clipped by nothing |
+| Bottom | client logo, **clipped off-screen at x = −39px** | **DEFERRED — see below.** Not built. |
+
+#### The client logo at the bottom: deferred, 15 August 2026
+
+Recorded as a decision so it is not re-derived as an oversight. Three reasons:
+
+1. **It costs about 60px of a rail that already scrolls.** At 36 apps — the app
+   count that matters, and the one CI now runs against — the sidebar is already
+   1,634px of content in an 872px panel. Spending 60px of that on a logo takes
+   it from the apps.
+2. **The client's name is already in the navbar, top right.** The chrome does
+   not need to say it twice.
+3. **The footer now carries SAPIAN's attribution** (Item 2), so the chrome's
+   identity question is answered elsewhere and answered once.
+
+The competitor ships this element clipped at `x = −39px`, which is what
+prompted the row in the table above. Not shipping it at all is a better answer
+than shipping it correctly.
 
 ### States — the part they do not have
 
