@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 {
     "name": "SapianERP Theme — Website bridge",
-    "version": "19.0.1.0.0",
-    "summary": "Keeps public sign-up closed on a SapianERP tenant once "
-    "`website` is installed.",
+    "version": "19.0.1.1.0",
+    "summary": "Keeps public sign-up closed, and the login page out of the "
+    "marketing site's header and footer, once `website` is installed.",
     "author": "Sapian Technologies PLC",
     "website": "https://sapiantech.com",
     "category": "Theme/Backend",
@@ -37,6 +37,13 @@
     # bought an unrelated module.
     "depends": ["sapian_theme", "website"],
     "auto_install": True,
+    "data": [
+        # Deactivates website's own inheritance of web.login_layout, which is
+        # what wraps /web/login, /web/signup and /web/reset_password in the
+        # marketing site's header and footer. The file is one record and a long
+        # comment; the comment is the part worth reading.
+        "views/login_layout.xml",
+    ],
     # No new model, no view, no record, and no install hook: ONE method
     # override. An earlier version also normalised the stored
     # `website.auth_signup_uninvited` rows at install, so that Settings >

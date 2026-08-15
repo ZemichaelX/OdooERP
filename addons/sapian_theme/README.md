@@ -950,11 +950,21 @@ When inheritance is unavoidable, expect a priority contest and test for it.**
 
 Three concrete rules that follow, each of which cost a measured failure:
 
-1. **Anchor in the least contested template.** The branding now lives in
-   `web.login` (the page *content*), not `web.login_layout` (the *card*).
-   Content is passed through `<t t-out="0"/>` into whichever wrapper wins, so it
-   survives both the stock card and website's. Only the stock-logo deletion
-   still touches the layout, because that node exists nowhere else.
+1. **Anchor in the least contested template.** The logo and the support line
+   live in `web.login` (the page *content*), not `web.login_layout` (the
+   *card*). Content is passed through `<t t-out="0"/>` into whichever wrapper
+   wins, so it survives both the stock card and website's.
+
+   > **Amended, August 2026.** `sapian_theme_website` now deactivates
+   > website's inheritance outright — it was serving the login page inside the
+   > marketing site's header and footer (see that module's README). The card is
+   > therefore no longer contested, and the ATTRIBUTION moved back into its
+   > footer: on the form it reached `/web/login` only, while the card footer
+   > also reaches `/web/signup` and `/web/reset_password`, which have no login
+   > form and which lost their only attribution when the website footer went.
+   > The logo and support line stay on the form — they read correctly there and
+   > moving them would be churn. The rule survives its own amendment: anchor a
+   > thing where every page that needs it will find it.
 2. **A priority bump is not automatically the fix.** Raising ours above
    website's 20 was tried: the login tests went from 2 failures to **4**, and at
    render time the page returned **HTTP 500** — `Element ... cannot be located
@@ -1053,8 +1063,14 @@ this module:
 
 | Template | Emits the line on |
 |---|---|
-| `web.login_layout` | the login card, on a database without `website` |
-| `web.brand_promotion_message` | the customer portal, surveys — and the login page itself when `website` is installed |
+| `web.login_layout` | the login card — `/web/login`, `/web/signup` and `/web/reset_password`, in **every** configuration since `sapian_theme_website` stopped website replacing that card |
+| `web.brand_promotion_message` | the customer portal and surveys |
+
+> **Amended, August 2026.** The second row used to end "— and the login page
+> itself when `website` is installed". That is no longer true, and the reason
+> matters: the auth pages no longer render the website footer at all, so
+> `brand_promotion_message` never reaches them. It is emphatically **not**
+> deleted — the portal is the surface it exists for.
 
 The second one is here because it was measured, not assumed: with `website`
 installed the login page came back carrying **two** attributions, because

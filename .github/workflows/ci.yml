@@ -480,7 +480,17 @@ jobs:
           fi
           # The bridge's own floor, counted separately: a `/sapian_theme_website`
           # selector that matched nothing would leave the number above untouched.
-          MIN_BRIDGE_TESTS=9
+          # Raised from 9 when test_login_chrome.py landed: the bridge stopped
+          # being only about sign-up when it took on keeping the login page out
+          # of the marketing site's header and footer.
+          #
+          # CALIBRATED, not counted. The number this reads is not the count of
+          # `def test_` (15 at this commit); it was measured both ways on the
+          # same install list — 13 with only test_public_signup registered, 25
+          # with test_login_chrome as well. 20 therefore cannot be reached
+          # unless the new file is actually selected, which is the whole job of
+          # a floor, and leaves headroom under 25.
+          MIN_BRIDGE_TESTS=20
           BRIDGE=$(grep -oE "odoo\.tests\.stats: sapian_theme_website: [0-9]+ tests" /tmp/theme-website.log \
                    | grep -oE "[0-9]+ tests" | grep -oE "^[0-9]+" || echo 0)
           echo "Executed ${BRIDGE} sapian_theme_website tests (floor ${MIN_BRIDGE_TESTS})"

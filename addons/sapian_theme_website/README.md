@@ -1,4 +1,16 @@
-# sapian_theme_website — the bridge that keeps sign-up closed
+# sapian_theme_website — what `website` changes about a SapianERP tenant
+
+Two things, and they share a shape: installing `website` silently rewrote how
+the product presents itself to a stranger, and in both cases every check we had
+kept passing.
+
+1. **Public sign-up opened.** `website_sale`'s post-install hook sets every
+   website to `b2c`, and the login controller stopped reading the parameter our
+   guard was reading.
+2. **The login page became a page of the marketing site.** `/web/login` was
+   served inside Odoo's default website header and footer — see
+   "The login page is not a website page" below.
+
 
 A tenant of ours is a private company ERP. Nobody on the internet creates an
 account on it. That was true, and then it quietly stopped being true.
@@ -114,3 +126,123 @@ which is the point.
 Anything other than an explicit truthy value (`1`, `true`, `yes`, `on`) keeps
 sign-up closed — a parameter left at `"0"` or `"false"` must never read as
 permission, which `test_the_opt_in_is_off_by_default_and_strict` asserts.
+
+
+## The login page is not a website page
+
+### What was on screen
+
+On a 36-app database with `website` installed — the configuration we ship —
+`/web/login` rendered our branded card inside Odoo's default website chrome: a
+"Your Logo" navbar with Shop / Events / Courses / Jobs / Contact us, and a
+footer with "Useful Links", "We are a team of passionate people...",
+`info@yourcompany.example.com` and `+1 555-555-5556`. That is the first screen a
+prospect sees.
+
+### Why every login check stayed green
+
+They all measured the **card**, and the card was right:
+
+```
+login_powered_sapian=1  login_mark=1  login_signup=0  login_primary=#14454F
+```
+
+Four assertions, all true, all still true on the broken page. None of them
+described the page we serve. It is the same mistake as reading
+`auth_signup.invitation_scope` while the served page offered sign-up — assert
+the part you built, never the thing the user is looking at.
+
+### The cause: a view inheritance, not route dispatch
+
+Nothing in website's `ir.http` or its controllers mentions `/web/login`. The
+route is still auth_signup's and still renders `web.login`. What changes is the
+layout — `website/views/website_templates.xml:1623`:
+
+```xml
+<template id="login_layout" inherit_id="web.login_layout"
+          name="Website Login Layout" priority="20">
+    <xpath expr="t[@t-call]" position="replace">
+        <t t-call="website.layout">
+            <div class="oe_website_login_container" t-out="0"/>
+        </t>
+    </xpath>
+</template>
+```
+
+`web.login_layout` is a `t-call` to `web.frontend_layout` carrying four t-sets,
+two of which are `no_header = True` and `no_footer = True`. `web.frontend_layout`
+draws `<header t-if="not no_header">` and `<footer t-if="not no_footer">`, so
+the stock login page has neither.
+
+website replaces that entire `t-call` element, and **the replacement carries no
+t-sets**. `website.layout` inherits `portal.frontend_layout` inherits
+`web.frontend_layout`, and it edits the header and footer with
+`position="attributes"` rather than replacing them — so both are still guarded
+by exactly those two flags. The chrome is not *added* by website; it is
+**unsuppressed**. That is why nothing looked wrong in any template we own.
+
+### The fix, and the one that was rejected
+
+`views/login_layout.xml` deactivates that inheritance. `web.login_layout` then
+renders as it does with no website installed, so the login page is the *same
+page* in both configurations rather than merely chrome-free in each.
+
+Re-setting `no_header`/`no_footer` inside website's `t-call` would also hide the
+chrome and was rejected twice over: it leaves the page rendering through
+`website.layout`, so the card stays destroyed and the two configurations still
+differ; and it depends on the exact markup of website's replacement, so an
+upstream edit to that one xpath quietly changes what we are patching.
+
+It survives `-u website` by the loader's own rule, not by hope:
+`odoo/tools/convert.py:517-524` writes `active` only when the template tag
+carries an `active` attribute and the record is new or the mode is not update.
+website's `login_layout` declares no `active`.
+
+### Measured
+
+| route | chrome, `login_layout` active | deactivated |
+|---|---|---|
+| `/web/login` | 1 | 0 |
+| `/web/signup` (sign-up open) | 1 | 0 |
+| `/web/reset_password` | 1 | 0 |
+| `/` — the marketing site | 1 | **1** |
+
+`/web/login` went from 25,993 to 9,896 bytes. The last row is the point: the
+website keeps its own chrome, so "no header on the login page" is a real
+result and not a broken theme.
+
+### What it covers, and what it deliberately does not
+
+* **`/web/signup` and `/web/reset_password`** — covered by the same line,
+  because they `t-call="web.login_layout"` too (`auth_signup_login_templates.xml`
+  lines 36 and 72). Not separately handled.
+* **The customer portal (`/my/...`)** — *not* affected, and should not be. It
+  renders through `portal.frontend_layout` and `website.layout` and never
+  touches `web.login_layout`. Verified by fetching `/my` authenticated: header
+  and footer present before and after.
+* **`website.protected_403`**, the password prompt for a protected website
+  page, `t-call="website.login_layout"` — keeps working and loses the chrome
+  too. Measured over HTTP, because a bare `_render` of it fails for want of a
+  request in *either* state and settles nothing:
+
+  ```
+  login_layout=ACTIVE    http=403  prompt=1  chrome=1  bytes=24333
+  login_layout=INACTIVE  http=403  prompt=1  chrome=0  bytes=6531
+  ```
+
+  That is a real consequence of touching a shared layout, and it is stated
+  rather than buried. Scoping the change to the auth routes alone would need a
+  flag passed from the controller.
+
+### The consequence that a test caught
+
+Removing the website footer removed `web.brand_promotion_message` from these
+pages — which was the **only** attribution `/web/signup` and
+`/web/reset_password` had. `test_the_other_auth_pages_keep_theirs` went red at
+0, which is exactly what it was written for.
+
+The attribution moved back into the login card's own footer in
+`sapian_theme/views/login_templates.xml`, replacing "Powered by Odoo" in place.
+It had been anchored on the login *form* because website destroyed the card —
+a workaround that has now outlived its cause, and one that reached `/web/login`
+alone. One line now serves all three auth pages, with or without `website`.
