@@ -73,6 +73,108 @@ below was precisely a lost inheritance contest.
 
 Nothing is patched and nothing is inherited.
 
+### Icon + label, 200px, with a collapse toggle
+
+Built from `docs/SPEC-navigation-chrome.md` section 1. The values are the
+spec's, and they are asserted as numbers rather than described:
+
+| | Spec | Measured |
+|---|---|---|
+| Width | 200 expanded / 56 collapsed | 200 / 56, and `.o_web_client` padding tracks it |
+| Row | 44px | 44px, checked on **every** row |
+| Label | 13px / 600 | 13px / 600 |
+| Rest | transparent, brand label | `rgba(0, 0, 0, 0)` / `rgb(20, 69, 79)` |
+| Hover | brand at ~8% alpha, 6px pill | `rgba($sapian-brand, .08)`, radius 6px |
+| **Active** | **solid brand, white label** | `rgb(20, 69, 79)` / `rgb(255, 255, 255)` |
+| Focus | visible ring | `2px solid` brand, `:focus-visible` only |
+
+**The active state is the point of the section.** The competitor's active and
+inactive links have byte-identical computed styles — there is no way to tell
+which app you are in from their sidebar. `TestSapianSidebarStates` compares the
+two from `getComputedStyle`, never from the class list, because the class list
+is exactly what they also have.
+
+Three decisions worth stating, because each had an alternative:
+
+- **The scroll container is still `<nav>` itself**, and the collapse toggle is
+  `position: sticky` rather than living in a pinned header. The obvious
+  structure would move `scrollTop`/`scrollHeight` onto an inner element, and
+  `TestSapianAppRailOverflow` and `TestSapianAppRailKeepsScroll` both measure
+  them on `.o_sapian_rail`. Those two are the only reason we know the rail
+  neither truncates at 40 apps nor loses the user's scroll position; a
+  structure that quietly moved what they measure would leave them green and
+  measuring the wrong box.
+- **Labels stay in the DOM when collapsed** and are hidden in CSS. The tile
+  count therefore never changes with the state — `TestSapianAppRailRendered`
+  checks it against `load_menus` — and the strings never stop being translated.
+- **Collapse state is per BROWSER** (`localStorage`), not per user. The same
+  person wants it open on a 27" monitor and shut on a laptop, so it does not
+  belong in a `res.users` column that would follow them between the two.
+
+Icons render at 24px, not the 39px in the spec table: a 39px icon in a 44px row
+leaves 2.5px of vertical air and forces the row taller than the 44px the same
+table specifies. The row height was taken as the binding constraint.
+
+### Measuring a client mid-boot — the defect that has now bitten twice
+
+`browser_js`'s ready condition is satisfied as soon as the element you asked
+for exists. That is *before* the default action has resolved, and until it does
+the current app keeps changing — so the rail pulls the newly current app into
+view, which is the rail doing its job and is indistinguishable, from a test's
+point of view, from the rail losing your scroll position.
+
+Any test that scrolls and then measures inside that window is measuring a
+system mid-boot and calling the result a property of the system.
+
+- `TestSapianAppRailKeepsScroll` was written with this defect and failed on
+  correct code. Fixed in PR #35 by waiting on `action.currentController`.
+- `TestSapianAppRailOverflow` had the same defect and was **passing by luck**.
+  Before the wait: **3 red of 4 runs**. After it: **0 red of 10 consecutive
+  runs**. (The sample sizes differ because the before-figure is what was
+  observed when the flake was found, not a matched experiment.) The geometry
+  was identical in every run, red and green alike —
+  `forcedRailHeight=572 contentHeight=666 tiles=14 visibleWithoutScrolling=12`
+  — with only `lastReachableByScrolling` flipping. The rail was never
+  truncating.
+
+The fix is always the same and it is never a sleep: wait on
+`action.currentController`. A `setTimeout` passes on a slow runner by accident
+rather than because the thing it waits for has happened.
+
+#### Which `browser_js` blocks still lack the wait
+
+Swept across the repo. Listed rather than fixed, because each needs its own
+before/after run to prove the change did something:
+
+| Block | Test | Risk |
+|---|---|---|
+| `RAIL_RENDERS_JS` | `TestSapianAppRailRendered` | **High — same defect exactly.** Sets `scrollTop = scrollHeight`, waits one frame, asserts `lastReachableByScrolling`. Identical shape to the block that was 3-in-10 red. |
+| `RAIL_DISCRIMINATES_JS` | `TestSapianAppRailDiscriminates` | Moderate. Only needs *some* problem to appear per break, but `sapianRailReport` compares the tile count against `load_menus`. |
+| `RAIL_HIDDEN_JS` | `TestSapianAppRailSmallScreen` | Low. Reads `display` and `padding-left` only — both CSS-static, no scroll and no active state. |
+| `FOOTER_REPORT_JS` and its two callers | `TestSapianBackendFooter*` | Low. Text and `paddingBottom`-vs-height; nothing that moves after first paint. |
+
+Already waiting, and safe: `RAIL_OVERFLOWS_JS`, `RAIL_KEEPS_SCROLL_JS`, all
+four `SIDEBAR_*` blocks, and `LANDING_JS` / `STAYS_PUT_JS` / `OCCLUSION_JS`
+(which wait through `ACTION_PROBE`).
+
+### It clears the fixed footer
+
+Both the sidebar and the footer are `position: fixed`, both are removed by the
+same fullscreen guard, and the sidebar is `top: 0; bottom: 0` — so without a
+clearance its last row sits behind the 28px strip: reachable by scrolling, and
+unreadable once you get there.
+
+The rule lives in `sapian_footer.scss`, not `sapian_rail.scss`.
+`$o-sapian-footer-height` is declared there and that file loads *after* the
+rail's (see `__manifest__.py`), so a clearance written in the rail's file would
+compile against an undefined variable — and what the footer reserves is the
+footer's business. Same `:has()` technique as the padding rules, so it appears
+and disappears with the footer itself.
+
+Measured at 1366x900 on the 36-app database: `railBottom 872`, `footerTop 872`.
+`SIDEBAR_DISCRIMINATES_JS` sets `bottom: 0` on purpose and requires the check
+to go red.
+
 ### 36 apps and 900 pixels
 
 The design was drawn when a tenant had 14 root apps. It now has **36**. At the

@@ -2,28 +2,60 @@
 <templates xml:space="preserve">
 
     <!--
-        A flat list of <a> tiles. No grouping, no "more" affordance, no
+        A flat list of rows, icon + label. No grouping, no "more" affordance, no
         truncation: every installed app is here, in menu-sequence order, and the
         rail scrolls when they do not fit. See README.md, "36 apps and 900
         pixels", for why that is the trade-off and what it costs.
 
+        THE SCROLL CONTAINER IS STILL <nav> ITSELF, and deliberately so. The
+        obvious structure for a rail with a pinned toggle is nav > [header] +
+        [scrolling list], but that would move scrollTop/scrollHeight onto an
+        inner element, and TestSapianAppRailOverflow and
+        TestSapianAppRailKeepsScroll both measure them on `.o_sapian_rail`.
+        Those two tests are the only reason we know the rail neither truncates
+        at 40 apps nor loses the user's scroll position on a re-render; a
+        structural change that quietly moved what they measure would leave them
+        green and measuring the wrong box. The toggle is `position: sticky`
+        instead, which pins it without moving the scroll.
+
         `d-none` is NOT used to hide below md. Bootstrap's display utilities
         leave the element in the DOM, and the padding rule that makes room for
         the rail keys off `:has(.o_sapian_rail)` — so a display utility would
-        indent the web client by 52px while showing nothing in the gap. Both
-        rules live inside one media query in sapian_rail.scss instead, where
-        they cannot disagree.
+        indent the web client by the rail's width while showing nothing in the
+        gap. Both rules live inside one media query in sapian_rail.scss instead,
+        where they cannot disagree.
     -->
     <t t-name="sapian_theme.AppRail">
         <nav t-if="!state.fullscreen" class="o_sapian_rail" t-ref="rail"
+             t-att-class="{ o_sapian_rail_collapsed: state.collapsed }"
              aria-label="Applications">
+
+            <!--
+                A real <button>, so it is in the tab order and answers to Enter
+                and Space with no key handling of our own. `aria-expanded` is
+                what a screen reader reads; the chevron is what everyone else
+                does. The tooltip carries the same words as the visible label,
+                so the control is nameable whichever state it is in.
+            -->
+            <button type="button" class="o_sapian_rail_toggle"
+                    t-att-aria-expanded="!state.collapsed"
+                    t-att-aria-label="state.collapsed ? 'Expand the app sidebar' : 'Collapse the app sidebar'"
+                    t-att-data-tooltip="state.collapsed ? 'Expand' : 'Collapse'"
+                    data-tooltip-position="right"
+                    t-on-click="() => this.toggleCollapsed()">
+                <i class="fa fa-fw" role="img"
+                   t-att-class="state.collapsed ? 'fa-angle-double-right' : 'fa-angle-double-left'"/>
+                <span class="o_sapian_rail_label">Collapse</span>
+            </button>
+
             <a t-foreach="apps" t-as="app" t-key="app.id"
                class="o_sapian_rail_app"
                t-att-class="{ o_sapian_rail_app_active: currentApp and currentApp.id === app.id }"
                t-att-href="hrefFor(app)"
                t-att-aria-label="app.name"
+               t-att-aria-current="currentApp and currentApp.id === app.id ? 'page' : undefined"
                t-att-data-menu-xmlid="app.xmlid"
-               t-att-data-tooltip="app.name"
+               t-att-data-tooltip="state.collapsed ? app.name : undefined"
                data-tooltip-position="right"
                t-on-click.prevent="() => this.onAppClick(app)">
                 <img t-if="app.webIconData" class="o_sapian_rail_icon"
@@ -38,6 +70,14 @@
                 -->
                 <span t-else="" class="o_sapian_rail_initial"
                       t-esc="app.name.trim().slice(0, 2)"/>
+                <!--
+                    The label is always in the DOM and hidden by CSS when
+                    collapsed, never removed. Two reasons: collapsing must not
+                    change the tile count that TestSapianAppRailRendered checks
+                    against load_menus, and a label that exists only in one
+                    state is a label that stops being translated in the other.
+                -->
+                <span class="o_sapian_rail_label" t-esc="app.name"/>
             </a>
         </nav>
     </t>
