@@ -115,6 +115,68 @@ Icons render at 24px, not the 39px in the spec table: a 39px icon in a 44px row
 leaves 2.5px of vertical air and forces the row taller than the 44px the same
 table specifies. The row height was taken as the binding constraint.
 
+### The header is the mark — the first thing anyone sees
+
+The top row of the sidebar is the product's logo, its wordmark, and the
+collapse chevron, all inside one `<button>`.
+
+What sat there before was a chevron and the word "Collapse". The top-left of
+the screen — the position every desktop application uses for its identity —
+was a UI control. And in the app list immediately below it, the first tile was
+`sapian_core`'s app icon, because SapianERP is menu sequence 5, so the closest
+thing to a mark on the page meant "the SapianERP **configuration** app".
+
+Three things about how it is built:
+
+- **The SVG is inline, not an `<img>`.** An `<img>` renders in a document of
+  its own, where `currentColor` falls back to black; the mark takes the brand
+  from `color` on the button. Same reasoning as the login page's mark.
+- **The four `d` attributes are copied from `brand/Sapian Logo.svg`**, byte for
+  byte, and they now appear in the repo twice: once in `views/sapian_mark.xml`
+  (server QWeb, for the login page and the portal attribution) and once here,
+  because an OWL template cannot `t-call` a server-side one. Two *renderings*,
+  one source. `TestTheMarkIsTheCommittedLogo` asserts **both** copies against
+  the committed file, so neither can drift into a redrawing —
+  `brand/README.md`: *"Never recreate or trace them."*
+- **The brand area is the toggle**, rather than a fourth row of chrome. It
+  costs nothing in a panel that is already 1,634px of content at 36 apps, keeps
+  the control where it cannot scroll away, and is a common pattern. A real
+  `<button>`, so Enter and Space work with no key handling of our own.
+
+#### `aria-expanded` had to be written as strings, and only the browser said so
+
+The obvious spelling, `t-att-aria-expanded="!state.collapsed"`, is wrong. Read
+off a running client:
+
+| State | Served attribute |
+|---|---|
+| expanded | `aria-expanded=""` — OWL stringifies `true` to the empty string |
+| collapsed | *attribute absent* — OWL drops it on `false` |
+
+An empty value is not a valid ARIA state, and an absent one announces "this
+control expands nothing" — the opposite of the truth in the state where it
+matters most. Nothing in the template or the DOM tree looked wrong; only
+reading the served attribute did. It is
+`state.collapsed ? 'false' : 'true'` now, and `TestSapianSidebarHeader` asserts
+both literals with `getAttribute` (the *property* would coerce and hide exactly
+this).
+
+That test also proves the mark **survives to the screen**, which the template
+test cannot: an SVG can be in the DOM at 0×0, or painted in the browser's
+default black because `color` never reached it, and a source-level check stays
+green either way. Three breaks, each proved red:
+
+| Break | What the test said |
+|---|---|
+| `t-att-aria-expanded="!state.collapsed"` | `aria-expanded is "" expanded and "null" collapsed` |
+| `.o_sapian_rail_brand { width: 0; height: 0 }` | `the mark is in the DOM but renders at 0x0, so nobody sees it` |
+| `fill="#000000"` instead of `currentColor` | `the mark paints "rgb(0, 0, 0)" — currentColor did not reach it` |
+
+Collapsed, the mark stays and the wordmark and chevron go: at 56px the mark
+alone is the affordance, and the tooltip says what the control does. Measured
+on the 36-app database: `paths=4 mark=24x24 fill="rgb(20, 69, 79)"
+word="SapianERP" expandedOpen="true" expandedShut="false" markShut=24x24`.
+
 ### CI runs the rail against 36 apps, not 14
 
 The rail job used to install eight modules and get **14 root apps**, and at 14
@@ -1019,16 +1081,66 @@ and nothing inherited — and hidden below md and during a fullscreen action for
 the same reasons.
 
 Its text arrives through `session_info` (`models/ir_http.py`), because the
-backend is an OWL application and server-side QWeb never runs there. It reads
-**the same** `sapian_theme.support_contact` parameter as the login page: two
-settings meaning the same thing is how one of them goes stale.
+backend is an OWL application and server-side QWeb never runs there.
+
+### It signs itself SAPIAN, from constants a tenant cannot reach
+
+It used to read `res.company.name` and the tenant's
+`sapian_theme.support_contact`. Measured on the demo tenant, on every backend
+page:
+
+```
+© 2026 Selam General Trading PLC. All Rights Reserved.
+For Support: +251 11 123 4567 / support@selamtrading.example
+```
+
+Install that for Golbon Trading and it says Golbon, with Golbon's number. It is
+the login page's "Powered by Odoo" defect pointed the other way — the product
+on screen is not the product being sold — and the competitor gets this one
+right: their footer carries the **consultancy's** name and the consultancy's
+support lines. Now:
+
+```
+© 2026 Sapian Technologies PLC. All Rights Reserved.
+For Support: +251 11 668 1234 / support@sapiantech.com
+```
+
+The values live in `vendor.py` as Python constants. Two alternatives were
+considered and rejected:
+
+| Home | Why not |
+|---|---|
+| `ir.config_parameter` | Technical > System Parameters is open to `base.group_system`, which on a client's own database **is the client**. The brief is that a client editing their own installation must not be able to change our footer. |
+| A field on `res.company` | Same problem, one form earlier — and it would be per company, when there is one vendor. |
+
+It is also not configuration. There is one vendor; a release is how a vendor's
+own phone number changes, and a release is already the delivery mechanism.
+
+`sapian_theme.support_contact` is **not** deleted. It is the tenant's own
+number and still drives the **login** page, where the tenant's users are the
+audience. The two contacts stopped meaning the same thing, so they stopped
+sharing a setting.
+
+The keys were renamed at the same time — `sapian_footer_company` and
+`sapian_support_contact` became `sapian_vendor_company` / `sapian_vendor_support`
+/ `sapian_vendor_url`. The old names said *the* company and *the* support
+contact, which is precisely the ambiguity that let the tenant's values sit
+there unnoticed; a component still reading an old key would have kept working
+and kept being wrong.
+
+`TestVendorFooterIsNotTheTenants` does not check that a constant equals itself.
+It performs the two edits that used to move the footer — renaming the company,
+setting the parameter — and asserts the served payload does not move.
+Discrimination proved by putting the tenant-driven code back: **4 of 5 vendor
+tests go red**, naming the company rename and the parameter individually.
 
 ## Configuration
 
 | Setting | Where | Empty behaviour |
 |---|---|---|
-| Support contact — login page **and** backend footer | `ir.config_parameter` → `sapian_theme.support_contact` | renders nothing at all — no empty box, no stray rule, no "For Support:" label |
+| Support contact — **login page only** | `ir.config_parameter` → `sapian_theme.support_contact` | renders nothing at all — no empty box, no stray rule, no "For Support:" label |
 | Login logo | `res.company.logo` | falls back to the company **name as text**, never Odoo's stock placeholder |
+| Vendor attribution — backend footer | **not configurable.** `vendor.py` constants; see above | n/a |
 
 Neither is set by this module. `sapian_demo_trader` configures both for the
 demo tenant (`_configure_login_page`), and `scripts/provision_client.sh` closes

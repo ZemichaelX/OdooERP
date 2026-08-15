@@ -72,4 +72,24 @@ $o-sapian-footer-height: 1.75rem !default;   // 28px at the default root size
     .o_sapian_footer_support {
         font-weight: 600;
     }
+
+    // Our name links to us. Underlined only on hover/focus so a 12px strip
+    // does not read as a row of chrome, and it keeps the brand colour in every
+    // state — Bootstrap's default link colour is not ours.
+    .o_sapian_footer_link {
+        color: inherit;
+        font-weight: 600;
+        text-decoration: none;
+
+        &:hover,
+        &:focus-visible {
+            color: inherit;
+            text-decoration: underline;
+        }
+
+        &:focus-visible {
+            outline: 2px solid $sapian-brand;
+            outline-offset: 1px;
+        }
+    }
 }

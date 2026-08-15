@@ -13,9 +13,26 @@
     -->
     <t t-name="sapian_theme.BackendFooter">
         <div t-if="!state.fullscreen" class="o_sapian_footer">
-            <span class="o_sapian_footer_copy">
-                © <t t-esc="year"/> <t t-esc="company"/>. All Rights Reserved.
-            </span>
+            <!--
+                Our name is a link to us. The support line answers "who do I
+                call"; the link answers "who made this", which is the other
+                half of an attribution and the reason the URL is a vendor
+                constant at all. It is also what keeps `SAPIAN_URL` honest: a
+                constant that reaches session_info and is read by nothing is a
+                value that can go stale with nothing to notice.
+
+                THE MARKUP IS RUN TOGETHER ON PURPOSE — the `/>` and `<` are
+                split across lines so no whitespace-only text node exists
+                between the year, the link and the rights clause. OWL strips
+                those, and the first version of this read
+                "© 2026Sapian Technologies PLC." on screen. The space that
+                belongs there is carried inside `copyrightPrefix`; see
+                backend_footer.js.
+            -->
+            <span class="o_sapian_footer_copy"><t t-esc="copyrightPrefix"
+                /><a t-if="url" class="o_sapian_footer_link" t-att-href="url"
+                     target="_blank" rel="noopener"><t t-esc="company"/></a><t
+                     t-else="" t-esc="company"/>. All Rights Reserved.</span>
             <span t-if="support" class="o_sapian_footer_support">
                 For Support: <t t-esc="support"/>
             </span>

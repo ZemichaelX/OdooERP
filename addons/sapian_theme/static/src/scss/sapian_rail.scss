@@ -134,6 +134,37 @@ $o-sapian-rail-hover-fill: rgba($sapian-brand, 0.08) !default;
         box-shadow: 0 1px 0 0 $border-color;
     }
 
+    // The mark takes the brand from `color` on the button, which is why it is
+    // inline SVG and not an <img>: an <img> renders in a document of its own
+    // where `currentColor` falls back to black. Same reasoning as the login
+    // page's mark (views/sapian_mark.xml).
+    .o_sapian_rail_brand {
+        flex: 0 0 auto;
+        width: $o-sapian-rail-icon-size;
+        height: $o-sapian-rail-icon-size;
+    }
+
+    // Pushed to the far edge so the wordmark reads as the label and the
+    // chevron as the control. Hidden when collapsed: at 56px the mark alone is
+    // the affordance, and the tooltip says what it does.
+    .o_sapian_rail_chevron {
+        flex: 0 0 auto;
+        margin-left: auto;
+        font-size: 0.75rem;
+        opacity: 0.65;
+    }
+
+    .o_sapian_rail_collapsed .o_sapian_rail_chevron {
+        display: none;
+    }
+
+    // The wordmark is the product's name, not an app's: heavier than a row
+    // label and in the brand, so the header reads as a header.
+    .o_sapian_rail_toggle .o_sapian_rail_label {
+        font-weight: 700;
+        letter-spacing: 0.01em;
+    }
+
     .o_sapian_rail_app {
         &.o_sapian_rail_app_active {
             // SOLID, not a tint, and a white label. This is the state the
