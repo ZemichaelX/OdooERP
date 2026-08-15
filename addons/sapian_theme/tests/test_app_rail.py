@@ -43,6 +43,24 @@ from .. import brand
 # discrimination test can run the very same code against a deliberately broken
 # DOM and assert that it complains.
 # ---------------------------------------------------------------------------
+# Forcing overflow has to account for the sticky brand header: a box of
+# tileHeight * (n - 1) is ENTIRELY FILLED by the 44px header on a small
+# database, so the condition created is "nothing fits" rather than "the rail
+# overflows". Measured — a two-app database failed exactly that way, and the
+# failure read as truncation.
+SAPIAN_FORCED_HEIGHT = """
+function sapianForcedHeight(rail, tileHeight, count) {
+    const header = rail.querySelector('.o_sapian_rail_toggle');
+    const headH = header ? header.getBoundingClientRect().height : 0;
+    // Room for the header and one FEWER tile than exists, so the box always
+    // overflows and at least one tile is genuinely out of view. Asking for
+    // "at least two tiles" was tried and is wrong on a two-app database: it
+    // fits both, and the test's own precondition then fails with "every tile
+    // is still visible; nothing to scroll to".
+    return Math.floor(headH + tileHeight * Math.max(1, count - 1));
+}
+"""
+
 RAIL_REPORT_JS = """
 async function sapianRailReport() {
     const problems = [];
@@ -96,7 +114,21 @@ async function sapianRailReport() {
 async function sapianRailReach() {
     const rail = document.querySelector('.o_sapian_rail');
     const tiles = [...rail.querySelectorAll('.o_sapian_rail_app')];
-    const box = rail.getBoundingClientRect();
+    // THE VISIBLE AREA IS THE BOX MINUS THE STICKY HEADER. The brand header is
+    // `position: sticky; top: 0`, so it covers the top 44px of the scroll
+    // viewport at every scroll position and tiles slide UNDER it. Measuring
+    // against the raw box counted a tile hidden behind the header as visible —
+    // caught when a two-app database forced the box down to one row and the
+    // header filled all of it.
+    const railBox = rail.getBoundingClientRect();
+    const header = rail.querySelector('.o_sapian_rail_toggle');
+    const headBox = header ? header.getBoundingClientRect() : null;
+    const box = {
+        top: headBox ? Math.max(railBox.top, headBox.bottom) : railBox.top,
+        bottom: railBox.bottom,
+        left: railBox.left,
+        right: railBox.right,
+    };
     // FULL containment, all four edges. Testing only top/bottom let a tile
     // pushed sideways out of the panel still count as visible — found because
     // the discrimination break below then broke nothing.
@@ -133,7 +165,7 @@ async function sapianRailReach() {
 }
 """
 
-RAIL_RENDERS_JS = RAIL_REPORT_JS + """
+RAIL_RENDERS_JS = RAIL_REPORT_JS + SAPIAN_FORCED_HEIGHT + """
 (async () => {
     const frames = async (n) => {
         for (let i = 0; i < n; i++) {
@@ -218,7 +250,7 @@ RAIL_RENDERS_JS = RAIL_REPORT_JS + """
 })();
 """
 
-RAIL_DISCRIMINATES_JS = RAIL_REPORT_JS + """
+RAIL_DISCRIMINATES_JS = RAIL_REPORT_JS + SAPIAN_FORCED_HEIGHT + """
 (async () => {
     // Prove the check goes red for each thing it claims to check, by breaking
     // that thing on purpose. An untested guard is one more thing that passes
@@ -288,7 +320,7 @@ RAIL_DISCRIMINATES_JS = RAIL_REPORT_JS + """
     const railTiles = [...rail.querySelectorAll('.o_sapian_rail_app')];
     const tileH = railTiles[0].getBoundingClientRect().height;
     const tail = railTiles[railTiles.length - 1];
-    rail.style.height = Math.floor(tileH * (railTiles.length - 1)) + 'px';
+    rail.style.height = sapianForcedHeight(rail, tileH, railTiles.length) + 'px';
     await new Promise((r) => requestAnimationFrame(() => r()));
     tail.style.height = (rail.clientHeight + 50) + 'px';
     await new Promise((r) => requestAnimationFrame(() => r()));
@@ -362,7 +394,7 @@ RAIL_DISCRIMINATES_JS = RAIL_REPORT_JS + """
 })();
 """
 
-RAIL_OVERFLOWS_JS = RAIL_REPORT_JS + """
+RAIL_OVERFLOWS_JS = RAIL_REPORT_JS + SAPIAN_FORCED_HEIGHT + """
 (async () => {
     const frames = async (n) => {
         for (let i = 0; i < n; i++) {
@@ -423,7 +455,7 @@ RAIL_OVERFLOWS_JS = RAIL_REPORT_JS + """
     // just produces a smaller box that still fits — measured, scrollHeight 900
     // <= clientHeight 900 on a four-app database, twice in a row.
     const tileHeight = tiles[0].getBoundingClientRect().height;
-    const forced = Math.floor(tileHeight * (tiles.length - 1));
+    const forced = sapianForcedHeight(rail, tileHeight, tiles.length);
     rail.style.height = forced + 'px';
     await frames(1);
 
@@ -474,7 +506,7 @@ RAIL_OVERFLOWS_JS = RAIL_REPORT_JS + """
 })();
 """
 
-RAIL_KEEPS_SCROLL_JS = """
+RAIL_KEEPS_SCROLL_JS = SAPIAN_FORCED_HEIGHT + """
 (async () => {
     const frames = async (n) => {
         for (let i = 0; i < n; i++) {
@@ -504,7 +536,7 @@ RAIL_KEEPS_SCROLL_JS = """
     // the overflow test does, so this holds on a two-app CI install and on a
     // 36-app tenant alike.
     const tileHeight = tiles[0].getBoundingClientRect().height;
-    rail.style.height = Math.floor(tileHeight * (tiles.length - 1)) + 'px';
+    rail.style.height = sapianForcedHeight(rail, tileHeight, tiles.length) + 'px';
     await frames(2);
     const restore = () => { rail.style.height = ''; rail.scrollTop = 0; };
     if (rail.scrollHeight <= rail.clientHeight) {
@@ -1136,6 +1168,116 @@ SIDEBAR_KEYBOARD_JS = SIDEBAR_SETTLE_JS + """
 """
 
 
+# The sidebar header is the product's mark, and it has to behave like one in a
+# running client, not just in the template source.
+# TestTheMarkIsTheCommittedLogo (test_vendor_identity.py) already proves the
+# four paths in app_rail.xml are byte-identical to brand/Sapian Logo.svg. What
+# it cannot prove is that they SURVIVE to the screen: an SVG can be in the DOM
+# and be 0×0, or be painted in the browser's default black because `color` did
+# not reach it, and the template test would still be green.
+#
+# `aria-expanded` is asserted as the literal strings because the boolean form
+# was wrong on the wire. Measured on a running client with
+# `t-att-aria-expanded="!state.collapsed"`:
+#
+#     expanded  -> aria-expanded=""     (OWL stringifies true to '')
+#     collapsed -> attribute absent     (OWL drops the attribute on false)
+#
+# An empty value is not a valid ARIA state, and an absent one announces "this
+# control expands nothing" — the opposite of the truth in the state where it
+# matters most. Nothing in the DOM said so; only reading the served attribute
+# did.
+SIDEBAR_HEADER_JS = SIDEBAR_SETTLE_JS + """
+(async () => {
+    await sapianSidebarSettle();
+    const rail = document.querySelector('.o_sapian_rail');
+    const head = rail.querySelector('.o_sapian_rail_toggle');
+    if (!head) { throw new Error('the sidebar has no header/toggle at all'); }
+
+    const readHeader = () => {
+        const svg = head.querySelector('svg.o_sapian_rail_brand');
+        const box = svg ? svg.getBoundingClientRect() : null;
+        const word = head.querySelector('.o_sapian_rail_label');
+        const chev = head.querySelector('.o_sapian_rail_chevron');
+        return {
+            paths: svg ? svg.querySelectorAll('path').length : 0,
+            markW: box ? Math.round(box.width) : 0,
+            markH: box ? Math.round(box.height) : 0,
+            markFill: svg ? getComputedStyle(svg).fill : 'none',
+            markDisplay: svg ? getComputedStyle(svg).display : 'none',
+            word: word ? word.textContent.trim() : null,
+            wordShown: word ? getComputedStyle(word).display !== 'none' : false,
+            chevShown: chev ? getComputedStyle(chev).display !== 'none' : false,
+            // getAttribute, NOT the property: the property would coerce and
+            // hide exactly the defect this test exists for.
+            expanded: head.getAttribute('aria-expanded'),
+            tooltip: head.getAttribute('data-tooltip'),
+        };
+    };
+
+    const open = readHeader();
+    head.click();
+    await settle(700);
+    const shut = readHeader();
+    head.click();
+    await settle(700);
+
+    console.log('SAPIAN-SIDEBAR-HEADER paths=' + open.paths
+        + ' mark=' + open.markW + 'x' + open.markH
+        + ' fill="' + open.markFill + '"'
+        + ' word="' + open.word + '"'
+        + ' expandedOpen="' + open.expanded + '" expandedShut="' + shut.expanded + '"'
+        + ' wordShown=' + open.wordShown + '->' + shut.wordShown
+        + ' chevShown=' + open.chevShown + '->' + shut.chevShown
+        + ' markShut=' + shut.markW + 'x' + shut.markH);
+
+    // THE MARK. Four paths, painted, and big enough to be a logo rather than a
+    // collapsed 0x0 box.
+    if (open.paths !== 4) {
+        throw new Error('the header carries ' + open.paths + ' logo paths, not 4 — '
+            + 'the mark is not the committed logo');
+    }
+    if (open.markW < 12 || open.markH < 12) {
+        throw new Error('the mark is in the DOM but renders at ' + open.markW
+            + 'x' + open.markH + ', so nobody sees it');
+    }
+    if (open.markFill === 'rgb(0, 0, 0)' || open.markFill === 'none') {
+        throw new Error('the mark paints "' + open.markFill + '" — currentColor '
+            + 'did not reach it, so it is not in the brand');
+    }
+    if (open.word !== 'SapianERP') {
+        throw new Error('the header wordmark reads "' + open.word + '"');
+    }
+
+    // THE ARIA STATE. Literal strings in BOTH states.
+    if (open.expanded !== 'true' || shut.expanded !== 'false') {
+        throw new Error('aria-expanded is "' + open.expanded + '" expanded and "'
+            + shut.expanded + '" collapsed; it must be the strings true/false');
+    }
+
+    // COLLAPSED: the mark stays, the wordmark and chevron go, and the tooltip
+    // takes over saying what the control does.
+    if (shut.markW < 12 || shut.markH < 12) {
+        throw new Error('the mark disappears when collapsed (' + shut.markW
+            + 'x' + shut.markH + '), leaving 56px of nothing');
+    }
+    if (!open.wordShown || shut.wordShown) {
+        throw new Error('the wordmark is shown=' + open.wordShown + ' expanded and '
+            + shut.wordShown + ' collapsed');
+    }
+    if (!open.chevShown || shut.chevShown) {
+        throw new Error('the chevron is shown=' + open.chevShown + ' expanded and '
+            + shut.chevShown + ' collapsed');
+    }
+    if (!shut.tooltip || !/expand/i.test(shut.tooltip)) {
+        throw new Error('collapsed, the header offers no tooltip saying it expands: "'
+            + shut.tooltip + '"');
+    }
+    console.log('test successful');
+})();
+"""
+
+
 class SidebarBrowserCase(HttpCase):
     """Shared setup: tours off, and the brand read from the palette."""
 
@@ -1193,6 +1335,14 @@ class TestSapianSidebarCollapse(SidebarBrowserCase):
 
     def test_collapsing_narrows_the_sidebar_and_keeps_everything_else(self):
         self.run_sidebar(SIDEBAR_COLLAPSE_JS)
+
+
+@tagged("post_install", "-at_install")
+class TestSapianSidebarHeader(SidebarBrowserCase):
+    """The header is the product's mark, and it announces its own state."""
+
+    def test_the_header_is_the_logo_and_says_whether_it_is_expanded(self):
+        self.run_sidebar(SIDEBAR_HEADER_JS)
 
 
 @tagged("post_install", "-at_install")

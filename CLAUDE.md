@@ -41,6 +41,28 @@ in a future multi-tenant SaaS (no hard-coded company assumptions; respect `compa
 - data-templates/  spreadsheet import templates for onboarding
 - docs/            architecture & module docs (the master planning package)
 
+## Commits are the owner's, not the agent's
+
+Every commit on this repository is authored by **ZemichaelX
+&lt;zemichaelmuluken@gmail.com&gt;**. An agent working here commits AS the owner; it
+does not sign its own name to the history, and it adds **no** `Co-Authored-By:
+Claude` trailer and no session-link trailer.
+
+Run this at the START of any session that will commit, before the first commit:
+
+    git config user.name  "ZemichaelX"
+    git config user.email "zemichaelmuluken@gmail.com"
+
+It is a per-clone setting and this project runs in a fresh container each
+session, so a new container starts with the harness default and will silently
+attribute the work to Claude unless the two lines above are run again. Setting
+it after the fact does not move commits that already exist — `git commit
+--amend --reset-author` is the only fix then, and it means a force-push.
+
+Check it, do not assume it:
+
+    git log -1 --format='%an <%ae>'    # must be ZemichaelX <zemichael…>
+
 ## How to run locally
     ./scripts/install_hooks.sh    # once per clone: gitleaks pre-commit secret scan
     cp .env.example docker/.env   # set DB_PASSWORD etc. (compose's project dir

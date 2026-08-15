@@ -659,7 +659,7 @@ jobs:
             -i "sapian_theme,${CATALOG}" \
             --without-demo=all \
             --test-enable \
-            --test-tags '/sapian_theme:TestSapianAppRailRendered,/sapian_theme:TestSapianAppRailOverflow,/sapian_theme:TestSapianAppRailKeepsScroll,/sapian_theme:TestSapianAppRailSmallScreen,/sapian_theme:TestAppRailDataOverHttp,/sapian_theme:TestSapianBackendFooterRendered,/sapian_theme:TestSapianBackendFooterSmallScreen,/sapian_theme:TestBackendFooterDataOverHttp,/sapian_theme:TestSapianSidebarStates,/sapian_theme:TestSapianSidebarStatesDiscriminate,/sapian_theme:TestSapianSidebarCollapse,/sapian_theme:TestSapianSidebarKeyboard' \
+            --test-tags '/sapian_theme:TestSapianAppRailRendered,/sapian_theme:TestSapianAppRailOverflow,/sapian_theme:TestSapianAppRailKeepsScroll,/sapian_theme:TestSapianAppRailSmallScreen,/sapian_theme:TestAppRailDataOverHttp,/sapian_theme:TestSapianBackendFooterRendered,/sapian_theme:TestSapianBackendFooterSmallScreen,/sapian_theme:TestBackendFooterDataOverHttp,/sapian_theme:TestSapianSidebarStates,/sapian_theme:TestSapianSidebarStatesDiscriminate,/sapian_theme:TestSapianSidebarCollapse,/sapian_theme:TestSapianSidebarKeyboard,/sapian_theme:TestSapianSidebarHeader' \
             --workers=0 --max-cron-threads=0 \
             --stop-after-init --log-level=test 2>&1 | tee /tmp/rail.log
 
@@ -699,7 +699,12 @@ jobs:
             "SAPIAN-SIDEBAR-DISCRIMINATION restored -> clean" \
             "SAPIAN-SIDEBAR-COLLAPSE wide=200 narrow=56 wideAgain=200" \
             "SAPIAN-SIDEBAR-KEYBOARD rowFocusable=true focusVisible=true" \
-            "tag=BUTTON"; do
+            "tag=BUTTON" \
+            "SAPIAN-SIDEBAR-HEADER paths=4" \
+            "word=\"SapianERP\"" \
+            "expandedOpen=\"true\" expandedShut=\"false\"" \
+            "wordShown=true->false" \
+            "chevShown=true->false"; do
             if ! grep -qF "${marker}" /tmp/rail.log; then
               echo "::error::The browser never reported '${marker}'. The rail tests did not run in a browser — most likely Chrome was missing and browser_js skipped."
               exit 1

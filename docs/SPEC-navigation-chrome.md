@@ -152,9 +152,41 @@ Theirs: `position: fixed`, height 40px, `#FFFFFF`, `border-top: 1px solid
 weight 600 `#495057`; right-aligned `For Support:` plus two `tel:` links in
 `#F27E2C` weight 600. Stacks to a column at ≤1024px with `min-height: 70px`.
 
-Ours matches the shape, driven from the company support-contact setting, in
-brand teal. One thing they get wrong and we should not: their loading pill
-overlaps the fixed footer strip.
+Ours matches the shape, in brand teal. One thing they get wrong and we should
+not: their loading pill overlaps the fixed footer strip.
+
+#### Whose name it carries: SAPIAN's, from constants — 15 August 2026
+
+PR #29 drove it from `res.company.name` and the tenant's
+`sapian_theme.support_contact` parameter, which is the wrong half of the
+competitor's idea. Measured on the demo tenant before Item 2:
+
+```
+© 2026 Selam General Trading PLC. All Rights Reserved.
+For Support: +251 11 123 4567 / support@selamtrading.example
+```
+
+Install that for Golbon Trading and every backend page signs itself Golbon,
+with Golbon's support number. It is the login page's "Powered by Odoo" defect
+pointed the other way — the product on screen is not the product being sold —
+and the competitor gets this one right: their footer carries the
+**consultancy's** name and the consultancy's numbers.
+
+The values are Python constants in `addons/sapian_theme/vendor.py`, not
+`ir.config_parameter` and not `res.company`. Technical > System Parameters is
+open to `base.group_system`, which on a client's own database is the client;
+so is the company form. A client editing their own company must not be able to
+change our attribution, and constants are the only home where they cannot.
+It is also not configuration: there is one vendor, and a release is how a
+vendor's own details change.
+
+`sapian_theme.support_contact` is NOT deleted — it is the tenant's number and
+still drives the login page, where the tenant's own users need it.
+
+Guarded by `TestVendorFooterIsNotTheTenants`, which does not check that a
+constant equals itself: it renames the company and sets the parameter — the
+two edits that used to move the footer — and asserts the served payload does
+not move.
 
 ---
 

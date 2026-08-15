@@ -40,8 +40,44 @@ function sapianFooterReport() {
     if (!/All Rights Reserved/i.test(text)) {
         problems.push('no rights line in: ' + JSON.stringify(text));
     }
+    // THE WHOLE LINE, WITH ITS SPACES, in one regex. The three checks around
+    // it all passed on "© 2026Sapian Technologies PLC. All Rights Reserved."
+    // — which is what the footer actually rendered once our name became a
+    // link, because OWL removes whitespace-only text nodes between elements.
+    // Every part was present and the line was wrong.
+    if (!new RegExp('© \\\\d{4} %VENDOR%\\\\. All Rights Reserved\\\\.').test(text)) {
+        problems.push('the copyright line is malformed — expected '
+                      + '"© <year> %VENDOR%. All Rights Reserved." in: '
+                      + JSON.stringify(text));
+    }
     if (!/For Support:/.test(text)) {
         problems.push('no support line in: ' + JSON.stringify(text));
+    }
+    // WHOSE NAME, read off the rendered strip rather than off session_info.
+    // The payload assertions live in test_vendor_identity.py; what this adds
+    // is that the value survives the template — a footer handed the right name
+    // and printing the wrong one would satisfy every other check here.
+    // Substituted by the Python side so a re-branded build asserts its own
+    // name and not a stale literal.
+    if (text.indexOf('%VENDOR%') === -1) {
+        problems.push('the footer does not carry the vendor name %VENDOR%: '
+                      + JSON.stringify(text));
+    }
+    if (/%TENANT%/.test(text)) {
+        problems.push('the footer is signed with the TENANT: '
+                      + JSON.stringify(text));
+    }
+    // Our name links to us. `href` rather than getAttribute so a relative or
+    // empty value shows up as what the browser would actually navigate to.
+    const link = footer.querySelector('.o_sapian_footer_link');
+    const href = link ? link.href : '';
+    if (!link) {
+        problems.push('our name is not a link, so SAPIAN_URL reaches nothing');
+    } else if (link.textContent.trim() !== '%VENDOR%') {
+        problems.push('the link wraps ' + JSON.stringify(link.textContent.trim())
+                      + ' rather than the vendor name');
+    } else if (!/^https?:\\/\\/.+\\..+/.test(href)) {
+        problems.push('the vendor link points at ' + JSON.stringify(href));
     }
     // The reservation has to match the bar, or the footer sits on top of the
     // last row of whatever is on screen. This is the rail's padding bug,
@@ -97,11 +133,52 @@ FOOTER_DISCRIMINATES_JS = FOOTER_REPORT_JS + """
                       + restored.problems.join('; '));
         return;
     }
+
+    // REMOVING THE WHOLE BAR breaks every check at once, which is a weak proof
+    // for the ones added last. These two break exactly one thing each and are
+    // the regressions that actually happened: the strip signed with the
+    // tenant, and our name reaching the page as plain text so SAPIAN_URL was
+    // read by nothing.
+    const copy = footer.querySelector('.o_sapian_footer_copy');
+    const keptCopy = copy.innerHTML;
+    copy.textContent = '© 2026 %TENANT%. All Rights Reserved.';
+    const signedTenant = sapianFooterReport();
+    copy.innerHTML = keptCopy;
+
+    const link = footer.querySelector('.o_sapian_footer_link');
+    const keptClass = link.className;
+    link.className = '';
+    const noLink = sapianFooterReport();
+    link.className = keptClass;
+
+    const clean = sapianFooterReport();
+    if (clean.problems.length) {
+        console.error('SAPIAN-FOOTER-DISCRIMINATION restore failed after the '
+                      + 'targeted breaks: ' + clean.problems.join('; '));
+        return;
+    }
+    if (!signedTenant.problems.some((p) => /signed with the TENANT/.test(p))) {
+        console.error('SAPIAN-FOOTER-DISCRIMINATION a footer signed with the '
+                      + 'tenant passed the check: '
+                      + JSON.stringify(signedTenant.problems));
+        return;
+    }
+    if (!noLink.problems.some((p) => /not a link/.test(p))) {
+        console.error('SAPIAN-FOOTER-DISCRIMINATION our name as plain text '
+                      + 'passed the check: ' + JSON.stringify(noLink.problems));
+        return;
+    }
+
     console.log('SAPIAN-FOOTER-DISCRIMINATION removed -> ' + after.problems.length
-                + ' problem(s); restored -> clean');
+                + ' problem(s); tenant-signed -> ' + signedTenant.problems.length
+                + '; unlinked -> ' + noLink.problems.length
+                + '; restored -> clean');
     console.log('test successful');
 })();
 """
+
+
+TENANT_NAME = "Golbon Trading PLC"
 
 
 class FooterBrowserCase(HttpCase):
@@ -113,17 +190,25 @@ class FooterBrowserCase(HttpCase):
         if "tour_enabled" in admin._fields:
             admin.sudo().tour_enabled = False
         self.env["ir.config_parameter"].sudo().set_param(SUPPORT_PARAM, SUPPORT_VALUE)
+        # THE TENANT IS RENAMED ON PURPOSE, to something the vendor is not.
+        # Without this the "is it signed with the tenant?" assertion could pass
+        # on a database whose company happened to share a word with ours, and
+        # on a fresh test database the company is "My Company" — near enough to
+        # nothing to be a weak negative.
+        self.env.company.name = TENANT_NAME
         self.env.flush_all()
 
+    def run_footer(self, code):
+        """Substitute the two names, so nothing here hardcodes a brand.
 
-@tagged("post_install", "-at_install")
-class TestSapianBackendFooterRendered(FooterBrowserCase):
-    browser_size = "1366x900"
+        A literal "Sapian Technologies PLC" in the JS would keep passing after a
+        re-brand while the footer said something else.
+        """
+        from .. import vendor
 
-    def test_the_footer_renders_on_the_backend(self):
         self.browser_js(
             "/odoo",
-            FOOTER_RENDERS_JS,
+            code.replace("%VENDOR%", vendor.SAPIAN_COMPANY).replace("%TENANT%", TENANT_NAME),
             # Must evaluate to a BOOLEAN — ChromeBrowser._wait_ready compares
             # the CDP result against {'type': 'boolean', 'value': True}
             # (odoo/tests/common.py:1877), so a bare querySelector never
@@ -132,13 +217,16 @@ class TestSapianBackendFooterRendered(FooterBrowserCase):
             login="admin",
         )
 
+
+@tagged("post_install", "-at_install")
+class TestSapianBackendFooterRendered(FooterBrowserCase):
+    browser_size = "1366x900"
+
+    def test_the_footer_renders_on_the_backend(self):
+        self.run_footer(FOOTER_RENDERS_JS)
+
     def test_the_footer_check_discriminates(self):
-        self.browser_js(
-            "/odoo",
-            FOOTER_DISCRIMINATES_JS,
-            "!!document.querySelector('.o_sapian_footer')",
-            login="admin",
-        )
+        self.run_footer(FOOTER_DISCRIMINATES_JS)
 
 
 @tagged("post_install", "-at_install")
@@ -192,9 +280,22 @@ class TestBackendFooterDataOverHttp(HttpCase):
     it catches the regression that would empty the bar.
     """
 
-    def test_the_session_carries_the_support_contact_and_company(self):
-        self.env["ir.config_parameter"].sudo().set_param(SUPPORT_PARAM, SUPPORT_VALUE)
-        self.env.flush_all()
+    def test_the_session_carries_sapian_s_own_identity(self):
+        """REWRITTEN, because the contract changed by decision.
+
+        This used to assert `sapian_support_contact` and
+        `sapian_footer_company` — the TENANT's support number and the TENANT's
+        company name. That was the defect: a tenant installed for Golbon
+        Trading signed every backend page as Golbon's software. The footer now
+        carries Sapian's, from constants a tenant cannot edit
+        (`sapian_theme/vendor.py`).
+
+        The old assertions are not deleted quietly; they are replaced by their
+        opposite, and `test_vendor_identity.py` proves the tenant cannot move
+        the new values.
+        """
+        from .. import vendor
+
         self.authenticate("admin", "admin")
         response = self.url_open(
             "/web/session/get_session_info",
@@ -203,23 +304,30 @@ class TestBackendFooterDataOverHttp(HttpCase):
         )
         self.assertEqual(response.status_code, 200)
         info = response.json()["result"]
-        self.assertEqual(info["sapian_support_contact"], SUPPORT_VALUE)
-        self.assertTrue(info["sapian_footer_company"], "the footer would sign nothing")
+        self.assertEqual(info["sapian_vendor_company"], vendor.SAPIAN_COMPANY)
+        self.assertEqual(info["sapian_vendor_support"], vendor.SAPIAN_SUPPORT)
 
-    def test_one_setting_drives_both_surfaces(self):
-        """The login page and the backend footer must read the SAME parameter.
+    def test_the_tenant_setting_still_drives_the_LOGIN_page_only(self):
+        """One setting, one surface — and it is no longer the backend footer.
 
-        Two settings that mean the same thing is how one of them goes stale, so
-        this asserts they are literally the same key rather than that both
-        happen to be configured.
+        `sapian_theme.support_contact` is the tenant's own number. It still
+        belongs on the login page, which is where a client's staff go when they
+        cannot get in and where the number they need is their internal one. It
+        must NOT reach the backend footer any more, and that half is the
+        assertion that would have caught the regression.
         """
         self.env["ir.config_parameter"].sudo().set_param(SUPPORT_PARAM, SUPPORT_VALUE)
         self.env.flush_all()
         self.assertIn(SUPPORT_VALUE, self.url_open("/web/login").text)
+
         self.authenticate("admin", "admin")
         info = self.url_open(
             "/web/session/get_session_info",
             data="{}",
             headers={"Content-Type": "application/json"},
         ).json()["result"]
-        self.assertEqual(info["sapian_support_contact"], SUPPORT_VALUE)
+        self.assertNotIn(
+            SUPPORT_VALUE,
+            (info.get("sapian_vendor_support") or ""),
+            "the tenant's support number reached the backend footer",
+        )
