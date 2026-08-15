@@ -4,6 +4,60 @@ All notable changes to SapianERP. Epics per `docs/plan-2026/10-claude-code-roadm
 
 ## [Unreleased]
 
+### Public sign-up was open on every 36-app installation (2026-08-15)
+**Security.** `website_sale` is in `sapian.module.catalog` — something we sell.
+Its post-install hook opens public sign-up on the tenant that buys it:
+
+```python
+# website_sale/__init__.py:15
+env['website'].search([]).auth_signup_uninvited = 'b2c'
+```
+
+Measured on the product's own 36-app configuration
+(`build_demo.sh <db> --all-apps`): the parameter said `b2b`, the website row
+said `b2c`, `/web/login` served "Don't have an account?", and
+`CHECK login_signup_scope=b2b` was **green**.
+
+The guard was reading a value that had stopped being the authority. The login
+controller asks `res.users._get_signup_invitation_scope()`; `auth_signup` reads
+the parameter and `website` overrides it to prefer the per-website column, and
+**neither calls `super()`** — so the highest class in the MRO ends the chain.
+Third time a check here was right when written and wrong afterwards because the
+system moved underneath it (`login_primary` green while the page said "Powered
+by Odoo"; `is_redirect_home` True while `action_id` decided the landing).
+
+Closed by `sapian_theme_website`, an `auto_install` bridge — the override has
+to sit above `website` in the MRO, and `sapian_theme` depends on base + web
+only, so its version of this was dead code in every configuration. Opt back in
+with `ir.config_parameter sapian_theme.allow_public_signup`.
+`check_login_page.py` now reports `login_signup_effective`, taken from the
+method the controller calls, alongside the inputs that feed it.
+
+### The login page carried two attributions (2026-08-15)
+With `website` installed, `/web/login` said "Powered by SapianERP" twice: once
+from the login form's own block and once from `website.layout`'s footer calling
+`web.brand_promotion_message`. The login form's own wins — it is the one that
+renders on every database — and the promotion template now stands down on
+`/web/login` alone. `/web/signup` and `/web/reset_password` extend
+`web.login_layout` rather than `web.login`, so it remains their only
+attribution, and the portal is untouched.
+
+### scripts/lint.sh blocked a legitimate push on Windows (2026-08-15)
+It hardcoded `python3` for the pylint-odoo import check. On Git Bash `python3`
+is the Microsoft Store stub by default: on `PATH`, imports nothing. The only
+blocking control in this repo reported "pylint-odoo is NOT INSTALLED" on a
+machine where it was installed under `python`. It now tries `$SAPIAN_PYTHON`,
+`python3`, `python`, `py` until one can actually import what is needed, and
+prints which one it used.
+
+### A database at the real navigation scale (2026-08-15)
+`build_demo.sh <db> --all-apps` installs every module in
+`sapian.module.catalog` and produces **36 root apps** — the product target.
+Without the flag the same script still produces 12, so `demo_selam` is
+unaffected. The install list is read from the catalogue rather than typed into
+the script, and two floors (≥30 catalogue modules, ≥30 root apps) stop it
+reporting success having installed nothing.
+
 ### The social welfare levy on imports (2026-08-15)
 **3% of the aggregate CIF value of imported goods**, Council of Ministers
 Regulation No. 519/2022, effective 6 August 2022 (gazetted 22 August 2022).

@@ -95,9 +95,44 @@ print("CHECK login_support_configured=%d" % bool(support))
 # fresh client tenant (which has not been told the number yet).
 print("CHECK login_support_rendered=%d" % (bool(support) and support in html))
 
+# ---- who actually decides whether that link renders ------------------------
+#
+# THE PARAMETER IS NOT THE AUTHORITY, and asserting it was the defect.
+#
+# `auth_signup/controllers/main.py:132` computes the page's `signup_enabled`
+# from `res.users._get_signup_invitation_scope()`, nothing else. On a database
+# without `website` that method reads the parameter below, so the two agree and
+# the old check looked fine. Install `website` and `website/models/res_users.py`
+# overrides the method to prefer the per-website column — which
+# `website_sale/__init__.py:15` sets to 'b2c' in a post-install hook. The
+# parameter then still says b2b, is never read, and the login page offers free
+# sign-up on a private company ERP.
+#
+# So the effective value is asked of the method the controller calls. The
+# inputs are printed underneath it, because "b2b" with no explanation is not
+# something an operator can act on when it is wrong.
 scope_field = env["res.config.settings"]._fields.get("auth_signup_uninvited")  # noqa: F821
 scope_key = getattr(scope_field, "config_parameter", None) or "auth_signup.invitation_scope"
 print(
-    "CHECK login_signup_scope=%s"
+    "CHECK login_signup_param=%s"
     % (env["ir.config_parameter"].sudo().get_param(scope_key) or "unset")  # noqa: F821
 )
+
+users = env["res.users"]  # noqa: F821
+effective = getattr(users, "_get_signup_invitation_scope", None)
+# Reported as its own value rather than defaulting to 'b2b': "invitation only"
+# must never be producible by a database where auth_signup is not installed and
+# nothing was measured at all.
+print("CHECK login_signup_effective=%s" % (effective() if effective else "NOMETHOD"))
+
+if "website" in env.registry:  # noqa: F821
+    sites = env["website"].sudo().search([])  # noqa: F821
+    print(
+        "CHECK login_signup_websites=%s"
+        % (", ".join("%s=%s" % (w.name, w.auth_signup_uninvited) for w in sites) or "none")
+    )
+else:
+    print("CHECK login_signup_websites=NOWEBSITE")
+
+allowed = env["ir.config_parameter"].sudo().get_param("sapian_theme.allow_public_signup")  # noqa: F821
+print("CHECK login_public_signup_optin=%s" % (allowed or "unset"))

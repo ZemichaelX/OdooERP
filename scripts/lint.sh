@@ -45,18 +45,45 @@ FAILED=()
 # is resolved either as a bare command or as `python -m <tool>`, because a pip
 # --user install often puts the module on sys.path without putting a script on
 # PATH — and "ruff: command not found" must not read as "no lint problems".
+# AN INTERPRETER THAT CAN ACTUALLY IMPORT THE THING, not one called `python3`.
+#
+# This script used to hardcode `python3` for the pylint-odoo import check. On
+# Windows Git Bash `python3` is, by default, the Microsoft Store stub: it is on
+# PATH, `command -v python3` finds it, and every `python3 -c "import ..."`
+# fails. So the check reported "pylint-odoo is NOT INSTALLED" on a machine
+# where it was installed under `python`, and the pre-push hook — the only
+# blocking control in this repo — refused a legitimate push on a false
+# diagnosis. A guard that can only ever say no is not a guard.
+#
+# The fix is to try candidates until one can import what is needed, and to SAY
+# WHICH ONE was used, so the next false diagnosis is a line of output instead
+# of an afternoon. $SAPIAN_PYTHON overrides everything for anyone with a venv
+# the loop cannot guess.
+PYTHON_CANDIDATES=(${SAPIAN_PYTHON:-} python3 python py)
+
+find_python() {  # find_python <python-module> -> prints an interpreter, or fails
+  local module="$1" python
+  for python in "${PYTHON_CANDIDATES[@]}"; do
+    [ -n "${python}" ] || continue
+    command -v "${python}" >/dev/null 2>&1 || continue
+    if "${python}" -c "import ${module}" >/dev/null 2>&1; then
+      printf '%s' "${python}"
+      return 0
+    fi
+  done
+  return 1
+}
+
 resolve() {  # resolve <command-name> <python-module>
   if command -v "$1" >/dev/null 2>&1; then
     printf '%s' "$1"
     return 0
   fi
-  for python in python3 python; do
-    if command -v "${python}" >/dev/null 2>&1 \
-       && "${python}" -c "import $2" >/dev/null 2>&1; then
-      printf '%s -m %s' "${python}" "$2"
-      return 0
-    fi
-  done
+  local python
+  if python="$(find_python "$2")"; then
+    printf '%s -m %s' "${python}" "$2"
+    return 0
+  fi
   return 1
 }
 
@@ -77,18 +104,28 @@ fi
 # pylint-odoo is a PLUGIN, and pylint runs happily without it — reporting
 # 10.00/10 while checking none of the Odoo rules (W8150 among them, which is
 # the warning that started all this). Its absence would therefore be invisible.
-if ! ${PYLINT} --list-extensions 2>/dev/null | grep -q pylint_odoo \
-   && ! ${PYLINT%% *} -c "import pylint_odoo" >/dev/null 2>&1 \
-   && ! python3 -c "import pylint_odoo" >/dev/null 2>&1; then
-  cat >&2 <<'EOF'
+ODOO_PLUGIN_VIA=""
+if ${PYLINT} --list-extensions 2>/dev/null | grep -q pylint_odoo; then
+  ODOO_PLUGIN_VIA="${PYLINT} --list-extensions"
+elif ODOO_PLUGIN_PY="$(find_python pylint_odoo)"; then
+  ODOO_PLUGIN_VIA="${ODOO_PLUGIN_PY}"
+else
+  cat >&2 <<EOF
 !! lint: pylint-odoo is NOT INSTALLED.
 !!
 !! pylint would still run and still print a score, having checked none of the
 !! Odoo-specific rules. Install it:
 !!     pip install pylint-odoo
+!!
+!! Interpreters tried: ${PYTHON_CANDIDATES[*]}
+!! (On Windows Git Bash 'python3' is often the Microsoft Store stub, which is
+!!  on PATH and imports nothing. Set SAPIAN_PYTHON to the interpreter that has
+!!  your tools if none of the above is it.)
 EOF
   exit 1
 fi
+printf '>> lint: ruff=%s black=%s pylint=%s; pylint-odoo found via %s\n' \
+  "${RUFF}" "${BLACK}" "${PYLINT}" "${ODOO_PLUGIN_VIA}"
 
 # --- Assert there is something to lint ---------------------------------------
 # Measured, not assumed: on an empty tree black exits 0 ("No Python files ...
