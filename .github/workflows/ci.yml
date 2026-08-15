@@ -650,6 +650,9 @@ jobs:
           for marker in \
             "SAPIAN-RAIL viewport=" \
             "SAPIAN-RAIL-DISCRIMINATION restored -> clean" \
+            "SAPIAN-RAIL-DISCRIMINATION unreachable-tail -> " \
+            "SAPIAN-RAIL-DISCRIMINATION tile-outside-box -> " \
+            "overflows=" \
             "SAPIAN-RAIL-OVERFLOW forcedRailHeight=" \
             "SAPIAN-RAIL-SCROLLKEEP tiles=" \
             "SAPIAN-RAIL-SMALL viewport=" \
