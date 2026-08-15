@@ -274,6 +274,89 @@ RAIL_OVERFLOWS_JS = RAIL_REPORT_JS + """
 })();
 """
 
+RAIL_KEEPS_SCROLL_JS = """
+(async () => {
+    const frames = async (n) => {
+        for (let i = 0; i < n; i++) {
+            await new Promise((r) => requestAnimationFrame(() => r()));
+        }
+    };
+    const rail = document.querySelector('.o_sapian_rail');
+    const tiles = [...rail.querySelectorAll('.o_sapian_rail_app')];
+    if (tiles.length < 2) {
+        throw new Error('need at least two apps; found ' + tiles.length);
+    }
+
+    // WAIT FOR THE CLIENT TO SETTLE FIRST.
+    // The ready condition is satisfied as soon as one tile exists, which is
+    // before the default action has resolved. Until it does, the current app
+    // changes — and scrolling the newly current app into view is the rail
+    // doing its job, not the defect under test. Measuring through that window
+    // is what made the first version of this test fail on correct code.
+    const env = odoo.__WOWL_DEBUG__.root.env;
+    const deadline = Date.now() + 20000;
+    while (Date.now() < deadline && !env.services.action.currentController) {
+        await frames(5);
+    }
+    await frames(60);
+
+    // Force the overflow rather than wait for a crowded database, exactly as
+    // the overflow test does, so this holds on a two-app CI install and on a
+    // 36-app tenant alike.
+    const tileHeight = tiles[0].getBoundingClientRect().height;
+    rail.style.height = Math.floor(tileHeight * (tiles.length - 1)) + 'px';
+    await frames(2);
+    const restore = () => { rail.style.height = ''; rail.scrollTop = 0; };
+    if (rail.scrollHeight <= rail.clientHeight) {
+        restore();
+        throw new Error('could not force the rail to overflow, so this test '
+            + 'proves nothing about keeping a scroll position');
+    }
+
+    const maxScroll = rail.scrollHeight - rail.clientHeight;
+    rail.scrollTop = rail.scrollHeight;
+    await frames(10);
+    const before = rail.scrollTop;
+    if (before !== maxScroll) {
+        restore();
+        throw new Error('could not park the rail at the bottom: asked for '
+            + maxScroll + ', settled at ' + before + '. Something is still '
+            + 'moving the rail, so the comparison below would be meaningless.');
+    }
+
+    // A re-render that has NOTHING to do with which app you are in: an action
+    // finishing, the app list reloading. This happens continuously in use, and
+    // the current app is unchanged across it.
+    env.bus.trigger('ACTION_MANAGER:UI-UPDATED', 'current');
+    env.bus.trigger('MENUS:APP-CHANGED');
+    await frames(40);
+    const after = rail.scrollTop;
+
+    const last = tiles[tiles.length - 1].getBoundingClientRect();
+    const box = rail.getBoundingClientRect();
+    const lastStillReachable = last.top >= box.top - 1 && last.bottom <= box.bottom + 1;
+
+    console.log('SAPIAN-RAIL-SCROLLKEEP tiles=' + tiles.length
+        + ' maxScroll=' + maxScroll
+        + ' scrollBefore=' + before + ' scrollAfter=' + after
+        + ' lastStillReachable=' + lastStillReachable);
+
+    restore();
+    await frames(2);
+
+    if (after !== before) {
+        throw new Error('a re-render moved the rail from scrollTop ' + before
+            + ' to ' + after + ' - the scroll position is thrown away by '
+            + 'renders that have nothing to do with the rail. On a 36-app '
+            + 'tenant that sends the user back to the top of the list.');
+    }
+    if (!lastStillReachable) {
+        throw new Error('after a re-render the last app is no longer reachable');
+    }
+    console.log('test successful');
+})();
+"""
+
 RAIL_HIDDEN_JS = """
 (async () => {
     const rail = document.querySelector('.o_sapian_rail');
@@ -363,6 +446,40 @@ class TestSapianAppRailOverflow(RailBrowserCase):
         self.browser_js(
             "/odoo",
             RAIL_OVERFLOWS_JS,
+            "!!document.querySelector('.o_sapian_rail .o_sapian_rail_app')",
+            login="admin",
+        )
+
+
+@tagged("post_install", "-at_install")
+class TestSapianAppRailKeepsScroll(RailBrowserCase):
+    """A re-render must not throw away where the user scrolled to.
+
+    `scrollCurrentIntoView` used to run on EVERY `onPatched`, and because the
+    active tile is usually near the top of the rail that meant any unrelated
+    re-render silently scrolled the rail back to the top. Measured on a 36-app
+    database before the fix: scrolled to the bottom (scrollTop 828 of 828), one
+    re-render, scrollTop 0 - the last twelve apps gone from view without anyone
+    touching the rail. At 40 apps, 1020 -> 0.
+
+    It also made TestSapianAppRailOverflow FLAKY rather than merely strict:
+    that test sets scrollTop and measures a frame later, so a re-render landing
+    in that window made the last tile unreachable and the rail look truncated.
+    Three green CI runs and one red on identical code, with identical geometry
+    (forcedRailHeight=624 contentHeight=672 tiles=14) - the only differing
+    token was lastReachableByScrolling. That test was telling the truth about a
+    real defect; it just named it "truncation".
+
+    So the defect gets its own assertion, in its own words, instead of being
+    left to surface as somebody else's intermittent red.
+    """
+
+    browser_size = "1366x900"
+
+    def test_a_rerender_does_not_lose_the_scroll_position(self):
+        self.browser_js(
+            "/odoo",
+            RAIL_KEEPS_SCROLL_JS,
             "!!document.querySelector('.o_sapian_rail .o_sapian_rail_app')",
             login="admin",
         )

@@ -590,7 +590,7 @@ jobs:
             -i sapian_theme,contacts,crm,project,hr,stock,sale_management,purchase \
             --without-demo=all \
             --test-enable \
-            --test-tags '/sapian_theme:TestSapianAppRailRendered,/sapian_theme:TestSapianAppRailOverflow,/sapian_theme:TestSapianAppRailSmallScreen,/sapian_theme:TestAppRailDataOverHttp,/sapian_theme:TestSapianBackendFooterRendered,/sapian_theme:TestSapianBackendFooterSmallScreen,/sapian_theme:TestBackendFooterDataOverHttp' \
+            --test-tags '/sapian_theme:TestSapianAppRailRendered,/sapian_theme:TestSapianAppRailOverflow,/sapian_theme:TestSapianAppRailKeepsScroll,/sapian_theme:TestSapianAppRailSmallScreen,/sapian_theme:TestAppRailDataOverHttp,/sapian_theme:TestSapianBackendFooterRendered,/sapian_theme:TestSapianBackendFooterSmallScreen,/sapian_theme:TestBackendFooterDataOverHttp' \
             --workers=0 --max-cron-threads=0 \
             --stop-after-init --log-level=test 2>&1 | tee /tmp/rail.log
 
@@ -614,6 +614,7 @@ jobs:
             "SAPIAN-RAIL viewport=" \
             "SAPIAN-RAIL-DISCRIMINATION restored -> clean" \
             "SAPIAN-RAIL-OVERFLOW forcedRailHeight=" \
+            "SAPIAN-RAIL-SCROLLKEEP tiles=" \
             "SAPIAN-RAIL-SMALL viewport=" \
             "SAPIAN-FOOTER text=" \
             "SAPIAN-FOOTER-DISCRIMINATION removed -> " \
