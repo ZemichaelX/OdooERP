@@ -61,6 +61,14 @@ echo ">> Provisioning client DB: ${DB_NAME}"
 echo ">> Country: ${COUNTRY_CODE} | Modules: ${MODULES}"
 
 # --- Phase 1: create the DB with base only (no chart yet) ----------------------
+# FAIL CLOSED, BEFORE ANYTHING IS BUILT — same reason as build_demo.sh. A
+# tenant handed over with the launcher "installed" but undelivered is worse
+# than one without it: the config line says it is there.
+if ! assert_addons_path "${REPO_ROOT}"; then
+  echo "!! Aborting before phase 1 — the vendored launcher could not be reached." >&2
+  exit 1
+fi
+
 echo ">> [1/6] Creating database (base only)..."
 $COMPOSE run --rm odoo \
   odoo -d "${DB_NAME}" -i base --without-demo=all --stop-after-init

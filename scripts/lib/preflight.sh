@@ -293,30 +293,57 @@ verify_launcher() {
     fi
   }
 
-  # "Did anything run at all" first: every count below reads as healthy on an
-  # empty output.
+  # 1. Does the module exist to the asset pipeline at all? `state = installed`
+  #    with `_init_modules` False is the exact defect this file was rewritten
+  #    for: the row is in the database and the module is invisible to
+  #    ir.asset, silently.
   _launcher_check '^CHECK launcher_module=installed$' \
-    "web_responsive is NOT installed on '${db}', so there is no app launcher."$'\n'"   Users land on whatever the default app is — on our databases that is a"$'\n'"   configuration screen."
+    "web_responsive is NOT installed on '${db}', so there is no app launcher."
+  _launcher_check '^CHECK launcher_in_init_modules=True$' \
+    "web_responsive is installed in the DATABASE but was not loaded by this"$'\n'"   process — it is not on its addons path, so ir.asset skips its manifest"$'\n'"   entirely and NONE of its JavaScript or CSS is delivered. No error is"$'\n'"   raised for this. Check addons_path in config/odoo.runtime.conf and the"$'\n'"   ../vendor/oca_web:/mnt/vendor mount in docker/docker-compose.yml, then"$'\n'"   RESTART the serving container — a running server keeps its own path."
 
-  local users
-  users="$(printf '%s\n' "${out}" | sed -n 's/^CHECK launcher_users=//p' | tr -d '\r')"
-  if [ -z "${users}" ] || [ "${users}" -lt 1 ]; then
-    log_error "!! Found ${users:-no} internal users on '${db}'. Nothing below was checked"$'\n'"   against anybody, so a clean result here would mean nothing."
+  # 2. Did we actually fetch the backend page? An unauthenticated fetch serves
+  #    web.assets_frontend and would report a confident zero for everything
+  #    below it.
+  _launcher_check '^CHECK launcher_page_http=200$' \
+    "The backend page did not return 200, so nothing below was measured on a"$'\n'"   real page."
+  local bundles
+  bundles="$(printf '%s\n' "${out}" | sed -n 's/^CHECK launcher_backend_js_bundles=//p' | tr -d '\r')"
+  if [ -z "${bundles}" ] || [ "${bundles}" -lt 1 ]; then
+    log_error "!! No backend JS bundle was served — the fetch did not reach the web"$'\n'"   client, so a clean result here would mean nothing."
     failed=1
   fi
 
-  # The stored values, not the setting that was meant to write them. NOFIELD is
-  # reported as its own value precisely so that "0 users are missing it" cannot
-  # be produced by a database where the field does not exist.
+  # 3. THE ASSERTION THAT MATTERS: the launcher's own module, by name, in the
+  #    bytes the browser is served. Byte size does not catch this — in the
+  #    reproduced failure the bundle was still 6.4 MB with zero web_responsive
+  #    modules in it.
+  _launcher_check '^CHECK launcher_js_named=True$' \
+    "The launcher component is NOT in the JavaScript this database serves."$'\n'"   The apps grid will be Odoo's stock dropdown and login will land on a"$'\n'"   configuration screen, with a clean browser console."
+  local modules
+  modules="$(printf '%s\n' "${out}" | sed -n 's/^CHECK launcher_js_modules=//p' | tr -d '\r')"
+  modules="${modules:-0}"
+  if [ "${modules}" -lt 10 ]; then
+    log_error "!! Only ${modules} web_responsive JS modules reached the bundle (expected"$'\n'"   at least 10). The port is partly delivered, which is worse than absent."
+    failed=1
+  fi
+
+  # 4. CSS, asserted SEPARATELY from ours, so neither can stand in for the
+  #    other. In the reproduced failure sapian_theme's CSS was present and
+  #    correct while web_responsive's was entirely absent — the page looked
+  #    branded and had no launcher.
+  _launcher_check '^CHECK launcher_css_web_responsive=True$' \
+    "web_responsive's stylesheet is not in the CSS this database serves."
+  _launcher_check '^CHECK launcher_css_sapian_theme=True$' \
+    "sapian_theme's stylesheet is not in the CSS this database serves — the"$'\n'"   app rail cannot render."
+
+  # 5. The users this tenant is handed over with.
   _launcher_check '^CHECK launcher_users_not_redirected=0$' \
     "Internal users on '${db}' will NOT land on the app launcher — see the"$'\n'"   CHECK launcher_not_redirected_logins line above. Apply the defaults with:"$'\n'"   env['res.users']._sapian_apply_launcher_defaults(dry_run=False)"
   _launcher_check '^CHECK launcher_users_not_branded=0$' \
     "Internal users on '${db}' get the launcher in web_responsive's lilac"$'\n'"   rather than the house brand — see CHECK launcher_not_branded_logins."
 
-  _launcher_check '^CHECK launcher_css=True$' \
-    "The launcher's CSS is not in the served backend bundle, so the grid cannot"$'\n'"   render whatever the user settings say."
-
-  # The colour, read out of the compiled bundle rather than out of the SCSS.
+  # 6. The colour, read out of the delivered stylesheet.
   local expected community milk
   expected="$(printf '%s\n' "${out}" | sed -n 's/^CHECK brand_expected=//p' | tr -d '\r')"
   community="$(printf '%s\n' "${out}" | sed -n 's/^CHECK launcher_community_colour=//p' | tr -d '\r')"
@@ -328,17 +355,81 @@ verify_launcher() {
     log_error "!! The launcher background in the served bundle is '${community}', not the"$'\n'"   brand '${expected}'. The demo or tenant opens on somebody else's colour."
     failed=1
   fi
-  # And the check discriminates: if the two themes ever compiled to the same
-  # colour, matching the brand above would prove nothing about which theme the
-  # users are actually on. Only meaningful when both rules actually compiled —
-  # when the module is absent both read ABSENT, and saying "they are the same
-  # colour" about two rules that do not exist is a true sentence that points at
-  # the wrong problem.
   if [ "${community}" != "ABSENT" ] && [ -n "${milk}" ] && [ "${milk}" = "${community}" ]; then
     log_error "!! The 'milk' and 'community' launcher themes compile to the SAME colour"$'\n'"   (${milk}), so the brand check above cannot tell them apart."
     failed=1
   fi
 
   unset -f _launcher_check
+  return "${failed}"
+}
+
+# ---------------------------------------------------------------------------
+# assert_addons_path <repo-root>
+#
+# Fail BEFORE anything is built if the vendor tree cannot reach the server.
+#
+# WHY THIS RUNS FIRST.
+# A module that is `state = installed` in the database but absent from the
+# serving process's addons path is skipped by ir.asset in complete silence:
+# `_fill_asset_paths` iterates `registry._init_modules`, so the manifest is
+# never read, no warning is logged and no exception is raised. The database
+# says installed, the browser gets nothing, and the console is clean. Measured
+# on one database with two processes: 16 JS files with the vendor dir on the
+# path, 0 without it, `state = installed` both times.
+#
+# Discovering that at phase 5 — or, worse, in a client's browser — costs a whole
+# build. Discovering it as "invalid module names, ignored" twenty seconds in is
+# barely better, because that line is a warning nobody is watching for. These
+# are three file reads and they run before phase 1.
+#
+# Returns 1 on any problem; callers must abort.
+assert_addons_path() {
+  local repo_root="$1"
+  local runtime="${repo_root}/config/odoo.runtime.conf"
+  local compose_file="${repo_root}/docker/docker-compose.yml"
+  local module_dir="${repo_root}/vendor/oca_web/web_responsive"
+  local mount_point="/mnt/vendor"
+  local failed=0
+
+  # 1. The module is on disk where the mount expects it. `check_vendor.sh`
+  #    proves it is the RIGHT code; this only proves it is there at all, which
+  #    is the part the mount depends on.
+  if [ ! -f "${module_dir}/__manifest__.py" ]; then
+    log_error "!! ${module_dir}/__manifest__.py is missing. The vendored launcher is not"$'\n'"   in the working tree, so nothing can mount it. See vendor/README.md."
+    failed=1
+  fi
+
+  # 2. compose actually mounts it. Matched on the mapping, not on the word
+  #    'vendor' appearing somewhere in the file.
+  if [ ! -f "${compose_file}" ]; then
+    log_error "!! ${compose_file} is missing."
+    failed=1
+  elif ! grep -qE '^\s*-\s*\.\./vendor/oca_web:'"${mount_point}"'(:ro)?\s*$' "${compose_file}"; then
+    log_error "!! docker/docker-compose.yml does not mount ../vendor/oca_web at ${mount_point}."$'\n'"   Add it to the odoo service's volumes, beside ../addons."
+    failed=1
+  fi
+
+  # 3. THE ONE THAT ACTUALLY BIT. config/odoo.runtime.conf is gitignored and is
+  #    only ever created from the template when MISSING — so an instance set up
+  #    before the vendor tree existed keeps an addons_path without it, forever,
+  #    while config/odoo.conf.example (tracked, and the file everyone reads)
+  #    looks correct.
+  if [ ! -f "${runtime}" ]; then
+    log_error "!! ${runtime} is missing — run ensure_runtime_conf first."
+    failed=1
+  else
+    local configured
+    configured="$(sed -n 's/^[[:space:]]*addons_path[[:space:]]*=[[:space:]]*//p' "${runtime}" | tail -1 | tr -d '\r')"
+    if [ -z "${configured}" ]; then
+      log_error "!! config/odoo.runtime.conf declares no addons_path at all."
+      failed=1
+    elif ! printf '%s' "${configured}" | tr ',' '\n' | sed 's/[[:space:]]//g' | grep -qx "${mount_point}"; then
+      log_error "!! config/odoo.runtime.conf's addons_path does NOT contain ${mount_point}:"$'\n'"     ${configured}"$'\n'"   The launcher would install and then deliver no JavaScript at all, with"$'\n'"   no error anywhere. This file is gitignored, so fixing the tracked"$'\n'"   template is not enough — fix the runtime copy:"$'\n'"     addons_path = /mnt/extra-addons,${mount_point},/usr/lib/python3/dist-packages/odoo/addons"$'\n'"   and RESTART the stack, because a running server keeps its own path."
+      failed=1
+    fi
+  fi
+
+  [ "${failed}" -eq 0 ] && log_line ">> addons_path carries ${mount_point}; the vendored launcher can be loaded."
   return "${failed}"
 }
