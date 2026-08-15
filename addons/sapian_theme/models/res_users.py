@@ -24,6 +24,50 @@ their own record and keep it; what changes is only what a user gets when
 nobody has expressed a preference. A default is the product's opinion, and the
 product's opinion is the launcher.
 
+THE THIRD FIELD, WHICH IS NOT web_responsive's AND OUTRANKS BOTH
+----------------------------------------------------------------
+`res.users.action_id` — "Home Action" on the Preferences tab — decides the
+landing page BEFORE either of the two above is consulted, and by a code path
+that never reaches web_responsive at all:
+
+    session_info['home_action_id']            (base/models/ir_http.py)
+      -> user.homeActionId                    (web/static/src/core/user.js)
+      -> action_service._getActionParams()    falls back to it when the URL
+                                              carries no action
+      -> loadState() returns TRUE
+      -> WebClient.loadRouterState() therefore SKIPS _loadDefaultApp()
+
+`_loadDefaultApp` is the only method web_responsive patches, and that patch is
+the only code in the stack that reads `is_redirect_home`. So a user with a home
+action never reaches the branch that would honour the launcher.
+
+What that looks like on screen is the part worth writing down, because it reads
+as a race and is not one. `AppsMenu.setup()` opens the launcher on its own, off
+`user.context.is_redirect_to_home`, independently of `_loadDefaultApp` — so the
+launcher paints, correctly, with every tile. Then the home action's controller
+mounts, fires `ACTION_MANAGER:UI-UPDATED`, and `AppsMenu` closes itself on that
+event. Measured on demo_selam at 1366x900, admin with `is_redirect_home = True`
+and `action_id` = the Module Catalog:
+
+    1205 ms   /odoo             launcher visible, 12 tiles
+    1442 ms   /odoo             list view mounted underneath
+    1562 ms   /odoo/action-101  launcher gone
+
+Roughly one second of a correct launcher, then a configuration screen, with
+nobody touching the mouse. With `action_id` empty the same measurement holds at
+the launcher indefinitely — 8 boots at 6x CPU throttling and 300 ms latency,
+12 tiles every time, no navigation.
+
+The two settings are therefore not independent, and the pair
+`is_redirect_home = True` with a home action set is not a preference — it is a
+field that says one thing while the page does another. web_responsive says so
+itself, from both ends: `_compute_redirect_home` forces `is_redirect_home` to
+False whenever `action_id` is set, and its user view renders the checkbox with
+`invisible="action_id"`. Upstream's model is that you get one or the other.
+`_sapian_apply_launcher_defaults` below is what keeps that true on our side,
+because writing `is_redirect_home = True` on top of a home action is precisely
+how the lie gets manufactured.
+
 WHY HERE AND NOT IN THE VENDORED MODULE
 ---------------------------------------
 vendor/oca_web/web_responsive is upstream code pinned by tree hash
@@ -80,6 +124,13 @@ SAPIAN_LAUNCHER_DEFAULTS = {
     "apps_menu_theme": "community",
 }
 
+# `action_id` is base's, not web_responsive's, so it is always present and is
+# handled separately from the dict above (which is skipped wholesale when the
+# launcher is not installed). Empty is not a SapianERP opinion about home
+# actions — it is the only value at which the two fields above can reach the
+# page at all. See the module docstring.
+SAPIAN_NO_HOME_ACTION = {"action_id": False}
+
 
 class ResUsers(models.Model):
     _inherit = "res.users"
@@ -130,6 +181,26 @@ class ResUsers(models.Model):
         than a rewrite. Same shape as `res.company._sapian_apply_brand`, and
         for the same reason.
 
+        IT CLEARS THE HOME ACTION, AND HAS TO
+        -------------------------------------
+        `action_id` outranks both of the fields this command writes, by a code
+        path that never reaches web_responsive (module docstring, with the
+        measurement). Writing `is_redirect_home = True` and leaving a home
+        action behind produces a user whose stored settings say "launcher" and
+        whose screen shows a list view one second after login — the exact defect
+        this command exists to prevent, manufactured by the command itself.
+
+        So a home action is BOTH a reason to move a user and something the move
+        clears. The command's contract is "these users land on the launcher",
+        not "these two fields hold these two values"; a field value that the
+        page does not deliver is the failure this repo keeps finding.
+
+        Archived users matter here more than anywhere else: `copy()` copies
+        `action_id`, and `base.template_user` is the inactive record the invite
+        flow copies. A home action left on the template is inherited by every
+        user created afterwards, which is a defect that spreads rather than one
+        that sits still.
+
         WHAT IT CANNOT TELL APART, SAID PLAINLY
         --------------------------------------
         `is_redirect_home = False` is BOTH web_responsive's shipped default and
@@ -139,19 +210,20 @@ class ResUsers(models.Model):
         upstream values, and on a tenant where somebody has deliberately opted
         out it will opt them back in.
 
+        A home action is the opposite case: it is unambiguous evidence of a
+        choice, the way a company colour is in `res.company._sapian_apply_brand`
+        — nothing sets it but a person. It is cleared anyway, because it cannot
+        coexist with the launcher, and the dry run therefore names the action it
+        would remove for each user rather than only the login. That list is the
+        thing to read before running this on a tenant that has been in use.
+
         That is why it is a provisioning command and not a migration hook. Run
         it when a tenant is built, before anyone has a preference to lose. On a
-        tenant that has been in use, run the dry run first — it prints the
-        logins it would move — and decide with that list in front of you.
-        `res.company._sapian_apply_brand` can be more careful because a company
-        colour that differs from ours is unambiguous evidence of a choice; a
-        boolean at its default is not.
+        tenant that has been in use, run the dry run first and decide with its
+        report in front of you.
 
         Internal users only (`share = False`): portal and public users never
-        see a backend launcher. Archived users are included deliberately —
-        `base.template_user` is inactive and is the template new users are
-        copied from, so leaving it behind would quietly reintroduce the old
-        default on every user created through the invite flow.
+        see a backend launcher.
 
         Returns the affected users either way, and logs what it actually did,
         so a run that changed nothing is distinguishable from a run that
@@ -166,43 +238,55 @@ class ResUsers(models.Model):
             )
             return self.browse()
 
+        internal = self.sudo().with_context(active_test=False)
+
         # web_responsive's own shipped defaults. A user on any other value has
-        # expressed a preference and is left alone.
-        upstream = [("share", "=", False), ("is_redirect_home", "=", False)]
-        stale = self.sudo().with_context(active_test=False).search(upstream)
-        stale |= (
-            self.sudo()
-            .with_context(active_test=False)
-            .search([("share", "=", False), ("apps_menu_theme", "=", "milk")])
-        )
+        # expressed a preference and is left alone — except for a home action,
+        # which is a preference the launcher cannot coexist with (docstring).
+        stale = internal.search([("share", "=", False), ("is_redirect_home", "=", False)])
+        stale |= internal.search([("share", "=", False), ("apps_menu_theme", "=", "milk")])
+        homed = internal.search([("share", "=", False), ("action_id", "!=", False)])
+        stale |= homed
         names = ", ".join(sorted(stale.mapped("login")))
+        # Named, not counted: this is the one thing here that removes something
+        # a person chose, so the report has to say which user loses which action.
+        homes = (
+            "; ".join(sorted("%s -> %s" % (u.login, u.action_id.name) for u in homed)) or "none"
+        )
 
         if not stale:
             _logger.info(
                 "sapian_theme: every internal user is already on the SapianERP "
-                "launcher defaults; nothing to apply. (Users who chose "
-                "something else are not counted and are never touched.)"
+                "launcher defaults and none carries a home action; nothing to "
+                "apply. (Users who chose something else are not counted and are "
+                "never touched.)"
             )
             return stale
         if dry_run:
             _logger.info(
                 "sapian_theme: DRY RUN — %d user%s would move to the app "
-                "launcher (%s): %s. Nothing was written. Re-run with "
-                "dry_run=False to apply.",
+                "launcher (%s): %s. Home actions that would be CLEARED: %s. "
+                "Nothing was written. Re-run with dry_run=False to apply.",
                 len(stale),
                 "" if len(stale) == 1 else "s",
                 ", ".join("%s=%r" % item for item in SAPIAN_LAUNCHER_DEFAULTS.items()),
                 names,
+                homes,
             )
             return stale
 
-        stale.write(dict(SAPIAN_LAUNCHER_DEFAULTS))
+        # One write, both halves. `is_redirect_home` is a stored editable
+        # compute that depends on `action_id`, so the order the two are applied
+        # in decides the outcome — asserted by TestLauncherProvisioningCommand
+        # rather than reasoned about here.
+        stale.write(dict(SAPIAN_LAUNCHER_DEFAULTS, **SAPIAN_NO_HOME_ACTION))
         _logger.info(
             "sapian_theme: APPLIED the app launcher defaults to %d user%s: %s. "
-            "They now land on the launcher in the house brand instead of on a "
-            "configuration screen.",
+            "Home actions cleared: %s. They now land on the launcher in the "
+            "house brand instead of on a configuration screen.",
             len(stale),
             "" if len(stale) == 1 else "s",
             names,
+            homes,
         )
         return stale

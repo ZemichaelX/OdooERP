@@ -734,7 +734,9 @@ jobs:
             'SAPIAN-LAUNCHER user=launcher.milk.user launcherOpen=true' \
             'brandInBackground=false milkInBackground=true' \
             'SAPIAN-RAIL-OCCLUSION closed=true open=false' \
-            'reopened=true'; do
+            'reopened=true' \
+            'SAPIAN-LAUNCHER-STAYS user=launcher.stays.user earlyUrl=/odoo earlyLauncher=true url=/odoo launcher=true' \
+            'actionLoaded=false action=""'; do
             if ! grep -qF "${marker}" /tmp/launcher.log; then
               echo "::error::The browser never reported '${marker}'. Either the defaults did not reach the page, or the tests did not run in a browser at all."
               exit 1
