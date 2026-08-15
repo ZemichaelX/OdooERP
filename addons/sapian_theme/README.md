@@ -108,6 +108,35 @@ Two things soften the cost:
   dropdown and its small-screen drawer. Two lists of the same things in two
   different orders is worse than one long list.
 
+#### On app switch — not on every render
+
+The first version of that scroll ran from `onPatched` unconditionally, and
+`onPatched` fires for things that have nothing to do with which app you are in:
+an action finishing, `state.fullscreen` flipping, the app list reloading. Every
+one of those threw away wherever the USER had scrolled to. Measured on this
+tree, with the rail scrolled to the bottom and one re-render forced:
+
+| Root apps | `scrollTop` before | after, unguarded | after, guarded |
+|---|---|---|---|
+| 12 | 0 (no overflow) | 0 | 0 |
+| 36 | 828 of 828 | **0** | 828 |
+| 40 | 1020 of 1020 | **0** | 1020 |
+
+So at 36 apps — the product target — the bottom twelve tiles left the viewport
+on a re-render nobody connected to the rail. `scrollCurrentIntoView` now
+compares the current app's ID against the last one it scrolled for and returns
+early when it has not moved; an actual app switch still scrolls (switching to
+Employees on the 40-app database leaves `scrollTop` at 156, not 0).
+
+This is also what made `TestSapianAppRailOverflow` intermittent rather than
+merely strict. That test sets `scrollTop` and measures a frame later, so a
+re-render landing inside that window reset the position and the last tile read
+as unreachable — same geometry, opposite result, on identical code. The rail
+was never truncating; the measurement was being moved out from under itself.
+`TestSapianAppRailKeepsScroll` covers the behaviour directly, and was proved red
+against the unguarded code (`scrollAfter=0`) before being taken as green
+(`scrollAfter=48`).
+
 ### Ordering: menu sequence, and why NOT the catalogue tier
 
 `sapian.module.catalog` carries a `tier` (core / common / optional) and it is

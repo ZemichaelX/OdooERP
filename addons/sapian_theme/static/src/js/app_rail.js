@@ -72,6 +72,22 @@ export class SapianAppRail extends Component {
         // README.md, "36 apps and 900 pixels"). Whatever you are IN should be
         // visible without hunting for it, so bring it into view on arrival and
         // after every app switch.
+        //
+        // ON APP SWITCH — not on every render. `onPatched` fires for reasons
+        // that have nothing to do with which app you are in: an action
+        // finishing, the fullscreen state changing, the app list reloading.
+        // Scrolling on all of them threw away wherever the USER had scrolled
+        // to, every time. Measured on a 36-app database: scrolled to the
+        // bottom (scrollTop 828 of 828), one re-render, scrollTop 0 — the
+        // last twelve apps gone from view without anyone touching the rail.
+        // At 40 apps the same, 1020 -> 0.
+        //
+        // This is also what made the overflow test flaky rather than merely
+        // strict: it sets scrollTop and measures a frame later, so a re-render
+        // landing in that window made the last tile unreachable and the rail
+        // look truncated. Same geometry, opposite result, three green runs and
+        // one red on identical code.
+        this.lastScrolledApp = undefined;
         onMounted(() => this.scrollCurrentIntoView());
         onPatched(() => this.scrollCurrentIntoView());
     }
@@ -110,11 +126,32 @@ export class SapianAppRail extends Component {
         this.menuService.selectMenu(app);
     }
 
+    /**
+     * Bring the current app into view — but only when the current app has
+     * actually CHANGED since the last time we did it.
+     *
+     * The guard is the whole point. Without it every re-render re-ran the
+     * scroll, and because the active tile is usually near the top that meant
+     * silently resetting the user's scroll position to the top of the rail.
+     * With 36 apps the user is two thirds of the way down the list and gets
+     * sent back to the start by an action they did not connect to the rail at
+     * all.
+     *
+     * Comparing the app ID rather than a boolean: the app object is rebuilt by
+     * the menu service on reload, so identity is not stable, and "did the
+     * highlight move" is exactly the question.
+     */
     scrollCurrentIntoView() {
         const rail = this.railRef.el;
         if (!rail) {
             return;
         }
+        const current = this.currentApp;
+        const currentId = current ? current.id : null;
+        if (currentId === this.lastScrolledApp) {
+            return;
+        }
+        this.lastScrolledApp = currentId;
         const active = rail.querySelector(".o_sapian_rail_app_active");
         if (active) {
             active.scrollIntoView({ block: "nearest" });
