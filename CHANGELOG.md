@@ -4,6 +4,40 @@ All notable changes to SapianERP. Epics per `docs/plan-2026/10-claude-code-roadm
 
 ## [Unreleased]
 
+### The labelled sidebar (2026-08-15)
+The app rail becomes a sidebar: icon **and label**, 200px expanded / 56px
+collapsed, 44px rows, 13px/600 labels, and a real collapse toggle. Built from
+`docs/SPEC-navigation-chrome.md` section 1 and measured on the 36-app database
+`build_demo.sh --all-apps` produces.
+
+The **active** state is the point of the section. The competitor's active and
+inactive links have byte-identical computed styles — there is no way to tell
+which app you are in from their sidebar. Ours: `rgb(20, 69, 79)` fill with a
+white label against a transparent row with a brand label, compared from
+`getComputedStyle` rather than from the class list.
+
+Reachable at 36 **and** 40 apps (36/36, 40/40, walked across the whole scroll
+range). Clear of the fixed footer — `railBottom 872`, `footerTop 872` — with the
+clearance in `sapian_footer.scss`, because `$o-sapian-footer-height` is declared
+there and that file loads after the rail's. Keyboard reachable with a 2px
+`:focus-visible` ring; the toggle is a real `<button>`.
+
+### TestSapianAppRailOverflow was passing by luck (2026-08-15)
+It forced the rail to overflow, scrolled to the bottom and measured — without
+waiting for the client to settle. Until the default action resolves the current
+app keeps changing, and pulling the newly current app into view is the rail
+doing its job; it just lands inside the measurement window. Ten consecutive
+runs of the rail job, identical geometry every time
+(`forcedRailHeight=572 contentHeight=666 tiles=14`): **3 red of 4 runs before
+the fix, 0 red of 10 after**. Nothing about the assertion changed — `lastReachableByScrolling` must
+still be `true`. What changed is *when* it measures: it now waits on
+`action.currentController`, the same signal `TestSapianAppRailKeepsScroll`
+already waited on, and not on a sleep.
+
+Second time a test in this suite has been found passing by luck. The remaining
+`browser_js` blocks without a settle wait are listed in
+`addons/sapian_theme/README.md`.
+
 ### Public sign-up was open on every 36-app installation (2026-08-15)
 **Security.** `website_sale` is in `sapian.module.catalog` — something we sell.
 Its post-install hook opens public sign-up on the tenant that buys it:

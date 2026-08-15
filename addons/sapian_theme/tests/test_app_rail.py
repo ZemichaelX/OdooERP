@@ -202,12 +202,48 @@ RAIL_DISCRIMINATES_JS = RAIL_REPORT_JS + """
 
 RAIL_OVERFLOWS_JS = RAIL_REPORT_JS + """
 (async () => {
+    const frames = async (n) => {
+        for (let i = 0; i < n; i++) {
+            await new Promise((r) => requestAnimationFrame(() => r()));
+        }
+    };
     const rail = document.querySelector('.o_sapian_rail');
     const tiles = [...rail.querySelectorAll('.o_sapian_rail_app')];
     if (tiles.length < 2) {
         throw new Error('need at least two apps to test scrolling; found '
             + tiles.length);
     }
+
+    // WAIT FOR THE CLIENT TO SETTLE FIRST — the same wait, on the same signal,
+    // that TestSapianAppRailKeepsScroll below already does.
+    //
+    // THIS TEST WAS PASSING BY LUCK. The ready condition is satisfied as soon
+    // as one tile exists, which is before the default action has resolved.
+    // Until it does the current app keeps changing, and pulling the newly
+    // current app into view is the rail doing its job — but it lands inside
+    // the window where this test has already scrolled to the bottom and is
+    // about to measure. Nothing about the assertion was wrong; it was
+    // measuring a system mid-boot and calling the result a property of the
+    // system.
+    //
+    // Measured on identical code. BEFORE this wait: 4 runs, 3 red. AFTER it:
+    // 10 consecutive runs, 0 red. The two sample sizes differ because the
+    // before-figure is what was observed when the flake was found, not a
+    // matched experiment — said plainly rather than rounded into a tidier
+    // pair. The geometry was byte for byte the same in every run, red and
+    // green alike (forcedRailHeight=572 contentHeight=666 tiles=14
+    // visibleWithoutScrolling=12); only lastReachableByScrolling flipped. The
+    // rail was never truncating.
+    //
+    // A sleep would have been the wrong fix even if it worked: it would make
+    // the test pass on a slow runner by accident rather than because the thing
+    // it waits for has happened.
+    const env = odoo.__WOWL_DEBUG__.root.env;
+    const deadline = Date.now() + 20000;
+    while (Date.now() < deadline && !env.services.action.currentController) {
+        await frames(5);
+    }
+    await frames(60);
 
     // CREATE the condition rather than wait for a database that happens to
     // have it. A short viewport was tried first and it does not work: with
@@ -227,7 +263,7 @@ RAIL_OVERFLOWS_JS = RAIL_REPORT_JS + """
     const tileHeight = tiles[0].getBoundingClientRect().height;
     const forced = Math.floor(tileHeight * (tiles.length - 1));
     rail.style.height = forced + 'px';
-    await new Promise((r) => requestAnimationFrame(() => r()));
+    await frames(1);
 
     if (rail.scrollHeight <= rail.clientHeight) {
         rail.style.height = '';
@@ -660,18 +696,47 @@ function sapianSidebarReport() {
 }
 """
 
-SIDEBAR_STATES_JS = SIDEBAR_REPORT_JS + """
-(async () => {
-    const settle = (ms) => new Promise((r) => setTimeout(r, ms || 400));
-    // Land in a real app so there IS an active row. Clicking the sidebar is
-    // also the only way to be sure the row we measure is the one the menu
-    // service considers current.
+
+# The settle wait, once, for every sidebar block below.
+#
+# Same signal the rail's overflow and keep-scroll tests wait on, and for the
+# same reason: `browser_js`'s ready condition is satisfied as soon as one row
+# exists, which is before the default action has resolved. Measuring through
+# that window is measuring a system mid-boot and calling the result a property
+# of the system — which is exactly how TestSapianAppRailOverflow came to be
+# passing by luck (3 of 10 runs red on identical code).
+#
+# A `setTimeout` would be a sleep, not a wait: it would pass on a slow runner
+# by accident rather than because the thing it waits for has happened.
+SIDEBAR_SETTLE_JS = """
+const settle = (ms) => new Promise((r) => setTimeout(r, ms || 400));
+async function sapianSidebarSettle() {
+    const env = odoo.__WOWL_DEBUG__.root.env;
+    const deadline = Date.now() + 20000;
+    while (Date.now() < deadline && !env.services.action.currentController) {
+        await settle(100);
+    }
+    // Land in a real app so there IS an active row, then wait for the menu
+    // service to agree — the class is what every assertion below keys off.
     const rows = [...document.querySelectorAll('.o_sapian_rail_app')];
-    rows[Math.min(2, rows.length - 1)].click();
-    for (let i = 0; i < 40 && !document.querySelector('.o_sapian_rail_app_active'); i++) {
-        await settle(150);
+    if (!document.querySelector('.o_sapian_rail_app_active')) {
+        rows[Math.min(2, rows.length - 1)].click();
+    }
+    const second = Date.now() + 20000;
+    while (Date.now() < second && !document.querySelector('.o_sapian_rail_app_active')) {
+        await settle(100);
+    }
+    if (!document.querySelector('.o_sapian_rail_app_active')) {
+        throw new Error('no row became active within 20s, so nothing below is '
+            + 'measuring a settled client');
     }
     await settle(600);
+}
+"""
+
+SIDEBAR_STATES_JS = SIDEBAR_REPORT_JS + SIDEBAR_SETTLE_JS + """
+(async () => {
+    await sapianSidebarSettle();
 
     const report = sapianSidebarReport();
     console.log('SAPIAN-SIDEBAR width=' + report.width
@@ -688,15 +753,9 @@ SIDEBAR_STATES_JS = SIDEBAR_REPORT_JS + """
 })();
 """
 
-SIDEBAR_DISCRIMINATES_JS = SIDEBAR_REPORT_JS + """
+SIDEBAR_DISCRIMINATES_JS = SIDEBAR_REPORT_JS + SIDEBAR_SETTLE_JS + """
 (async () => {
-    const settle = (ms) => new Promise((r) => setTimeout(r, ms || 400));
-    const rows = [...document.querySelectorAll('.o_sapian_rail_app')];
-    rows[Math.min(2, rows.length - 1)].click();
-    for (let i = 0; i < 40 && !document.querySelector('.o_sapian_rail_app_active'); i++) {
-        await settle(150);
-    }
-    await settle(600);
+    await sapianSidebarSettle();
 
     const rail = document.querySelector('.o_sapian_rail');
     const active = rail.querySelector('.o_sapian_rail_app_active');
@@ -761,17 +820,12 @@ SIDEBAR_DISCRIMINATES_JS = SIDEBAR_REPORT_JS + """
 })();
 """
 
-SIDEBAR_COLLAPSE_JS = SIDEBAR_REPORT_JS + """
+SIDEBAR_COLLAPSE_JS = SIDEBAR_REPORT_JS + SIDEBAR_SETTLE_JS + """
 (async () => {
-    const settle = (ms) => new Promise((r) => setTimeout(r, ms || 400));
+    await sapianSidebarSettle();
     const rail = document.querySelector('.o_sapian_rail');
     const toggle = rail.querySelector('.o_sapian_rail_toggle');
     const rows = [...rail.querySelectorAll('.o_sapian_rail_app')];
-    rows[Math.min(2, rows.length - 1)].click();
-    for (let i = 0; i < 40 && !document.querySelector('.o_sapian_rail_app_active'); i++) {
-        await settle(150);
-    }
-    await settle(600);
 
     const width = () => Math.round(rail.getBoundingClientRect().width);
     const labelsShown = () => [...rail.querySelectorAll('.o_sapian_rail_label')]
@@ -857,9 +911,9 @@ SIDEBAR_COLLAPSE_JS = SIDEBAR_REPORT_JS + """
 })();
 """
 
-SIDEBAR_KEYBOARD_JS = """
+SIDEBAR_KEYBOARD_JS = SIDEBAR_SETTLE_JS + """
 (async () => {
-    const settle = (ms) => new Promise((r) => setTimeout(r, ms || 400));
+    await sapianSidebarSettle();
     const rail = document.querySelector('.o_sapian_rail');
     const toggle = rail.querySelector('.o_sapian_rail_toggle');
     const first = rail.querySelector('.o_sapian_rail_app');

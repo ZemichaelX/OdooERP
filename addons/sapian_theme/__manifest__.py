@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     "name": "SapianERP Theme",
-    "version": "19.0.1.5.0",
+    "version": "19.0.2.0.0",
     "summary": "SapianERP house identity: one brand colour driving the backend, "
     "the login page and printed documents, plus the app rail that makes the "
     "app icons visible on desktop. Horizontal — no client and no sector "
