@@ -234,8 +234,17 @@ verify_login_page() {
     "The login page still attributes the product to Odoo, or still links to"$'\n'"   odoo.com."
   _login_check '^CHECK login_signup=0$' \
     "The login page offers ACCOUNT CREATION to anonymous visitors."
-  _login_check '^CHECK login_signup_scope=b2b$' \
-    "Public sign-up is not invitation-only on this database. Odoo's default is"$'\n'"   b2c — free sign up."
+  # THE VALUE THE SERVED PAGE HONOURS, not the parameter we set. The old check
+  # read `auth_signup.invitation_scope`, which stops being consulted the moment
+  # `website` is installed: website overrides
+  # res.users._get_signup_invitation_scope to prefer a per-website column, and
+  # website_sale's post-install hook sets that column to 'b2c'. Measured on the
+  # 36-app database — parameter b2b, website b2c, page offering free sign-up,
+  # old check green. The parameter and the per-website values are still
+  # REPORTED (login_signup_param, login_signup_websites) because an operator
+  # cannot act on "b2c" without knowing which of them produced it.
+  _login_check '^CHECK login_signup_effective=b2b$' \
+    "Public sign-up is OPEN on this database — anyone who can reach the login"$'\n'"   page can create an account. See the CHECK login_signup_param and"$'\n'"   login_signup_websites lines above for which setting produced it, and"$'\n'"   CHECK login_public_signup_optin for whether somebody turned it on"$'\n'"   deliberately (sapian_theme.allow_public_signup)."
 
   # The support contact is per-deployment, so it is NOT required to be set.
   # What is required is that a configured one reaches the page: that turns the

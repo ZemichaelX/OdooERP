@@ -414,10 +414,37 @@ jobs:
             --data-dir=/tmp/odoo-data \
             --addons-path="${GITHUB_WORKSPACE}/addons,${GITHUB_WORKSPACE}/vendor/oca_web,/usr/lib/python3/dist-packages/odoo/addons" \
             -d ci_theme_website \
-            -i website,sapian_theme --without-demo=all \
-            --test-enable --test-tags '/sapian_theme:TestSapianThemeLogin,/sapian_theme:TestLoginPageAsAVisitor' \
+            -i website,website_sale,sapian_theme --without-demo=all \
+            --test-enable --test-tags '/sapian_theme:TestSapianThemeLogin,/sapian_theme:TestLoginPageAsAVisitor,/sapian_theme_website' \
             --workers=0 --max-cron-threads=0 \
             --stop-after-init --log-level=test 2>&1 | tee /tmp/theme-website.log
+
+          # website_sale IS THE CONDITION, not extra scenery. Its post-install
+          # hook (website_sale/__init__.py:15) writes
+          # auth_signup_uninvited='b2c' to every website, which is what opened
+          # public sign-up on the product's own 36-app configuration while
+          # `auth_signup.invitation_scope` still read b2b and the guard still
+          # read the parameter. Installing `website` alone does NOT reproduce
+          # it — the field defaults to b2b there — so this job proved nothing
+          # about sign-up until website_sale was added to the list.
+          if ! grep -qE "loading website_sale/" /tmp/theme-website.log; then
+            echo "::error::website_sale was not loaded, so the condition that opens public sign-up was never created and the sapian_theme_website tests proved nothing."
+            exit 1
+          fi
+          # And the bridge must have auto-installed. It is the only thing
+          # holding sign-up closed; a run where it silently stayed uninstalled
+          # would be green because nothing tested it.
+          #
+          # Asserted on "Loading module", not on "loading <module>/<file>.xml"
+          # like the line above: the bridge ships NO data files, so it never
+          # emits one. The first version of this check grepped for the latter
+          # and reported the bridge missing on a run where it was installed and
+          # its 13 tests had passed — a guard that would have failed every
+          # green build.
+          if ! grep -qE "Loading module sapian_theme_website" /tmp/theme-website.log; then
+            echo "::error::sapian_theme_website did not auto-install alongside website. Public sign-up is open on this configuration and nothing noticed."
+            exit 1
+          fi
 
           # PROVE THE CONDITION WAS REALLY CREATED. Without this the job could
           # pass by running the login tests on a database where `website` failed
@@ -449,6 +476,16 @@ jobs:
           echo "Executed ${EXECUTED} sapian_theme tests with website installed (floor ${MIN_LOGIN_TESTS})"
           if [ "${EXECUTED}" -lt "${MIN_LOGIN_TESTS}" ]; then
             echo "::error::Only ${EXECUTED} tests ran; expected at least ${MIN_LOGIN_TESTS}. The selection is broken, so a green result means nothing."
+            exit 1
+          fi
+          # The bridge's own floor, counted separately: a `/sapian_theme_website`
+          # selector that matched nothing would leave the number above untouched.
+          MIN_BRIDGE_TESTS=9
+          BRIDGE=$(grep -oE "odoo\.tests\.stats: sapian_theme_website: [0-9]+ tests" /tmp/theme-website.log \
+                   | grep -oE "[0-9]+ tests" | grep -oE "^[0-9]+" || echo 0)
+          echo "Executed ${BRIDGE} sapian_theme_website tests (floor ${MIN_BRIDGE_TESTS})"
+          if [ "${BRIDGE}" -lt "${MIN_BRIDGE_TESTS}" ]; then
+            echo "::error::Only ${BRIDGE} sign-up tests ran; expected at least ${MIN_BRIDGE_TESTS}."
             exit 1
           fi
 

@@ -61,8 +61,39 @@
         <xpath expr="//t[@t-set='final_message']" position="replace">
             <t t-set="final_message"/>
         </xpath>
+        <!-- EXACTLY ONE MARK ON THE LOGIN PAGE, and this is the half that
+             stands down there.
+
+             On a database with `website`, /web/login is rendered inside
+             `website.layout`, whose footer calls `web.brand_promotion` ->
+             `web.brand_promotion_message` — this template. The login form ALSO
+             carries its own attribution, anchored on the form itself in
+             login_templates.xml, because on a database WITHOUT `website` that
+             is the only thing that renders. So with website installed the page
+             came back with TWO. Measured on the 36-app database:
+
+                 /web/login           sapian marks: 2
+                 /web/signup          sapian marks: 1
+                 /web/reset_password  sapian marks: 1
+
+             The login form's own mark wins, for the reason the scoping is
+             narrow: it is the one that renders on EVERY database, website or
+             not, so making it conditional would trade a duplicate for an
+             absence. This one is suppressed on /web/login alone.
+
+             /web/signup and /web/reset_password extend `web.login_layout` and
+             not `web.login`, so the form xpath never reaches them and THIS
+             template is their only attribution — which is why the path test is
+             an exact match on /web/login rather than a prefix on /web/log.
+             Both are asserted in check_login_page.py.
+
+             The portal keeps its mark, unconditionally. That was a deliberate
+             decision recorded above and it is not narrowed here: the only page
+             this touches is the login page, which has its own. -->
         <xpath expr="//t[@t-out]" position="replace">
-            <span class="o_sapian_powered">
+            <t t-set="sapian_login_owns_mark"
+               t-value="bool(request) and request.httprequest.path.rstrip('/') == '/web/login'"/>
+            <span t-if="not sapian_login_owns_mark" class="o_sapian_powered">
                 <a href="https://sapiantech.com" target="_blank" rel="noopener">
                     <t t-call="sapian_theme.mark"/>
                     <span>Powered by SapianERP</span>
