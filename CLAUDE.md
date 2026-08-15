@@ -180,6 +180,14 @@ fast goldens; sapian_demo_pharma: "Tena Pharma Import PLC" pitch tenant with
 recall golden incl. precision-by-exclusion; 7 Odoo tests; both installed on
 scratch_final).
 
+Navigation (Aug 2026): OCA `web_responsive` is vendored at a pinned commit in
+`vendor/oca_web/` (never installed by default — installing it is a per-database
+decision), and `sapian_theme` defaults its two per-user settings so a new user
+lands on the fullscreen app launcher in the house brand rather than on the
+Module Catalog in Odoo's lilac. Our own app rail is kept: the two do not
+conflict, and the rail solves a problem the launcher does not. Evidence and the
+refresh procedure are in `vendor/README.md` and `addons/sapian_theme/README.md`.
+
 BUILD PHASE COMPLETE except client-pitch work — next: sales (demo the trader
 and pharma tenants, proposal from the DAT template in docs/plan-2026/01).
 Pharma session 2 (medicine-request portal, delivery runs, partner directory,

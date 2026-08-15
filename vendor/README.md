@@ -82,6 +82,53 @@ because the work had not happened (see CLAUDE.md, "A success signal that can be
 produced by doing nothing is not a success signal"). The discrimination proof is
 in the script's own `--self-test`.
 
+## Known divergence: one upstream test fails, on purpose
+
+`web_responsive`'s own `TestResUsers.test_compute_redirect_home` asserts that a
+newly created user has `is_redirect_home == False`:
+
+```python
+record = new_test_user(self.env, login="jeant@mail.com")
+self.assertFalse(record.is_redirect_home)
+```
+
+That is precisely the default `sapian_theme` overrides — landing a user on the
+Module Catalog instead of the app launcher is the problem the module was
+vendored to solve. So on any database carrying both modules, that one test
+fails, and there is no version of "do the approved thing" in which it does not:
+the vendored copy is never edited, and not overriding the default would mean
+not making the change.
+
+Upstream ships two test methods. `TestIrHttp.test_session_info` passes;
+this one does not. Nothing else diverges.
+
+### How the divergence is caught, from both ends
+
+Not by asserting that this test fails. That was tried and it was wrong: on a
+database where `account` is installed the test does not fail, it **errors before
+running**. `-u web_responsive` reloads only that module, so its `at_install`
+tests run at position 39 of 82 — before `account` — and `BaseCommon.setUpClass`
+creating a `res.partner` hits `null value in column "autopost_bills" violates
+not-null constraint`, because the column exists from the earlier full install
+but its Python default is not registered yet. Zero tests run, and
+`0 failures, 1 errors of 0 tests` does not match a grep for `N failed`, so the
+error read as the test *passing*. CI caught that; the step is gone.
+
+What actually covers it, and does so regardless of module load order:
+
+- **Our side** — `sapian_theme`'s `TestLauncherDefaultValues` asserts that a
+  user created on a database that HAS the field comes out `True`. That is the
+  same claim upstream's test makes in reverse, made where we control the
+  environment. It runs in the `launcher-defaults` job, alongside the browser
+  tests that prove the default reaches the page.
+- **Upstream's side** — the tree-hash pin. Any change to upstream, *including to
+  that test*, changes `f1e9c8df…` and `scripts/check_vendor.sh` goes red. A
+  refresh that flips upstream's own default therefore cannot pass silently; it
+  stops at the pin, which is exactly the moment a human should look.
+
+So: **a red `test_compute_redirect_home` is the expected state, not a broken
+vendor copy.** Everything else being red is not.
+
 ## Refreshing the pin
 
 Deliberate, in its own PR, with the UI evidence attached — not a drive-by bump.

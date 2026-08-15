@@ -198,6 +198,92 @@ another:**
    app — moving the very highlight these tests assert on. `RailBrowserCase`
    turns it off in `setUp`.
 
+## The app launcher: two defaults, and why they live here
+
+`vendor/oca_web/web_responsive` (pinned upstream code — see `vendor/README.md`)
+adds a fullscreen app launcher and two **per-user** fields to control it. Both
+ship at values that are wrong for this product, so `models/res_users.py`
+re-defaults them:
+
+| field | upstream | SapianERP | why |
+|---|---|---|---|
+| `is_redirect_home` | `False` | `True` | Otherwise login lands on the default app, which on our databases is a configuration screen — the Module Catalog on a provisioned tenant, the onboarding wizard on a fresh one. The launcher is the reason the module was vendored. |
+| `apps_menu_theme` | `'milk'` | `'community'` | `'milk'` paints the launcher a pale lilac. `'community'` derives the same background from `$o-brand-primary`, which `sapian_variables.scss` already sets to `$sapian-brand`. `'milk'` is Odoo's colour on our screen — the login-page defect one layer up. |
+
+Three properties are deliberate:
+
+- **They stay per-user.** A default is what you get when nobody has expressed a
+  preference; anyone who wants the old behaviour sets their own record and keeps
+  it. `default_<field>` in the context also still wins, so scripted user
+  creation and the demo builders can ask for something else.
+- **No `depends` on `web_responsive`.** This module installs on a database
+  carrying nothing else of ours, and adding the dependency would drag the
+  launcher into every database that wants our branding. The fields are looked
+  up at call time (`name in self._fields`), so the defaults simply do nothing
+  until `web_responsive` is installed, and start applying the moment it is —
+  with no update of this module.
+- **Existing users are not touched.** `default_get` supplies a value only where
+  none was given. An already-built tenant keeps every user as it found them,
+  including an admin who will still land on the Module Catalog until someone
+  sets the field. Rewriting a stored preference is a migration, not a default.
+
+### How they are guarded
+
+`tests/test_launcher_defaults.py`, and the guard is **the page, not the field**.
+`assertTrue(user.is_redirect_home)` proves a column holds `True`; it does not
+prove a teal pixel reached the screen, which is precisely the distance the login
+defect hid in. So the browser tests log in as real users and assert what the
+client loaded and what the launcher actually computed:
+
+```
+SAPIAN-LAUNCHER user=launcher.default.user launcherOpen=true actionLoaded=false
+                theme=community items=12 brandInBackground=true milkInBackground=false
+SAPIAN-LAUNCHER user=launcher.control.user launcherOpen=false actionLoaded=true
+                action="dialog: Onboarding"
+SAPIAN-LAUNCHER user=launcher.milk.user    launcherOpen=true
+                brandInBackground=false milkInBackground=true
+```
+
+The second and third lines are **control users**, created with the opposite
+value through `default_<field>`. Without them the first line would pass on a
+database where the default did nothing at all — every user would reach the
+launcher for some unrelated reason and no one would know. The expected brand is
+read out of `sapian_variables.scss` at test time, so a re-brand does not leave
+the test asserting the old colour and passing for the wrong reason.
+
+One upstream test fails because of this, deliberately: `web_responsive`'s own
+`TestResUsers.test_compute_redirect_home` asserts a new user has
+`is_redirect_home == False`, which is the default being overridden. It cannot be
+fixed — vendored code is never edited. The `launcher-defaults` CI job runs
+upstream's *other* tests against our stack and requires them to pass; the
+divergence itself is covered by `TestLauncherDefaultValues` on our side and by
+the vendor tree-hash pin on upstream's. Asserting that upstream's test *fails*
+was tried and removed — on a database with `account` it errors before running
+rather than failing, for reasons in `vendor/README.md`, "Known divergence".
+
+The same file adds the assertion the rail's own suite does not make: with the
+launcher open the rail is **covered**, and on dismiss it is reachable again,
+with its tile count unchanged throughout.
+
+```
+SAPIAN-RAIL-OCCLUSION closed=true open=false owner="DIV.app-menu-container"
+                      reopened=true tiles=12/12/12
+```
+
+`test_app_rail.py` asserts geometry and content — tile count, icon decoding,
+padding — all of which stay true while something paints on top of the rail. It
+would therefore stay green if the launcher started covering the rail
+permanently, or stopped covering it and let the rail paint over the app grid.
+Both are things a client sees immediately and CI would not.
+
+These classes are tagged `-standard` and selected by the bare `sapian_launcher`
+tag, because they need `web_responsive` installed and this module does not
+depend on it. `/module` and `/module:Class` selectors implicitly require the
+`standard` tag (`odoo/tests/tag_selector.py`), so they never run — and never
+*skip* — in a suite with no launcher to look at. The `launcher-defaults` CI job
+installs both on the demo tenant's module set and greps the log for the marker
+lines above, so a run where the browser never reported cannot come out green.
+
 ## Where the palette lives
 
 **`static/src/scss/sapian_variables.scss`. That is the only file to edit.**

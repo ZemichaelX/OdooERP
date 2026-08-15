@@ -550,3 +550,192 @@ jobs:
             echo "::error::The rail rendered ${TILES} tiles; expected at least ${MIN_RAIL_TILES}. The install list did not create the apps this job exists to draw."
             exit 1
           fi
+
+  launcher-defaults:
+    name: Launcher defaults reach the page
+    runs-on: ubuntu-latest
+    # WHY A SEPARATE JOB.
+    #
+    # sapian_theme defaults two web_responsive fields — is_redirect_home and
+    # apps_menu_theme — so that a user lands on the app launcher, in our brand,
+    # instead of on a configuration screen in Odoo's lilac. Both defaults are
+    # worthless if they do not reach the browser, and this repository has been
+    # burned by exactly that distance once: the SCSS said teal, the bundle
+    # contained the brand seven times, and the button rendered Odoo purple.
+    #
+    # sapian_theme does NOT depend on web_responsive (it must stay installable
+    # on a database carrying nothing else of ours), so these assertions cannot
+    # live in the standard suite — there would be no launcher to look at. The
+    # test classes are tagged `-standard` and selected here by the bare
+    # `sapian_launcher` tag, because `/module:Class` selectors implicitly
+    # require `standard` (odoo/tests/tag_selector.py). They are therefore never
+    # skipped: either this job selects and runs them, or nothing does — and the
+    # marker greps below fail the job if the browser did not report.
+    #
+    # It runs on the DEMO TENANT's module set, not a synthetic one, because
+    # "lands on a configuration screen" is a claim about the database we
+    # actually ship to a prospect.
+    container:
+      image: odoo:19.0@sha256:e415f9924395e7521245813135112f264b9222bcde3b1d3c2ee9ff073081540a
+      options: --user root
+    services:
+      db:
+        image: postgres:16@sha256:33f923b05f64ca54ac4401c01126a6b92afe839a0aa0a52bc5aeb5cc958e5f20
+        env:
+          POSTGRES_USER: odoo
+          POSTGRES_PASSWORD: odoo
+          POSTGRES_DB: postgres
+        options: >-
+          --health-cmd "pg_isready -U odoo"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install headless Chrome and websocket-client
+        shell: bash
+        run: bash "${GITHUB_WORKSPACE}/scripts/install_test_browser.sh"
+
+      - name: A fresh user lands on the launcher, painted in our brand
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/odoo-data
+          ARGS="--db_host=db --db_port=5432 --db_user=odoo --db_password=odoo
+                --data-dir=/tmp/odoo-data
+                --addons-path=${GITHUB_WORKSPACE}/addons,${GITHUB_WORKSPACE}/vendor/oca_web,/usr/lib/python3/dist-packages/odoo/addons
+                --workers=0 --max-cron-threads=0 --stop-after-init"
+
+          # Country before the chart, exactly as scripts/build_demo.sh does:
+          # with demo data off the single company is created on generic_coa,
+          # and Odoo does not allow switching charts afterwards.
+          odoo ${ARGS} -d ci_launcher -i base --without-demo=all --log-level=warn
+          echo "company = env['res.company'].search([], limit=1); company.country_id = env.ref('base.et'); env.cr.commit(); print('SAPIAN-LAUNCHER-SETUP country=%s' % company.country_id.code)" \
+            | odoo shell ${ARGS} -d ci_launcher --log-level=warn 2>&1 | tee /tmp/launcher-setup.log
+          grep -q "SAPIAN-LAUNCHER-SETUP country=ET" /tmp/launcher-setup.log \
+            || { echo "::error::The odoo shell never reported — the country was not set, so the tenant is not the one we ship."; exit 1; }
+
+          odoo ${ARGS} -d ci_launcher \
+            -i sapian_demo_trader,sapian_theme,web_responsive \
+            --without-demo=all \
+            --test-enable --test-tags 'sapian_launcher,/sapian_theme:TestLauncherDefaultValues' \
+            --log-level=test 2>&1 | tee /tmp/launcher.log
+
+          if ! grep -q "odoo\.tests\.result:" /tmp/launcher.log; then
+            echo "::error::The test runner never reported a result line — no tests were executed."
+            exit 1
+          fi
+          if grep -qE "tests\.result: ([1-9][0-9]* failed|0 failed, [1-9][0-9]* error)" /tmp/launcher.log; then
+            echo "::error::The launcher default tests failed."
+            exit 1
+          fi
+
+          # THE BROWSER ACTUALLY RAN, AND SAID THE RIGHT THING.
+          # Every check above is satisfied by a run where browser_js raised
+          # SkipTest: no test failed, so nothing failed. These lines are printed
+          # by console.log from INSIDE the page, so they cannot be produced by a
+          # run that never opened a browser.
+          #
+          # Each marker is a full assertion, not just a prefix, so a default
+          # that silently stopped reaching the page turns this red rather than
+          # merely changing a number nobody reads.
+          for marker in \
+            'SAPIAN-LAUNCHER user=launcher.default.user launcherOpen=true actionLoaded=false' \
+            'theme=community' \
+            'brandInBackground=true milkInBackground=false' \
+            'SAPIAN-LAUNCHER user=launcher.control.user launcherOpen=false actionLoaded=true' \
+            'SAPIAN-LAUNCHER user=launcher.milk.user launcherOpen=true' \
+            'brandInBackground=false milkInBackground=true' \
+            'SAPIAN-RAIL-OCCLUSION closed=true open=false' \
+            'reopened=true'; do
+            if ! grep -qF "${marker}" /tmp/launcher.log; then
+              echo "::error::The browser never reported '${marker}'. Either the defaults did not reach the page, or the tests did not run in a browser at all."
+              exit 1
+            fi
+          done
+
+          # The launcher was not empty, and the rail kept its tiles across the
+          # open/close cycle. A one-app launcher satisfies every assertion above
+          # while proving nothing.
+          MIN_LAUNCHER_ITEMS=5
+          ITEMS=$(grep -oE "user=launcher\.default\.user .*items=[0-9]+" /tmp/launcher.log \
+                  | grep -oE "items=[0-9]+" | grep -oE "[0-9]+" | head -1)
+          ITEMS=${ITEMS:-0}
+          echo "Launcher items rendered: ${ITEMS} (floor ${MIN_LAUNCHER_ITEMS})"
+          if [ "${ITEMS}" -lt "${MIN_LAUNCHER_ITEMS}" ]; then
+            echo "::error::The launcher rendered ${ITEMS} apps; expected at least ${MIN_LAUNCHER_ITEMS}."
+            exit 1
+          fi
+          # tiles=N/N/N — same count closed, covered and reopened.
+          TILES=$(grep -oE "SAPIAN-RAIL-OCCLUSION .*tiles=[0-9]+/[0-9]+/[0-9]+" /tmp/launcher.log \
+                  | grep -oE "tiles=[0-9]+/[0-9]+/[0-9]+" | head -1)
+          echo "Rail tiles across the launcher cycle: ${TILES}"
+          case "${TILES}" in
+            tiles=0/*) echo "::error::The rail had no tiles, so the occlusion test proved nothing."; exit 1 ;;
+          esac
+          FIRST=$(echo "${TILES}" | grep -oE "[0-9]+" | head -1)
+          if [ "$(echo "${TILES}" | grep -oE "[0-9]+" | sort -u | wc -l)" -ne 1 ]; then
+            echo "::error::The rail changed tile count across the launcher cycle: ${TILES}"
+            exit 1
+          fi
+          echo "Rail held ${FIRST} tiles closed, covered and reopened."
+
+      - name: Upstream's own tests still pass against our defaults
+        shell: bash
+        # WHAT IS *NOT* HERE, AND WHY.
+        #
+        # web_responsive's TestResUsers.test_compute_redirect_home asserts that
+        # a new user has is_redirect_home == False — the default sapian_theme
+        # deliberately overrides. An earlier version of this job tried to assert
+        # that divergence directly, by requiring that test to FAIL. That was
+        # wrong twice over and CI caught it:
+        #
+        #   1. On a database where `account` is installed, the test does not
+        #      fail — it ERRORS before running. `-u web_responsive` reloads only
+        #      that module, so its at_install tests run at position 39/82,
+        #      before `account` is loaded; BaseCommon.setUpClass then creates a
+        #      res.partner and hits "null value in column autopost_bills
+        #      violates not-null constraint", because the DB column exists from
+        #      the earlier full install but its Python default is not registered
+        #      yet. Zero tests run. The assertion only held on the account-free
+        #      database it was written against.
+        #   2. "0 failures, 1 errors of 0 tests" does not match a grep for
+        #      "N failed", so that error read as the test PASSING — a check
+        #      reporting the opposite of the truth.
+        #
+        # It is also redundant. The divergence is already caught from both ends:
+        #   - our side, by /sapian_theme:TestLauncherDefaultValues below, which
+        #     asserts a created user gets True on a database that HAS the field;
+        #   - upstream's side, by the tree-hash pin: any change to upstream —
+        #     that test included — changes f1e9c8df... and scripts/check_vendor.sh
+        #     goes red, which is exactly the moment a human should look.
+        #
+        # So this step keeps only the half that is sound and useful: everything
+        # upstream ships, except the one test our approved default invalidates,
+        # must pass against our stack. That is regression cover for the vendored
+        # module which nothing else in this repo provides.
+        run: |
+          set -euo pipefail
+          ARGS="--db_host=db --db_port=5432 --db_user=odoo --db_password=odoo
+                --data-dir=/tmp/odoo-data
+                --addons-path=${GITHUB_WORKSPACE}/addons,${GITHUB_WORKSPACE}/vendor/oca_web,/usr/lib/python3/dist-packages/odoo/addons
+                --workers=0 --max-cron-threads=0 --stop-after-init"
+          DIVERGENT='/web_responsive:TestResUsers.test_compute_redirect_home'
+
+          odoo ${ARGS} -d ci_launcher -u web_responsive \
+            --test-enable --test-tags "/web_responsive,-${DIVERGENT}" \
+            --log-level=test 2>&1 | tee /tmp/upstream.log
+
+          grep -q "odoo\.tests\.result:" /tmp/upstream.log \
+            || { echo "::error::Upstream's tests never reported — none were executed."; exit 1; }
+          # BOTH failures and errors. An error is not a pass, and reading only
+          # "N failed" is the mistake that made the previous version of this job
+          # report the opposite of what happened.
+          if grep -qE "tests\.result: ([1-9][0-9]* failed|0 failed, [1-9][0-9]* error)" /tmp/upstream.log; then
+            echo "::error::A vendored web_responsive test failed or errored that is NOT the divergence we chose."
+            exit 1
+          fi
+          grep -q "odoo\.tests\.stats: web_responsive: " /tmp/upstream.log \
+            || { echo "::error::No web_responsive tests ran at all, so this step proved nothing."; exit 1; }
+          echo "Upstream's remaining tests pass against our defaults."
