@@ -135,7 +135,11 @@ until it was found by hand.
 
 ## Definition of Done (every task)
 - Tests pass (pytest reference tests + Odoo module tests where relevant)
-- Lint clean (ruff, black, pylint-odoo)
+- Lint clean — run `./scripts/lint.sh`, which is the SAME script CI's lint job
+  and the pre-push hook run, and which gates on exit codes. Do not run the three
+  tools by hand and read their output: pylint prints "rated at 10.00/10" and
+  still exits 4 on warnings, and a red CI build has already come from exactly
+  that misreading.
 - Security/access rules defined for new models
 - Strings translatable; Amharic .po updated if user-facing
 - Module README updated; no changes to Odoo core

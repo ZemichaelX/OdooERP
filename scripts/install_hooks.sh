@@ -2,6 +2,11 @@
 #
 # Point this clone's git hooks at the tracked .githooks/ directory.
 #
+# Two hooks:
+#   pre-commit  gitleaks on the staged content — a secret's blast radius is
+#               set the moment it is committed.
+#   pre-push    scripts/lint.sh, the SAME script CI's lint job runs.
+#
 # Run once per clone:
 #     ./scripts/install_hooks.sh
 #
@@ -18,6 +23,7 @@ git config core.hooksPath .githooks
 chmod +x .githooks/* 2>/dev/null || true
 
 echo ">> core.hooksPath = $(git config --get core.hooksPath)"
+echo ">> hooks: $(ls .githooks | tr '\n' ' ')"
 
 if command -v gitleaks >/dev/null 2>&1; then
   echo ">> gitleaks found: $(gitleaks version)"
@@ -35,16 +41,35 @@ EOF
   exit 1
 fi
 
+# The pre-push hook runs scripts/lint.sh, which REFUSES to report a clean tree
+# when a tool is missing rather than skipping it. Say so here instead of letting
+# the first push be the discovery.
+if ./scripts/lint.sh >/dev/null 2>&1; then
+  echo ">> lint tooling present: scripts/lint.sh runs clean on this tree."
+else
+  echo ">> NOTE: scripts/lint.sh does not currently pass. Run it to see why:"
+  echo ">>     ./scripts/lint.sh"
+  echo ">> If it reports missing tools:  pip install ruff black pylint pylint-odoo"
+fi
+
 cat <<'EOF'
 >> Hooks installed.
 >>
->> Now prove the guard actually fires — an untested guard is another thing that
->> passes by doing nothing:
+>> Now prove the guards actually fire — an untested guard is another thing that
+>> passes by doing nothing.
 >>
+>> The secret scanner:
 >>   printf '[options]\nadmin_passwd = %s\n' \
 >>     "$(head -c 48 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | cut -c1-32)" \
 >>     > config/leaktest.conf
 >>   git add -f config/leaktest.conf
 >>   git commit -m 'should be blocked'      # must FAIL
 >>   git reset config/leaktest.conf && rm config/leaktest.conf
+>>
+>> The linter (this is the exact defect that once reached CI — pylint prints
+>> "rated at 10.00/10" and exits 4):
+>>   sed -i 's/^from odoo.addons.sapian_theme import brand$//' \
+>>     addons/sapian_theme/tests/test_login_page.py
+>>   ./scripts/lint.sh                      # must FAIL, naming pylint
+>>   git checkout addons/sapian_theme/tests/test_login_page.py
 EOF

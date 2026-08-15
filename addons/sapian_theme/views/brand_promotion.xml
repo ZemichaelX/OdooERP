@@ -20,6 +20,28 @@
          overriding it here fixes every surface that emits the line, once,
          instead of chasing them one page at a time.
 
+         THE PORTAL IS DELIBERATELY IN SCOPE. DO NOT NARROW THIS BACK TO THE
+         LOGIN PAGE.
+
+         It reads like over-reach — the brief that prompted this change was
+         about the login page — so the reasoning is recorded here rather than
+         left to be re-derived by whoever next reads a diff and thinks the
+         portal was collateral:
+
+         The login page is seen by the CLIENT'S OWN STAFF, who know perfectly
+         well what software they bought. The customer portal is seen by the
+         CLIENT'S CUSTOMERS: the quotation they accept, the invoice they pay,
+         the delivery they track. That is the one screen in the whole product a
+         third party looks at, and it is the screen where an "Powered by Odoo"
+         badge tells a client's customer whose software this really is.
+
+         So the portal is MORE brand-sensitive than the login page, not less.
+         A change that de-brands the login page and leaves the portal alone has
+         fixed the private screen and left the public one.
+
+         If this ever does need scoping, scope it by adding a login-only
+         override — do not delete this one.
+
          `_message` is dropped deliberately. Callers pass Odoo marketing copy
          through it (website_sale passes "the #1 Open Source eCommerce"), and
          there is no version of that sentence which belongs on a client's ERP.

@@ -4,6 +4,37 @@ All notable changes to SapianERP. Epics per `docs/plan-2026/10-claude-code-roadm
 
 ## [Unreleased]
 
+### One lint definition, and the theme is not optional (2026-08-14)
+
+**`sapian_theme` joins `provision_client.sh`'s default module list.** It stopped
+being decoration when it took on the de-branding, the login layout, the app
+rail, the support contact and the backend footer: a tenant provisioned without
+it is handed Odoo, with a link to odoo.com on the page its staff open every
+morning. Verified from the served bytes, not from the config line — provisioning
+now ends by asserting the tenant serves a SapianERP login, and refuses to hand
+over a database that does not.
+
+That check is **one definition**, `scripts/lib/check_login_page.py` plus
+`preflight.sh::verify_login_page`, called by both `build_demo.sh` and
+`provision_client.sh`. It used to be inline in the demo script only, which is
+precisely how the demo came to be verified while the thing we sell was not.
+
+**The customer portal stays SapianERP.** The reasoning is now recorded beside
+the override, because it reads like over-reach and would otherwise be narrowed
+by someone reading a diff: the login page is seen by the client's own staff,
+the portal by the client's CUSTOMERS — the quotation they accept, the invoice
+they pay. It is the one screen a third party sees, so it is more
+brand-sensitive than the login page, not less.
+
+**`scripts/lint.sh` is now the only definition of lint**, called by CI's lint
+job and by a new `pre-push` hook. It gates on **exit codes**, never on parsed
+output, because a red CI build came from reading pylint's "rated at 10.00/10"
+while it was exiting 4. It also refuses to run when a tool — or the
+`pylint-odoo` plugin — is missing, since pylint without its plugin prints a
+score having checked none of the Odoo rules. Proven to discriminate by putting
+the original W8150 import back: `!! lint FAILED: pylint`, exit 1, with
+10.00/10 printed directly above it.
+
 ### The login page a client actually sees (2026-08-14)
 Five defects, all client-facing, all invisible to every check we had — because
 every check we had talked to the database or to a compiled asset, and none

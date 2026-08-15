@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+#
+# SapianERP pre-push hook: run THE lint definition before anything leaves the
+# machine.
+#
+# It calls scripts/lint.sh — the same file .github/workflows/ci.yml calls. That
+# is the whole point of the hook: not to add a second opinion, but to make the
+# local answer and CI's answer literally the same computation. A hook that ran
+# its own approximation of "lint" would recreate the problem it exists to solve.
+#
+# WHY PRE-PUSH AND NOT PRE-COMMIT
+# -------------------------------
+# The secret scanner is pre-commit because a secret's blast radius is set the
+# moment it is committed. A lint failure has no blast radius until it is
+# published, and running three linters on every commit of a rebase would get
+# this hook uninstalled within a week. Push is the boundary that matters.
+#
+# Install (once per clone, on EVERY machine):
+#     ./scripts/install_hooks.sh
+#
+# Bypass, when you genuinely mean to push something red:
+#     git push --no-verify
+set -uo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+
+if [ ! -x "${REPO_ROOT}/scripts/lint.sh" ]; then
+  echo "!! pre-push: scripts/lint.sh is missing or not executable — refusing to" >&2
+  echo "   push without the check that CI will run." >&2
+  exit 1
+fi
+
+echo ">> pre-push: running scripts/lint.sh (the same script CI runs)"
+if ! "${REPO_ROOT}/scripts/lint.sh"; then
+  cat >&2 <<'EOF'
+!!
+!! pre-push: LINT FAILED — push blocked.
+!!
+!! This is the same script, on the same paths, that CI's lint job runs, so a
+!! failure here is a failure there. Fix it and push again.
+!!
+!! Note what the tools DO NOT tell you: pylint prints "rated at 10.00/10" and
+!! still exits 4 when it has only warnings. Read the exit code, not the score —
+!! reading the score is how a red build reached CI once already.
+!!
+!! To push anyway, knowing it will be red:
+!!     git push --no-verify
+EOF
+  exit 1
+fi
+
+exit 0
