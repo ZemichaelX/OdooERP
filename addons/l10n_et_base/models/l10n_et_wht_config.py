@@ -49,12 +49,19 @@ DEFAULT_SOURCE_NOTE = (
 # rather than in a chat log.
 #
 # It also does NOT license adding rates. Ethiopia withholds on dividends,
-# royalties, interest, management and technical fees, and levies a social
-# welfare levy; none is implemented, and none may be added from a summary table.
-# Each needs rate, base, threshold, effective date and a proclamation citation
-# established first (reference-calculator-first rule). Adding a rate on the
-# strength of a summary is exactly the failure the core 2%/35% deactivation
-# fixes.
+# royalties, interest, management and technical fees; none is implemented, and
+# none may be added from a summary table. Each needs rate, base, threshold,
+# effective date and a proclamation citation established first
+# (reference-calculator-first rule). Adding a rate on the strength of a summary
+# is exactly the failure the core 2%/35% deactivation fixes.
+#
+# The social welfare levy USED to be on that list and no longer is: it was
+# implemented in l10n_et_social_welfare_levy_config.py once its rate (3%), base
+# (CIF), instrument (Council of Ministers Regulation 519/2022) and effective
+# date (6 Aug 2022) were all established. It is a separate model rather than a
+# field here because it is not a withholding: nothing is withheld from a
+# supplier, it is a cost the importer bears. The five above still wait for the
+# same four facts.
 #
 # OPEN DISCREPANCY, deliberately left alone: `_l10n_et_ensure_default` seeds
 # effective_from = date(2025, 8, 1), while the knowledge base records the

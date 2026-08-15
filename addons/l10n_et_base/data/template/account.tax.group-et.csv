@@ -1,3 +1,4 @@
 "id","name","country_id"
 "l10n_et_base_tax_group_withh_3","Withholding 3%","base.et"
 "l10n_et_base_tax_group_withh_30","Withholding 30%","base.et"
+"l10n_et_base_tax_group_swl_3","Social Welfare Levy 3%","base.et"

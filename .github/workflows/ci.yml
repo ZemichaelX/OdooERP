@@ -165,8 +165,8 @@ jobs:
             echo "::error::The Odoo test runner never reported a result line — no tests were executed. A suite that runs nothing must not report success."
             exit 1
           fi
-          # MIN_EXPECTED_TESTS is a FLOOR, not the exact count (402 at this
-          # commit, after the login/footer work).
+          # MIN_EXPECTED_TESTS is a FLOOR, not the exact count (418 at this
+          # commit, after the social welfare levy).
           # Raise it as the suite grows. Only ever
           # lower it in a commit that says which tests went away and why —
           # lowering it to make CI pass is how this guard gets quietly disabled.

@@ -3,3 +3,5 @@ access_l10n_et_wht_config_invoice,l10n.et.wht.config invoice read,model_l10n_et_
 access_l10n_et_wht_config_manager,l10n.et.wht.config manager,model_l10n_et_wht_config,account.group_account_manager,1,1,1,1
 access_l10n_et_cash_cap_config_invoice,l10n.et.cash.cap.config invoice read,model_l10n_et_cash_cap_config,account.group_account_invoice,1,0,0,0
 access_l10n_et_cash_cap_config_manager,l10n.et.cash.cap.config manager,model_l10n_et_cash_cap_config,account.group_account_manager,1,1,1,1
+access_l10n_et_swl_config_invoice,l10n.et.social.welfare.levy.config invoice read,model_l10n_et_social_welfare_levy_config,account.group_account_invoice,1,0,0,0
+access_l10n_et_swl_config_manager,l10n.et.social.welfare.levy.config manager,model_l10n_et_social_welfare_levy_config,account.group_account_manager,1,1,1,1

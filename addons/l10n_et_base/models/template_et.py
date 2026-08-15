@@ -14,6 +14,8 @@ import logging
 from odoo import api, models
 from odoo.addons.account.models.chart_template import template
 
+from .l10n_et_social_welfare_levy_config import DEFAULT_SOURCE_NOTE as SWL_SOURCE_NOTE
+from .l10n_et_social_welfare_levy_config import TEMPLATE_TAX_XMLID as SWL_TEMPLATE_TAX_XMLID
 from .l10n_et_wht_config import DEFAULT_SOURCE_NOTE, TEMPLATE_TAX_XMLID_BY_KIND
 
 _logger = logging.getLogger(__name__)
@@ -92,6 +94,7 @@ class AccountChartTemplate(models.AbstractModel):
             company = company or self.env.company
             self.env["l10n.et.wht.config"]._l10n_et_ensure_default(company)
             self.env["l10n.et.cash.cap.config"]._l10n_et_ensure_default(company)
+            self.env["l10n.et.social.welfare.levy.config"]._l10n_et_ensure_default(company)
             self._l10n_et_base_deactivate_unsupported_core_taxes(company)
         return result
 
@@ -187,7 +190,31 @@ class AccountChartTemplate(models.AbstractModel):
                     values["l10n_et_source_note"] = DEFAULT_SOURCE_NOTE
                 if values:
                     tax.write(values)
+        # The social welfare levy's base is the CIF value and NOTHING else, so
+        # the tax must not be affected by taxes sequenced before it and must not
+        # enter the base of taxes sequenced after it. Both are set in the
+        # template CSV, and both are re-asserted here for the same reason the
+        # WHT markers above are: `_pre_reload_data` does not update fields on
+        # taxes that already exist, so a database that installed an earlier
+        # version keeps Odoo's default `is_base_affected = True` and would
+        # compute the levy on CIF + duty. Measured on an upgraded database
+        # before this block existed.
+        levy_tax = chart_template.ref(SWL_TEMPLATE_TAX_XMLID, raise_if_not_found=False)
+        if levy_tax:
+            base_values = {
+                field: value
+                for field, value in (
+                    ("is_base_affected", False),
+                    ("include_base_amount", False),
+                )
+                if levy_tax[field] != value
+            }
+            if base_values:
+                levy_tax.write(base_values)
+            if not levy_tax.l10n_et_source_note:
+                levy_tax.write({"l10n_et_source_note": SWL_SOURCE_NOTE})
         self.env["l10n.et.wht.config"]._l10n_et_ensure_default(company)
         self.env["l10n.et.cash.cap.config"]._l10n_et_ensure_default(company)
+        self.env["l10n.et.social.welfare.levy.config"]._l10n_et_ensure_default(company)
         # Same call as the fresh-load path. A client site reaches the fix here.
         self._l10n_et_base_deactivate_unsupported_core_taxes(company)

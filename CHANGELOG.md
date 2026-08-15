@@ -4,6 +4,43 @@ All notable changes to SapianERP. Epics per `docs/plan-2026/10-claude-code-roadm
 
 ## [Unreleased]
 
+### The social welfare levy on imports (2026-08-15)
+**3% of the aggregate CIF value of imported goods**, Council of Ministers
+Regulation No. 519/2022, effective 6 August 2022 (gazetted 22 August 2022).
+Built in the order CLAUDE.md rule 10 requires: reference calculator, golden
+tests, effective-dated configuration, and only then the `account.tax`.
+
+Three properties, each held by something that fails rather than by a comment:
+
+* **In addition** to duty, excise, VAT and surtax. Posted bill: CIF 1,250,000
+  → total 1,287,500.
+* **A cost, not a receivable.** The tax posts to a new expense account `5931`
+  *Social Welfare Levy on Imports*, and a constraint refuses any configuration
+  whose tax posts to a receivable. A competitor's published guide calls this an
+  "Import Advance Income Tax ... offset against income tax"; no authority for
+  such a tax was found, and that wiring would capitalise 3% of every consignment
+  as an asset that is never recovered. A test builds exactly that tax and
+  asserts the refusal.
+* **In nobody else's base.** `include_base_amount = False` *and*
+  `is_base_affected = False`, asserted against posted amounts: VAT comes out at
+  187,500 (15% of CIF) and not 193,125; a surtax stand-in at 125,000 and not
+  128,750.
+
+**No threshold**, stated explicitly and pinned — the withholding rules in the
+same file have thresholds of 20,000 and 10,000, which is the standing invitation
+to invent one here.
+
+**The commencement date is not an Ethiopian month boundary.** 6 August 2022 is
+**Hamle 30, 2014 EC** — the last day of the month, one day before Nehase 1. It
+joins the enumerated statutory-date guard, xfailed with a dated reason, exactly
+like the two seeds already there. Nothing was "fixed" to make it pass.
+
+Also corrected: the note in `l10n_et_wht_config.py` listing taxes that must not
+be added from a summary table still named the social welfare levy. It is now
+implemented from its instrument, so it is off that list — and the five
+withholding categories that remain on it are named, with the reason (rates
+known, effective dates not).
+
 ### One lint definition, and the theme is not optional (2026-08-14)
 
 **`sapian_theme` joins `provision_client.sh`'s default module list.** It stopped

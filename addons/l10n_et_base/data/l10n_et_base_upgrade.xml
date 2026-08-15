@@ -11,4 +11,5 @@
          and therefore silently withheld nothing. Idempotent. -->
     <function model="l10n.et.wht.config" name="_l10n_et_seed_all_companies"/>
     <function model="l10n.et.cash.cap.config" name="_l10n_et_seed_all_companies"/>
+    <function model="l10n.et.social.welfare.levy.config" name="_l10n_et_seed_all_companies"/>
 </odoo>
