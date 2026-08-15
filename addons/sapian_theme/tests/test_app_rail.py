@@ -88,25 +88,99 @@ async function sapianRailReport() {
     });
     return { problems, tiles: tiles.length, apps, loaded, visible };
 }
+
+// The reachability half, split out for one reason: the discrimination proof
+// has to be able to run THIS code against a deliberately broken DOM. Left
+// inline in the assertion it would have been a guard nobody could break, which
+// is the defect it was written to remove.
+async function sapianRailReach() {
+    const rail = document.querySelector('.o_sapian_rail');
+    const tiles = [...rail.querySelectorAll('.o_sapian_rail_app')];
+    const box = rail.getBoundingClientRect();
+    // FULL containment, all four edges. Testing only top/bottom let a tile
+    // pushed sideways out of the panel still count as visible — found because
+    // the discrimination break below then broke nothing.
+    const visible = () => tiles.filter((tile) => {
+        const b = tile.getBoundingClientRect();
+        return b.top >= box.top - 1 && b.bottom <= box.bottom + 1
+            && b.left >= box.left - 1 && b.right <= box.right + 1;
+    }).length;
+    const overflows = rail.scrollHeight > rail.clientHeight + 1;
+    const problems = [];
+    let lastReachable = false;
+    let allVisible = false;
+    if (overflows) {
+        const before = rail.scrollTop;
+        rail.scrollTop = rail.scrollHeight;
+        await new Promise((r) => requestAnimationFrame(() => r()));
+        const last = tiles[tiles.length - 1].getBoundingClientRect();
+        lastReachable = last.top >= box.top - 1 && last.bottom <= box.bottom + 1;
+        rail.scrollTop = before;
+        await new Promise((r) => requestAnimationFrame(() => r()));
+        if (!lastReachable) {
+            problems.push('the rail overflows and the last app is NOT reachable '
+                + 'by scrolling it — apps are being truncated');
+        }
+    } else {
+        allVisible = visible() === tiles.length;
+        if (!allVisible) {
+            problems.push('the rail does not overflow, so every one of its '
+                + tiles.length + ' apps should be visible without scrolling, '
+                + 'but only ' + visible() + ' are');
+        }
+    }
+    return { overflows, lastReachable, allVisible, problems };
+}
 """
 
 RAIL_RENDERS_JS = RAIL_REPORT_JS + """
 (async () => {
-    const report = await sapianRailReport();
+    const frames = async (n) => {
+        for (let i = 0; i < n; i++) {
+            await new Promise((r) => requestAnimationFrame(() => r()));
+        }
+    };
     const rail = document.querySelector('.o_sapian_rail');
 
-    // Everything must be REACHABLE. Nothing is truncated: scrolling to the
-    // bottom must actually bring the last app into the viewport.
-    let lastReachable = false;
-    if (rail && report.tiles) {
-        rail.scrollTop = rail.scrollHeight;
-        await new Promise((r) => requestAnimationFrame(() => r()));
-        const last = [...rail.querySelectorAll('.o_sapian_rail_app')].pop()
-                     .getBoundingClientRect();
-        lastReachable = last.top >= -1 && last.bottom <= window.innerHeight + 1;
-        rail.scrollTop = 0;
-        await new Promise((r) => requestAnimationFrame(() => r()));
+    // SETTLE FIRST, EXPLICITLY. This test was protected only by accident: the
+    // image-decode poll inside sapianRailReport() takes long enough that the
+    // client has usually settled by the time the scroll below happens. That is
+    // protection that disappears the moment the icons are already decoded, and
+    // it is not something a reader could know was load-bearing. Waiting on the
+    // signal itself makes it a decision instead of a side effect.
+    if (rail) {
+        const env = odoo.__WOWL_DEBUG__.root.env;
+        const deadline = Date.now() + 20000;
+        while (Date.now() < deadline && !env.services.action.currentController) {
+            await frames(5);
+        }
+        await frames(60);
     }
+
+    const report = await sapianRailReport();
+
+    // THE SCROLL ASSERTION WAS VACUOUS, and that is worse than flaky.
+    //
+    // Measured on the database this test runs against in CI: apps=14 tiles=14
+    // visibleWithoutScrolling=14. Every tile fits. `scrollTop = scrollHeight`
+    // is therefore a no-op and `lastReachableByScrolling=true` was produced by
+    // there being nothing to scroll — a success signal produced by doing
+    // nothing, in a file whose own docstring cites that rule. It could not
+    // flake, and for exactly the same reason it could not catch truncation.
+    //
+    // So BOTH branches assert, and neither is a skip:
+    //
+    //   overflows      -> the last app must be reachable by scrolling
+    //   does not       -> EVERY app must be visible without scrolling, which
+    //                     is the stronger claim when it holds
+    //
+    // and the marker says which branch ran, so "it did not overflow" stops
+    // being invisible. On a 36-app database — the shape we actually ship — it
+    // is the first branch: visibleWithoutScrolling=19 of 36.
+    const reach = await sapianRailReach();
+    const overflows = reach.overflows;
+    const lastReachable = reach.lastReachable;
+    const allVisible = reach.allVisible;
 
     // One line of positive evidence in the server log. A run that skipped, or
     // never reached the browser, cannot print this.
@@ -115,7 +189,9 @@ RAIL_RENDERS_JS = RAIL_REPORT_JS + """
         + ' apps=' + report.apps + ' tiles=' + report.tiles
         + ' loaded=' + report.loaded
         + ' visibleWithoutScrolling=' + report.visible
-        + ' lastReachableByScrolling=' + lastReachable);
+        + ' overflows=' + overflows
+        + ' lastReachableByScrolling=' + lastReachable
+        + ' allVisibleWithoutScrolling=' + allVisible);
 
     if (report.problems.length) {
         throw new Error('rail: ' + report.problems.join(' | '));
@@ -127,9 +203,8 @@ RAIL_RENDERS_JS = RAIL_REPORT_JS + """
     if (style.display === 'none') {
         throw new Error('the rail is hidden on a desktop viewport');
     }
-    if (!lastReachable) {
-        throw new Error('the last app is not reachable by scrolling the rail — '
-            + 'apps are being truncated');
+    if (reach.problems.length) {
+        throw new Error('rail reach: ' + reach.problems.join(' | '));
     }
     // The rail must not sit ON TOP of the content it is next to.
     const body = document.querySelector('.o_web_client');
@@ -148,6 +223,19 @@ RAIL_DISCRIMINATES_JS = RAIL_REPORT_JS + """
     // Prove the check goes red for each thing it claims to check, by breaking
     // that thing on purpose. An untested guard is one more thing that passes
     // by doing nothing.
+    //
+    // Settles first for the same reason its sibling does: sapianRailReport()
+    // compares the tile count against /web/webclient/load_menus, and the rail
+    // re-renders while the default action is still resolving. Breaking a tile
+    // during that window measures a moving target.
+    {
+        const env = odoo.__WOWL_DEBUG__.root.env;
+        const deadline = Date.now() + 20000;
+        while (Date.now() < deadline && !env.services.action.currentController) {
+            await new Promise((r) => setTimeout(r, 100));
+        }
+        await new Promise((r) => setTimeout(r, 600));
+    }
     const rail = document.querySelector('.o_sapian_rail');
     const anchor = rail.nextSibling;
     const parent = rail.parentNode;
@@ -188,8 +276,82 @@ RAIL_DISCRIMINATES_JS = RAIL_REPORT_JS + """
         + report.problems[0]);
     tile.insertBefore(img, imgAnchor);
 
-    // 4. and it recovers — a check that reports a problem unconditionally
-    //    would have passed 1-3 while being useless.
+    // 4. THE OVERFLOW BRANCH. Force the rail short so it overflows, then make
+    //    the last tile TALLER THAN THE BOX, so that even scrolled to the very
+    //    bottom it cannot fit inside — which is what "you can never see this
+    //    app" actually looks like.
+    //
+    //    `overflow-y: hidden` was tried first and does not work: Chrome still
+    //    honours a programmatic `scrollTop`, so the tail stayed reachable and
+    //    the break broke nothing. Geometry is deterministic where event
+    //    behaviour is not.
+    const railTiles = [...rail.querySelectorAll('.o_sapian_rail_app')];
+    const tileH = railTiles[0].getBoundingClientRect().height;
+    const tail = railTiles[railTiles.length - 1];
+    rail.style.height = Math.floor(tileH * (railTiles.length - 1)) + 'px';
+    await new Promise((r) => requestAnimationFrame(() => r()));
+    tail.style.height = (rail.clientHeight + 50) + 'px';
+    await new Promise((r) => requestAnimationFrame(() => r()));
+    const undoOverflow = () => { rail.style.height = ''; tail.style.height = ''; };
+    let reach = await sapianRailReach();
+    if (!reach.overflows) {
+        undoOverflow();
+        throw new Error('DISCRIMINATION FAILED: could not force the rail to '
+            + 'overflow, so the branch below was never exercised');
+    }
+    if (!reach.problems.length) {
+        undoOverflow();
+        throw new Error('DISCRIMINATION FAILED: the reach check passed with an '
+            + 'overflowing rail whose last app cannot be scrolled into view');
+    }
+    console.log('SAPIAN-RAIL-DISCRIMINATION unreachable-tail -> ' + reach.problems[0]);
+    undoOverflow();
+    await new Promise((r) => requestAnimationFrame(() => r()));
+
+    // 5. THE NO-OVERFLOW BRANCH, forced the same way rather than left to
+    //    whichever database this runs on. Make the rail taller than its
+    //    content so nothing overflows, then push one tile outside the box.
+    //    "It all fits" must stop being true.
+    //
+    //    Forced, because CI is moving to a 36-app database where the rail
+    //    overflows naturally — and a proof that quietly stops running on the
+    //    configuration we ship is the shape this whole file is about.
+    rail.style.height = (rail.scrollHeight + 200) + 'px';
+    await new Promise((r) => requestAnimationFrame(() => r()));
+    let forced = await sapianRailReach();
+    if (forced.overflows) {
+        rail.style.height = '';
+        throw new Error('DISCRIMINATION FAILED: could not force the rail to '
+            + 'STOP overflowing, so the no-overflow branch was never exercised');
+    }
+    // Sideways, not downwards. `top: 4000px` extends the rail's scrollable
+    // overflow, which flipped it back into the OVERFLOW branch — where
+    // scrolling to the bottom found the tile perfectly reachable and the break
+    // broke nothing. `overflow-x` is hidden on the rail, so a horizontal
+    // offset moves the tile out of the panel without changing scrollHeight.
+    tail.style.position = 'relative';
+    tail.style.left = '-4000px';
+    await new Promise((r) => requestAnimationFrame(() => r()));
+    forced = await sapianRailReach();
+    const undoFit = () => {
+        rail.style.height = ''; tail.style.position = ''; tail.style.left = '';
+    };
+    if (!forced.problems.length) {
+        undoFit();
+        throw new Error('DISCRIMINATION FAILED: the reach check passed with a '
+            + 'tile pushed outside a rail that does not overflow');
+    }
+    console.log('SAPIAN-RAIL-DISCRIMINATION tile-outside-box -> ' + forced.problems[0]);
+    undoFit();
+    await new Promise((r) => requestAnimationFrame(() => r()));
+
+    // 6. and it recovers — a check that reports a problem unconditionally
+    //    would have passed 1-5 while being useless.
+    reach = await sapianRailReach();
+    if (reach.problems.length) {
+        throw new Error('the reach check does not recover: '
+            + reach.problems.join(' | '));
+    }
     report = await sapianRailReport();
     if (report.problems.length) {
         throw new Error('the check does not recover once the DOM is restored: '

@@ -146,16 +146,71 @@ rather than because the thing it waits for has happened.
 Swept across the repo. Listed rather than fixed, because each needs its own
 before/after run to prove the change did something:
 
-| Block | Test | Risk |
+| Block | Test | Status |
 |---|---|---|
-| `RAIL_RENDERS_JS` | `TestSapianAppRailRendered` | **High — same defect exactly.** Sets `scrollTop = scrollHeight`, waits one frame, asserts `lastReachableByScrolling`. Identical shape to the block that was 3-in-10 red. |
-| `RAIL_DISCRIMINATES_JS` | `TestSapianAppRailDiscriminates` | Moderate. Only needs *some* problem to appear per break, but `sapianRailReport` compares the tile count against `load_menus`. |
-| `RAIL_HIDDEN_JS` | `TestSapianAppRailSmallScreen` | Low. Reads `display` and `padding-left` only — both CSS-static, no scroll and no active state. |
-| `FOOTER_REPORT_JS` and its two callers | `TestSapianBackendFooter*` | Low. Text and `paddingBottom`-vs-height; nothing that moves after first paint. |
+| `RAIL_RENDERS_JS` | `TestSapianAppRailRendered.test_the_rail_renders_one_loaded_icon_per_app` | **Fixed** — and the reason was not the one predicted. See below. |
+| `RAIL_DISCRIMINATES_JS` | `TestSapianAppRailRendered.test_the_rail_check_discriminates` | **Fixed** — same wait. (There is no `TestSapianAppRailDiscriminates` class; an earlier version of this table invented one. Both blocks are methods of `TestSapianAppRailRendered`.) |
+| `RAIL_HIDDEN_JS` | `TestSapianAppRailSmallScreen` | Left alone. Reads `display` and `padding-left` only — both CSS-static, no scroll, no active state, nothing that moves after first paint. |
+| `FOOTER_REPORT_JS` and its two callers | `TestSapianBackendFooter*` | Left alone. Footer text and `paddingBottom`-vs-height; same reasoning. |
 
 Already waiting, and safe: `RAIL_OVERFLOWS_JS`, `RAIL_KEEPS_SCROLL_JS`, all
 four `SIDEBAR_*` blocks, and `LANDING_JS` / `STAYS_PUT_JS` / `OCCLUSION_JS`
 (which wait through `ACTION_PROBE`).
+
+#### `RAIL_RENDERS_JS` was not flaky. It was vacuous, which is worse.
+
+Predicted high-risk by shape — `scrollTop = scrollHeight`, one frame, assert.
+Measured instead of assumed:
+
+| | runs | red |
+|---|---|---|
+| 14 apps (what CI ran) | 10 | **0** |
+| 36 apps (what we ship) | 8 | **0** |
+
+It never failed, and the 14-app line says why:
+
+```
+apps=14 tiles=14 loaded=14 visibleWithoutScrolling=14 lastReachableByScrolling=true
+```
+
+**Fourteen of fourteen visible.** The rail never overflowed, so
+`scrollTop = scrollHeight` was a no-op and `lastReachableByScrolling=true` was
+produced by there being nothing to scroll. It could not flake, and for exactly
+the same reason it could not catch truncation. A test that cannot fail is not
+passing.
+
+At 36 apps it does overflow (19 of 36 visible) and still never failed — because
+`sapianRailReport()` polls up to 10s for icon decode, which happens to give the
+client time to settle first. Protection by accident, which disappears the moment
+the icons are already decoded and which no reader could know was load-bearing.
+
+So the fix is two things, not one: the settle wait made **explicit**, and the
+assertion made **non-vacuous** by branching, with neither branch a skip —
+
+```
+overflows      -> the last app must be reachable by scrolling
+does not       -> EVERY app must be visible without scrolling
+```
+
+— and the marker now reports `overflows=` so "it did not overflow" stops being
+invisible. Both branches are proved to go red, on both a 14-app and a 36-app
+database, by forcing each condition rather than depending on which database the
+test happens to meet:
+
+```
+unreachable-tail  -> the rail overflows and the last app is NOT reachable ...
+tile-outside-box  -> ... every one of its N apps should be visible ..., but only N-1 are
+restored          -> clean
+```
+
+Two things that broke nothing on the first attempt, kept here because both look
+like they should work: `overflow-y: hidden` does **not** stop a programmatic
+`scrollTop` in Chrome, and displacing a tile with `top: 4000px` extends the
+rail's scrollable overflow, which flips it into the *other* branch where the
+tile is perfectly reachable. The breaks are geometric and horizontal instead.
+Finding the second of those also showed the containment test was only checking
+top and bottom, so a tile pushed sideways counted as visible; it now tests all
+four edges.
 
 ### It clears the fixed footer
 

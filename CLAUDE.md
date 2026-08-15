@@ -119,6 +119,57 @@ Enforced in CI at `.github/workflows/ci.yml` (`MIN_EXPECTED_TESTS`), in
 `scripts/backup.sh` (size + `pg_restore --list` + `tar tzf`, and a written
 `LAST_BACKUP_STATUS`), and in `scripts/build_demo.sh` (the `CHECK` block).
 
+## A run that could not start is not a run that failed
+
+Same family as the rule above, and it bites in the opposite direction: instead
+of a green that means nothing, a RED that means nothing — and a red that means
+nothing gets written into a README as evidence.
+
+Caught by one turn's margin. A loop measuring how often a flaky test fails
+recorded **8 of 8 red**. Postgres had stopped; every one of the eight was
+`connection refused` before a single test ran. Reported as-is it would have put
+a fabricated 8-of-8 before-rate into the module README, the changelog and a PR
+body, and made the fix that followed look far more valuable than it was.
+
+So any measurement loop **asserts its own preconditions on every iteration**,
+and reports three outcomes, never two:
+
+- **ABORTED** — the precondition failed (database unreachable, container down,
+  fixture missing). The iteration measured nothing. Do not count it.
+- **INVALID** — it ran but produced no result line to read. Also not a failure;
+  it is an unusable sample.
+- **RED** — the thing under test actually failed.
+
+Concretely: check `pg_isready` (or the equivalent) inside the loop rather than
+once before it; require the tool's own result line to be present before
+recording an outcome; and print the distinct label, so the tally cannot silently
+absorb infrastructure into signal. The pattern is in
+`scratchpad`-style measurement scripts and in `scripts/build_demo.sh`'s phase
+assertions.
+
+## Zero failures after a fix proves the fix broke nothing
+
+It proves a **cure** only if there was an observed failure before it. Say which
+one you have, in the same sentence as the number.
+
+Two measurements taken the same week, both reported as "0 red of 10", and only
+one of them was a fix:
+
+- `TestSapianAppRailOverflow` — **3 red of 4 runs** before the settle wait, 0 of
+  10 after. That is a cure, and the before-figure is what makes it one.
+- `RAIL_RENDERS_JS` — **0 red of 10** at 14 apps and **0 red of 8** at 36 apps
+  BEFORE any change. It had never failed. The change removed an assertion that
+  could not fail (every tile fitted, so the scroll was a no-op) and replaced
+  accidental protection with a stated one. 0-red afterwards proves only that
+  nothing broke.
+
+Both are worth doing. Only the first is worth describing as fixing a flake.
+When the before-rate is zero, write that the change is prophylactic and say what
+it removes — do not let a green after-figure imply a cure that was never
+demonstrated. The same applies to sample sizes: an invented denominator is worse
+than an ugly one, so report the sample you actually ran even when the two halves
+do not match.
+
 ## Platform-specific fixes must be verified on that platform
 A fix for a platform-specific failure is NOT verified until it is verified on
 that platform. Linux evidence is not proof for a Windows bug.
