@@ -1,9 +1,38 @@
 #!/usr/bin/env bash
 # Build a SapianERP sales-demo database FROM NOTHING, with Odoo demo data OFF.
-# Usage: ./scripts/build_demo.sh <db_name> [demo_module]
+# Usage: ./scripts/build_demo.sh <db_name> [demo_module] [--all-apps]
 #   demo_module   defaults to sapian_demo_trader (building materials).
 #                 Pass sapian_demo_pharma for the pharma pitch once that
 #                 module is converted to the same data/ pattern.
+#   --all-apps    additionally install EVERY module in sapian.module.catalog,
+#                 producing the navigation-scale database (see below). Off by
+#                 default, so the demo a prospect sees is unaffected.
+#
+# WHY --all-apps IS A FLAG HERE AND NOT A SIBLING SCRIPT
+# ------------------------------------------------------
+# The hard part of this script is not the install list — it is the ORDER: the
+# country before the chart (Odoo cannot switch charts afterwards), provisioning
+# strictly after the install completes (a company charted mid-install collides
+# with account's auto-install hook), the launcher defaults applied to an admin
+# created before web_responsive owned the field, and a verification block that
+# reads the served artefact rather than the config line. Every one of those was
+# learned from a failure, and a sibling script would be a second copy of all of
+# them, drifting from the first the moment either is touched. Same reasoning as
+# `verify_launcher` and `scripts/lint.sh` having exactly one definition.
+#
+# So the flag adds ONE install phase and changes nothing else. The database
+# name is already a required argument, so `demo_selam` cannot be affected
+# unless somebody types it — and the flag is off by default, so the demo build
+# command in every runbook keeps producing the same 12-app tenant.
+#
+# WHY THE CATALOGUE IS THE SOURCE, and not a list of modules typed in here
+# ------------------------------------------------------------------------
+# `sapian.module.catalog` is the product's own statement of what a client can
+# buy. A list duplicated into this script would go stale the first time a
+# module is added to the catalogue, and the navigation would then be designed
+# against a scale the product had already outgrown — which is exactly the
+# failure this flag exists to prevent (the rail's scroll reset was invisible at
+# 12 apps and threw away two thirds of the list at 36).
 #
 # WHY IT IS PHASED, and why not just `-i <module> --with-demo`:
 # Odoo's own demo data ships US placeholder companies and a website bound to
@@ -19,7 +48,18 @@
 set -euo pipefail
 export MSYS2_ARG_CONV_EXCL='/var/lib/odoo'
 
-DB_NAME="${1:?usage: build_demo.sh <db_name> [demo_module]}"
+ALL_APPS=0
+POSITIONAL=()
+for arg in "$@"; do
+  case "${arg}" in
+    --all-apps) ALL_APPS=1 ;;
+    -*) echo "!! Unknown option '${arg}'." >&2; exit 1 ;;
+    *) POSITIONAL+=("${arg}") ;;
+  esac
+done
+set -- "${POSITIONAL[@]+"${POSITIONAL[@]}"}"
+
+DB_NAME="${1:?usage: build_demo.sh <db_name> [demo_module] [--all-apps]}"
 DEMO_MODULE="${2:-sapian_demo_trader}"
 # The provisioning model each demo module exposes.
 case "${DEMO_MODULE}" in
@@ -122,6 +162,58 @@ if ! printf '%s\n' "${PROVISION_OUT}" | grep -qE '^>> launcher defaults applied 
   log_error "!! The launcher defaults step did not report, so this tenant's users may"$'\n'"   still land on the Module Catalog. Full output:"
   printf '%s\n' "${PROVISION_OUT}" | tail -20 >&2
   exit 1
+fi
+
+# ---- [4b] the navigation-scale database, only with --all-apps ---------------
+#
+# AFTER provisioning, not before, and the first attempt got this wrong in a way
+# worth recording: `sapian.module.catalog` is seeded PER COMPANY by
+# `_ensure_default_catalog`, which the onboarding wizard calls during phase
+# [4/5]. Reading it at phase [3/5] returned ZERO rows. The floor below caught
+# that and aborted; without it the flag would have installed nothing, exited 0,
+# and handed back a 12-app database presented as the 36-app one — the navigation
+# would then have been designed against the very scale the flag exists to
+# escape.
+#
+# Installing modules onto an already-provisioned tenant is also the honest
+# order: it is what happens to a real client who buys another module next
+# quarter.
+if [ "${ALL_APPS}" -eq 1 ]; then
+  log_line ">> [4b/5] --all-apps: installing every module in the product catalogue..."
+  CATALOG_OUT="$(printf "%s\n" \
+    "names = sorted(set(env['sapian.module.catalog'].search([]).mapped('technical_name')))" \
+    "print('>> catalog_modules=%d' % len(names))" \
+    "print('>> catalog_list=%s' % ','.join(names))" \
+    | ${COMPOSE} run --rm -T odoo odoo shell -d "${DB_NAME}" --no-http 2>&1)"
+  CATALOG_LIST="$(printf '%s\n' "${CATALOG_OUT}" | sed -n 's/^>> catalog_list=//p' | tr -d '\r')"
+  CATALOG_COUNT="$(printf '%s\n' "${CATALOG_OUT}" | sed -n 's/^>> catalog_modules=//p' | tr -d '\r')"
+  CATALOG_COUNT="${CATALOG_COUNT:-0}"
+  log_line ">>   catalogue reports ${CATALOG_COUNT} modules"
+  # A FLOOR, not "is it non-empty": a sync that half-populated the table would
+  # still be non-empty while quietly building the wrong scale.
+  MIN_CATALOG_MODULES=30
+  if [ -z "${CATALOG_LIST}" ] || [ "${CATALOG_COUNT}" -lt "${MIN_CATALOG_MODULES}" ]; then
+    log_error "!! The catalogue reported ${CATALOG_COUNT} modules (floor ${MIN_CATALOG_MODULES}), so --all-apps"$'\n'"   would install little or nothing and report success. Full output:"
+    printf '%s\n' "${CATALOG_OUT}" | tail -20 >&2
+    exit 1
+  fi
+  ${COMPOSE} run --rm odoo odoo -d "${DB_NAME}" -i "${CATALOG_LIST}" \
+    --without-demo=all --stop-after-init
+  # Re-sync the Enabled flags: they were computed at provisioning time against
+  # the 10 modules installed then, and a catalogue reading "10 enabled" on a
+  # database with every app installed is a screen that contradicts itself.
+  SYNC_OUT="$(printf "%s\n" \
+    "env['sapian.module.catalog']._sync_enabled_from_installed()" \
+    "env.cr.commit()" \
+    "n = len(env['sapian.module.catalog'].search([('enabled','=',True)]))" \
+    "print('>> catalog_enabled=%d' % n)" \
+    | ${COMPOSE} run --rm -T odoo odoo shell -d "${DB_NAME}" --no-http 2>&1)"
+  printf '%s\n' "${SYNC_OUT}" | grep -E '^>> ' || true
+  if ! printf '%s\n' "${SYNC_OUT}" | grep -qE '^>> catalog_enabled=[0-9]+$'; then
+    log_error "!! The catalogue re-sync did not report. Full output:"
+    printf '%s\n' "${SYNC_OUT}" | tail -20 >&2
+    exit 1
+  fi
 fi
 
 # The acceptance checks, asserted rather than suggested. Both of these have
@@ -248,6 +340,25 @@ check '^CHECK rail_css=True$' \
   "The app rail's CSS is not in the served backend bundle, so the rail cannot"$'\n'"   render and the app icons stay invisible on desktop."
 check '^CHECK rail_iconless=0$' \
   "At least one root app has no icon, so the rail draws a blank tile for it"$'\n'"   — see the CHECK rail_iconless_names line above."
+
+# --all-apps has to produce the SCALE it exists for. Without this the flag
+# could install nothing, exit 0, and hand back a 12-app database that the
+# navigation work would then be designed against — which is the failure the
+# flag was added to prevent, reintroduced by the flag itself.
+RAIL_APPS="$(printf '%s\n' "${VERIFY_OUT}" | sed -n 's/^CHECK rail_apps=//p' | tr -d '\r')"
+RAIL_APPS="${RAIL_APPS:-0}"
+log_line ">>   root apps in this database: ${RAIL_APPS}"
+if [ "${ALL_APPS}" -eq 1 ]; then
+  # The product target is 36. The floor is below it because the app count is a
+  # consequence of which modules declare a root menu, not a number we choose —
+  # but it is far enough above the 12 of a normal build that the two cannot be
+  # confused, which is the discrimination this check is for.
+  MIN_ALL_APPS=30
+  if [ "${RAIL_APPS}" -lt "${MIN_ALL_APPS}" ]; then
+    log_error "!! --all-apps produced only ${RAIL_APPS} root apps (floor ${MIN_ALL_APPS}). The catalogue"$'\n'"   installed but the apps did not appear, so this is NOT the"$'\n'"   navigation-scale database and nothing measured on it means anything."
+    verify_failed=1
+  fi
+fi
 
 # The login page a visitor is actually served. ONE definition, shared with
 # scripts/provision_client.sh — see scripts/lib/check_login_page.py. It used to
