@@ -121,6 +121,19 @@ run() {  # run <label> <command...>
   return 0
 }
 
+# --- Vendored third-party code is still the code it is pinned to -------------
+# Not a linter, but the same kind of gate and it belongs behind the same one
+# command: vendor/ holds upstream addons copied verbatim at a pinned commit, and
+# .pylintrc deliberately does NOT cover them (their manifests name their own
+# authors). Without this, an edit to vendored code passes every tool above and
+# is invisible until the next refresh silently reverts it.
+#
+# Here rather than only in CI so that a developer who edits vendored code is
+# stopped at pre-push — the same reason the three tools moved into this file.
+# The guard's own discrimination proof (`--self-test`) stays in CI: it breaks
+# the tree on purpose and restoring it mid-push would be rude.
+run vendor "${REPO_ROOT}/scripts/check_vendor.sh"
+
 run ruff   ${RUFF} check "${RUFF_PATHS[@]}"
 run black  ${BLACK} --check "${BLACK_PATHS[@]}"
 # pylint's exit status is a BITMASK: 1 fatal, 2 error, 4 warning, 8 refactor,
@@ -134,5 +147,5 @@ if [ "${#FAILED[@]}" -ne 0 ]; then
   printf '!! lint FAILED: %s\n' "${FAILED[*]}" >&2
   exit 1
 fi
-printf '>> lint clean: ruff, black, pylint-odoo all exited 0.\n'
+printf '>> lint clean: ruff, black, pylint-odoo and the vendor pin all exited 0.\n'
 exit 0
