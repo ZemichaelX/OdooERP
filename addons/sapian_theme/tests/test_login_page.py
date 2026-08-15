@@ -114,17 +114,47 @@ class TestLoginPageAsAVisitor(HttpCase):
         of `web.login` anchored inside `.oe_login_buttons`, and website's
         replacement of the login page does not carry it.
 
-        So the assertion is different in the two configurations, and BOTH
-        assert something — neither branch is a skip. Which branch runs is
-        decided by what is installed, not by what happened, so a broken
+        WITHOUT `auth_signup` INSTALLED IT ALSO DOES NOT, for the more basic
+        reason that the module which renders the offer is absent — and
+        `auth_signup.invitation_scope` is then a parameter nothing reads. This
+        branch exists because the test asserted the offer unconditionally and
+        so FAILED on a database carrying sapian_theme and nothing else: a real
+        failure, in a configuration no CI job ran, found while evaluating
+        something unrelated. The theme's own claim is that it installs alone,
+        so "alone" has to be a configuration its tests survive — and it is now
+        covered by the theme-alone step of the `theme-with-website` job.
+
+        So the assertion differs across three configurations and ALL THREE
+        assert something — none of them is a skip, which is the point: a skip
+        here would be a success signal produced by doing nothing. Which branch
+        runs is decided by what is installed, not by what happened, so a broken
         override cannot pick the lenient one.
         """
         self._signup_scope("b2c")
         html = self._login_page()
-        website = self.env["ir.module.module"].search(
-            [("name", "=", "website"), ("state", "=", "installed")], limit=1
+        installed = (
+            self.env["ir.module.module"]
+            .search([("name", "in", ("website", "auth_signup")), ("state", "=", "installed")])
+            .mapped("name")
         )
-        if website:
+
+        if "auth_signup" not in installed:
+            # Nothing can render the offer. Assert exactly that, rather than
+            # asserting the offer appears — and assert it at b2c, the setting
+            # that would produce it if anything could, so this is still a
+            # statement about our login page and not about an empty string.
+            self.assertNotIn(
+                "/web/signup",
+                html,
+                "auth_signup is not installed, so no signup link can exist — "
+                "if one is being rendered, it is coming from somewhere it "
+                "should not",
+            )
+            self.assertNotIn("Don't have an account", html)
+            # And the page must still be OUR login page, or the absence above
+            # is the absence of everything.
+            self.assertIn("Powered by SapianERP", html)
+        elif "website" in installed:
             self.assertNotIn(
                 "/web/signup",
                 html,

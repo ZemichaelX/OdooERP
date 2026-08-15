@@ -129,6 +129,29 @@ What actually covers it, and does so regardless of module load order:
 So: **a red `test_compute_redirect_home` is the expected state, not a broken
 vendor copy.** Everything else being red is not.
 
+## It is installed by default
+
+Since the launcher work landed, `web_responsive` is in the shipped default set:
+`scripts/provision_client.sh`'s `MODULES`, `scripts/build_demo.sh`'s install
+list, and CI's `integration-tests` job. It is the product's navigation, not an
+optional extra.
+
+Installing it is **not sufficient**. Its two per-user settings decide what a
+user actually lands on, and the admin of a demo or client tenant is created in
+the `-i base` phase before this module owns those fields — so
+`sapian_theme`'s defaults never reach it. Both scripts call
+`env['res.users']._sapian_apply_launcher_defaults(dry_run=False)` during
+provisioning and then verify the outcome from the served artefact
+(`verify_launcher` in `scripts/lib/preflight.sh`). See
+`addons/sapian_theme/README.md` for the measurement behind that.
+
+One consequence for CI: this module's own `at_install` test cannot run on a
+database that carries `account`. `-u web_responsive` reloads it at position
+39/82, before `account`, and `BaseCommon.setUpClass` then hits a NOT NULL
+`autopost_bills`. The `integration-tests` job therefore installs it without
+selecting its tests; the `launcher-defaults` job runs them where the module is
+loaded on its own terms.
+
 ## Refreshing the pin
 
 Deliberate, in its own PR, with the UI evidence attached — not a drive-by bump.

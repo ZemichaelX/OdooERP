@@ -68,19 +68,51 @@ printf "%s\n" \
 # theme is a product module a client may or may not buy, and the demo tenant
 # must not force it into every database that installs the demo module. What the
 # BUILD does is a build decision.
-log_line ">> [3/5] Installing ${DEMO_MODULE} + sapian_theme (the 'et' chart loads onto that company)..."
-${COMPOSE} run --rm odoo odoo -d "${DB_NAME}" -i "${DEMO_MODULE}",sapian_theme \
+# web_responsive is here for the same reason sapian_theme is: it is the
+# product's navigation, not an optional extra. Without it the demo opens on the
+# Module Catalog — a configuration screen — in the same session where the pitch
+# claims a finished product. It is vendored at a pinned commit; see
+# vendor/README.md.
+log_line ">> [3/5] Installing ${DEMO_MODULE} + sapian_theme + web_responsive (the 'et' chart loads onto that company)..."
+${COMPOSE} run --rm odoo odoo -d "${DB_NAME}" -i "${DEMO_MODULE}",sapian_theme,web_responsive \
   --without-demo=all --stop-after-init
 
 # Provisioning runs AFTER the install completes, never during it: module data
 # loads mid-install, and a company charted at that point collides with the
 # account module's end-of-load chart auto-install hook.
+# The launcher defaults are applied HERE, not left to sapian_theme's
+# `default_get`. The admin was created back in phase [1/5] by `-i base`, before
+# web_responsive owned the field, so the product default never reaches it and
+# the one user in every screen recording still lands on the Module Catalog.
+# Measured, not assumed — see addons/sapian_theme/models/res_users.py. This is
+# provisioning, not a migration: it is called by name, and it moves only users
+# still on web_responsive's own defaults.
+# AND ITS OUTPUT IS ASSERTED, because `odoo shell` reading a pipe behaves like
+# an interactive console: an exception on one line does NOT stop the next one.
+# Observed here — provisioning raised a SerializationFailure, the launcher line
+# below it still ran, `env.cr.commit()` still committed, and the whole phase
+# printed nothing at all while the script carried on to the next step. A phase
+# that can half-execute in silence is the failure shape this repo keeps finding
+# (CLAUDE.md), so both markers are now required.
 log_line ">> [4/5] Provisioning the tenant (adopting the existing company)..."
-printf "%s\n" \
+PROVISION_OUT="$(printf "%s\n" \
   "company = env['${DEMO_MODEL}']._provision_demo_tenant(adopt_existing=True)" \
+  "moved = env['res.users']._sapian_apply_launcher_defaults(dry_run=False)" \
   "env.cr.commit()" \
   "print('>> provisioned:', company.name, '| chart:', company.chart_template)" \
-  | ${COMPOSE} run --rm -T odoo odoo shell -d "${DB_NAME}" --no-http
+  "print('>> launcher defaults applied to %d user(s)' % len(moved))" \
+  | ${COMPOSE} run --rm -T odoo odoo shell -d "${DB_NAME}" --no-http 2>&1)"
+printf '%s\n' "${PROVISION_OUT}" | grep -E '^>> ' || true
+if ! printf '%s\n' "${PROVISION_OUT}" | grep -q '^>> provisioned: '; then
+  log_error "!! Provisioning did not report. It raised, or it ran nothing — either way"$'\n'"   this database is not the demo tenant. Full output:"
+  printf '%s\n' "${PROVISION_OUT}" | tail -20 >&2
+  exit 1
+fi
+if ! printf '%s\n' "${PROVISION_OUT}" | grep -qE '^>> launcher defaults applied to [0-9]+ user\(s\)$'; then
+  log_error "!! The launcher defaults step did not report, so this tenant's users may"$'\n'"   still land on the Module Catalog. Full output:"
+  printf '%s\n' "${PROVISION_OUT}" | tail -20 >&2
+  exit 1
+fi
 
 # The acceptance checks, asserted rather than suggested. Both of these have
 # silently regressed before: the company list picked up Odoo's US placeholders,
@@ -211,6 +243,10 @@ check '^CHECK rail_iconless=0$' \
 # scripts/provision_client.sh — see scripts/lib/check_login_page.py. It used to
 # be inline here and nowhere else, which is how a real client tenant came to be
 # provisioned with no theme at all and served Odoo's own footer.
+if ! verify_launcher "${COMPOSE}" "${DB_NAME}" "${REPO_ROOT}"; then
+  verify_failed=1
+fi
+
 if ! verify_login_page "${COMPOSE}" "${DB_NAME}" "${REPO_ROOT}"; then
   verify_failed=1
 fi

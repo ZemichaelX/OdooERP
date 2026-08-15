@@ -138,6 +138,16 @@ jobs:
           # --test-enable runs the whole suite. --workers=0 is required for the
           # HttpCase web tests. A failing test makes odoo exit non-zero → CI red.
           #
+          # web_responsive is installed because it is now in the shipped default
+          # set (scripts/provision_client.sh) and in the demo build, so the
+          # suite must run against the stack a client actually gets. Its OWN
+          # tests are deliberately NOT in --test-tags below: with `account`
+          # installed, its at_install TestResUsers errors in setUpClass before
+          # running (it loads at 39/82, before account, and hits a NOT NULL
+          # autopost_bills) — diagnosed in vendor/README.md. Upstream's tests
+          # are run by the launcher-defaults job, where the module is loaded on
+          # its own terms.
+          #
           # sapian_dress_rehearsal is here because it was NOT, and that is how
           # its provisioner stayed broken for a week: scripts/dress_rehearsal.sh
           # is run by hand, CI never touched the module, and the one guard that
@@ -149,7 +159,7 @@ jobs:
             --data-dir=/tmp/odoo-data \
             --addons-path="${GITHUB_WORKSPACE}/addons,${GITHUB_WORKSPACE}/vendor/oca_web,/usr/lib/python3/dist-packages/odoo/addons" \
             -d ci_test \
-            -i sapian_demo_trader,sapian_demo_pharma,sapian_theme,sapian_dress_rehearsal,l10n_et_calendar,l10n_et_calendar_account,l10n_et_calendar_purchase \
+            -i sapian_demo_trader,sapian_demo_pharma,sapian_theme,web_responsive,sapian_dress_rehearsal,l10n_et_calendar,l10n_et_calendar_account,l10n_et_calendar_purchase \
             --test-enable \
             --test-tags '/sapian_core,/l10n_et_base,/l10n_et_payroll,/l10n_et_reports,/vertical_pharma,/sapian_demo_trader,/sapian_demo_pharma,/sapian_theme,/sapian_dress_rehearsal,/l10n_et_calendar,/l10n_et_calendar_account,/l10n_et_calendar_purchase' \
             --workers=0 --max-cron-threads=0 \
@@ -442,6 +452,81 @@ jobs:
             exit 1
           fi
 
+      - name: The theme also installs, and passes, entirely ALONE
+        shell: bash
+        # THE OTHER END OF THE SAME QUESTION.
+        #
+        # The step above proves the theme survives a module arriving beside it.
+        # This one proves it survives nothing arriving at all — which is the
+        # configuration its own manifest claims ("must install on a database
+        # that carries no other sapian module") and the one no job ran.
+        #
+        # That gap was not hypothetical. test_the_signup_check_discriminates
+        # asserted the login page offers /web/signup at b2c, which is only true
+        # when `auth_signup` is installed; on a theme-only database it failed.
+        # It had been failing on master, unnoticed, because every job that runs
+        # the login tests installs something that drags auth_signup in. The
+        # assertion is now conditional on what is actually installed, and this
+        # step is what keeps it honest.
+        #
+        # It is a step on this job rather than a job of its own because it needs
+        # the same container and database service and takes about forty seconds
+        # — a whole job's start-up cost to run one install would be the more
+        # expensive choice.
+        run: |
+          set -euo pipefail
+          odoo \
+            --db_host=db --db_port=5432 --db_user=odoo --db_password=odoo \
+            --data-dir=/tmp/odoo-data \
+            --addons-path="${GITHUB_WORKSPACE}/addons,${GITHUB_WORKSPACE}/vendor/oca_web,/usr/lib/python3/dist-packages/odoo/addons" \
+            -d ci_theme_alone \
+            -i sapian_theme --without-demo=all \
+            --test-enable --test-tags '/sapian_theme' \
+            --workers=0 --max-cron-threads=0 \
+            --stop-after-init --log-level=test 2>&1 | tee /tmp/theme-alone.log
+
+          if ! grep -q "odoo\.tests\.result:" /tmp/theme-alone.log; then
+            echo "::error::The test runner never reported a result line — no tests were executed."
+            exit 1
+          fi
+          if grep -qE "tests\.result: ([1-9][0-9]* failed|0 failed, [1-9][0-9]* error)" /tmp/theme-alone.log; then
+            echo "::error::sapian_theme does not pass its own tests when installed alone."
+            exit 1
+          fi
+
+          # PROVE IT REALLY IS ALONE. Asserted against the database, not the
+          # command line: `-i sapian_theme` is also what a database with half
+          # the product already on it would show. Nothing of ours may be here
+          # but the theme — and auth_signup must be ABSENT, since its presence
+          # is what silently made this configuration look covered.
+          odoo shell \
+            --db_host=db --db_port=5432 --db_user=odoo --db_password=odoo \
+            --data-dir=/tmp/odoo-data \
+            --addons-path="${GITHUB_WORKSPACE}/addons,${GITHUB_WORKSPACE}/vendor/oca_web,/usr/lib/python3/dist-packages/odoo/addons" \
+            -d ci_theme_alone --no-http --stop-after-init --log-level=warn <<'PY' 2>&1 | tee /tmp/theme-alone-check.log
+          names = env['ir.module.module'].search([('state', '=', 'installed')]).mapped('name')
+          ours = sorted(n for n in names if n.startswith(('sapian_', 'l10n_et_')) or n == 'web_responsive')
+          print('SAPIAN-ALONE ours=%s auth_signup=%s' % (ours, 'auth_signup' in names))
+          PY
+          grep -q "SAPIAN-ALONE ours=" /tmp/theme-alone-check.log \
+            || { echo "::error::The odoo shell never reported — the alone check ran nothing."; exit 1; }
+          grep "SAPIAN-ALONE " /tmp/theme-alone-check.log | sed 's/^/  /'
+          if ! grep -q "SAPIAN-ALONE ours=\['sapian_theme'\] auth_signup=False" /tmp/theme-alone-check.log; then
+            echo "::error::ci_theme_alone is not the configuration this step exists to cover."
+            exit 1
+          fi
+
+          # And a floor, so a broken selection cannot pass by running nothing.
+          MIN_ALONE_TESTS=40
+          EXECUTED=$(grep -oE "odoo\.tests\.result: [0-9]+ failed, [0-9]+ error\(s\) of [0-9]+ tests" /tmp/theme-alone.log \
+                     | grep -oE "of [0-9]+ tests" | grep -oE "[0-9]+" | tail -1 || echo 0)
+          EXECUTED=${EXECUTED:-0}
+          echo "Executed ${EXECUTED} sapian_theme tests alone (floor ${MIN_ALONE_TESTS})"
+          if [ "${EXECUTED}" -lt "${MIN_ALONE_TESTS}" ]; then
+            echo "::error::Only ${EXECUTED} tests ran alone; expected at least ${MIN_ALONE_TESTS}."
+            exit 1
+          fi
+
   rail-render:
     name: App rail rendered in a browser
     runs-on: ubuntu-latest
@@ -619,7 +704,7 @@ jobs:
           odoo ${ARGS} -d ci_launcher \
             -i sapian_demo_trader,sapian_theme,web_responsive \
             --without-demo=all \
-            --test-enable --test-tags 'sapian_launcher,/sapian_theme:TestLauncherDefaultValues' \
+            --test-enable --test-tags 'sapian_launcher,/sapian_theme:TestLauncherDefaultValues,/sapian_theme:TestLauncherProvisioningCommand' \
             --log-level=test 2>&1 | tee /tmp/launcher.log
 
           if ! grep -q "odoo\.tests\.result:" /tmp/launcher.log; then

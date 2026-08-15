@@ -129,6 +129,111 @@ class TestLauncherDefaultValues(TransactionCase):
         self.assertEqual(defaults.get("apps_menu_theme"), "milk")
 
 
+@tagged("post_install", "-at_install")
+class TestLauncherProvisioningCommand(TransactionCase):
+    """`_sapian_apply_launcher_defaults`, the step the build scripts call.
+
+    The product default cannot reach the one user that matters. Measured:
+    `build_demo.sh` and `provision_client.sh` create the admin in their
+    `-i base` phase, where `is_redirect_home` does not exist yet, so
+    `default_get` never sees it and web_responsive's column default wins. A
+    build that installs the launcher and stops hands over a tenant whose only
+    user still lands on the Module Catalog.
+
+    Like the class above, this runs on every database and asserts the behaviour
+    appropriate to what is installed, so the no-web_responsive path is covered
+    too — the build scripts can be pointed at such a database.
+    """
+
+    def _has_fields(self):
+        return "is_redirect_home" in self.env["res.users"]._fields
+
+    def test_it_says_so_and_does_nothing_without_web_responsive(self):
+        if self._has_fields():
+            return
+        moved = self.env["res.users"]._sapian_apply_launcher_defaults(dry_run=False)
+        self.assertFalse(moved, "there is no launcher to default, so nothing may move")
+
+    def test_a_dry_run_reports_and_writes_nothing(self):
+        if not self._has_fields():
+            return
+        stuck = self.env["res.users"].create(
+            {
+                "login": "provisioning.dryrun.user",
+                "name": "Dry Run",
+                "is_redirect_home": False,
+                "apps_menu_theme": "milk",
+            }
+        )
+        would_move = self.env["res.users"]._sapian_apply_launcher_defaults()
+        self.assertIn(stuck, would_move, "the dry run must report the user it would move")
+        self.assertFalse(stuck.is_redirect_home, "a DRY RUN wrote to the database")
+        self.assertEqual(stuck.apps_menu_theme, "milk", "a DRY RUN wrote to the database")
+
+    def test_applying_it_moves_the_user_the_default_could_not_reach(self):
+        if not self._has_fields():
+            return
+        # Exactly the state build_demo.sh leaves the admin in: created before
+        # web_responsive existed, so sitting on the column defaults.
+        stuck = self.env["res.users"].create(
+            {
+                "login": "provisioning.stuck.user",
+                "name": "Created Before The Module",
+                "is_redirect_home": False,
+                "apps_menu_theme": "milk",
+            }
+        )
+        moved = self.env["res.users"]._sapian_apply_launcher_defaults(dry_run=False)
+        self.assertIn(stuck, moved)
+        self.assertTrue(stuck.is_redirect_home)
+        self.assertEqual(stuck.apps_menu_theme, "community")
+
+    def test_it_is_idempotent(self):
+        """A second run must report nothing to do, not move everybody again.
+
+        Both build scripts call this on every run, so a command that always
+        claimed to have changed something would make its own log useless as
+        evidence.
+        """
+        if not self._has_fields():
+            return
+        self.env["res.users"].create(
+            {
+                "login": "provisioning.idempotent.user",
+                "name": "Twice",
+                "is_redirect_home": False,
+                "apps_menu_theme": "milk",
+            }
+        )
+        first = self.env["res.users"]._sapian_apply_launcher_defaults(dry_run=False)
+        self.assertTrue(first)
+        second = self.env["res.users"]._sapian_apply_launcher_defaults(dry_run=False)
+        self.assertFalse(second, "a second run found work to do, so it is not idempotent")
+
+    def test_it_leaves_portal_and_public_users_alone(self):
+        """`share = True` users never see a backend launcher.
+
+        Writing the fields on them would be harmless but dishonest: the command
+        reports how many users it moved, and a count inflated by portal users
+        is a count nobody can act on.
+        """
+        if not self._has_fields():
+            return
+        portal = self.env["res.users"].create(
+            {
+                "login": "provisioning.portal.user",
+                "name": "Portal",
+                "is_redirect_home": False,
+                "apps_menu_theme": "milk",
+                "group_ids": [(6, 0, [self.env.ref("base.group_portal").id])],
+            }
+        )
+        self.assertTrue(portal.share, "this fixture is only meaningful for a share user")
+        moved = self.env["res.users"]._sapian_apply_launcher_defaults(dry_run=False)
+        self.assertNotIn(portal, moved)
+        self.assertFalse(portal.is_redirect_home)
+
+
 # ---------------------------------------------------------------------------
 # The browser half. Everything below needs web_responsive installed.
 # ---------------------------------------------------------------------------

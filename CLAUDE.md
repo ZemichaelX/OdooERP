@@ -181,12 +181,24 @@ recall golden incl. precision-by-exclusion; 7 Odoo tests; both installed on
 scratch_final).
 
 Navigation (Aug 2026): OCA `web_responsive` is vendored at a pinned commit in
-`vendor/oca_web/` (never installed by default — installing it is a per-database
-decision), and `sapian_theme` defaults its two per-user settings so a new user
-lands on the fullscreen app launcher in the house brand rather than on the
-Module Catalog in Odoo's lilac. Our own app rail is kept: the two do not
-conflict, and the rail solves a problem the launcher does not. Evidence and the
-refresh procedure are in `vendor/README.md` and `addons/sapian_theme/README.md`.
+`vendor/oca_web/` and is now in the SHIPPED default set — `provision_client.sh`,
+`build_demo.sh` and CI's main install list — for the same reason `sapian_theme`
+is: it is the product's navigation, and a tenant without it opens on the Module
+Catalog, a configuration screen. `sapian_theme` defaults its two per-user
+settings so a user lands on the fullscreen launcher in the house brand.
+
+INSTALLING IT IS NOT ENOUGH, and this is the trap: the admin of a demo or client
+tenant is created in the `-i base` phase, BEFORE web_responsive owns the field,
+so `default_get` never reaches it and the column default (Module Catalog, lilac)
+wins for the one user in every screen recording. Both scripts therefore call
+`env['res.users']._sapian_apply_launcher_defaults(dry_run=False)` during
+provisioning — a provisioning step, never a migration — and then assert the
+result from the artefact via `verify_launcher` (scripts/lib/check_launcher.py).
+For a tenant that already exists, that one call is the fix.
+
+Our own app rail is kept: the two do not conflict, and the rail solves a problem
+the launcher does not. Evidence and the refresh procedure are in
+`vendor/README.md` and `addons/sapian_theme/README.md`.
 
 BUILD PHASE COMPLETE except client-pitch work — next: sales (demo the trader
 and pharma tenants, proposal from the DAT template in docs/plan-2026/01).
