@@ -616,15 +616,47 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p /tmp/odoo-data
-          # Several apps, so the rail has something to be a rail OF. The tests
-          # never assert a fixed tile count — the expectation is read per run
-          # from /web/webclient/load_menus — so this list can change freely.
+          ARGS="--db_host=db --db_port=5432 --db_user=odoo --db_password=odoo
+                --data-dir=/tmp/odoo-data
+                --addons-path=${GITHUB_WORKSPACE}/addons,${GITHUB_WORKSPACE}/vendor/oca_web,/usr/lib/python3/dist-packages/odoo/addons
+                --workers=0 --max-cron-threads=0 --stop-after-init"
+
+          # THE PRODUCT'S OWN APP COUNT, not a convenient one.
+          #
+          # This job used to install eight modules and get 14 root apps, and at
+          # 14 apps EVERYTHING FITS: scrollHeight never exceeds clientHeight, so
+          # the rail's scroll and truncation assertions were either forced
+          # artificially (TestSapianAppRailOverflow sets a height) or vacuous
+          # (RAIL_RENDERS_JS scrolled a rail with nothing to scroll and reported
+          # lastReachableByScrolling=true, which it could not have failed).
+          #
+          # 14 apps is a configuration no client will ever run. We ship 36, and
+          # 36 is where overflow, scrolling and truncation actually live —
+          # measured, 19 of 36 visible without scrolling, the rail overflows
+          # naturally. Both rail defects found on 2026-08-15 were about
+          # behaviour at that scale and both were found by accident.
+          #
+          # The list is sapian.module.catalog's — the same set
+          # `build_demo.sh --all-apps` installs — kept in sync by the app-count
+          # floor below rather than by hope.
+          #
+          # COUNTRY BEFORE CHART, as build_demo.sh and provision_client.sh do:
+          # l10n_et_base loads the Ethiopian chart, and Odoo cannot switch
+          # charts afterwards.
+          CATALOG="account,board,calendar,contacts,crm,data_recycle,fleet,hr,hr_attendance,hr_expense,hr_holidays,hr_recruitment,im_livechat,l10n_et_base,l10n_et_payroll,l10n_et_reports,lunch,maintenance,marketing_card,mass_mailing,mass_mailing_sms,mrp,point_of_sale,pos_restaurant,project,project_todo,purchase,repair,sale_management,sapian_core,stock,survey,vertical_pharma,website,website_event,website_sale,website_slides"
+
+          odoo ${ARGS} -d ci_rail -i base --without-demo=all --log-level=warn
+          echo "company = env['res.company'].search([], limit=1); company.country_id = env.ref('base.et'); env.cr.commit(); print('SAPIAN-RAIL-SETUP country=%s' % company.country_id.code)" \
+            | odoo shell ${ARGS} -d ci_rail --no-http --log-level=warn 2>&1 | tee /tmp/rail-setup.log
+          grep -q "SAPIAN-RAIL-SETUP country=ET" /tmp/rail-setup.log \
+            || { echo "::error::The odoo shell never reported — the country was not set, so l10n_et_base would load the wrong chart."; exit 1; }
+
           odoo \
             --db_host=db --db_port=5432 --db_user=odoo --db_password=odoo \
             --data-dir=/tmp/odoo-data \
             --addons-path="${GITHUB_WORKSPACE}/addons,${GITHUB_WORKSPACE}/vendor/oca_web,/usr/lib/python3/dist-packages/odoo/addons" \
             -d ci_rail \
-            -i sapian_theme,contacts,crm,project,hr,stock,sale_management,purchase \
+            -i "sapian_theme,${CATALOG}" \
             --without-demo=all \
             --test-enable \
             --test-tags '/sapian_theme:TestSapianAppRailRendered,/sapian_theme:TestSapianAppRailOverflow,/sapian_theme:TestSapianAppRailKeepsScroll,/sapian_theme:TestSapianAppRailSmallScreen,/sapian_theme:TestAppRailDataOverHttp,/sapian_theme:TestSapianBackendFooterRendered,/sapian_theme:TestSapianBackendFooterSmallScreen,/sapian_theme:TestBackendFooterDataOverHttp,/sapian_theme:TestSapianSidebarStates,/sapian_theme:TestSapianSidebarStatesDiscriminate,/sapian_theme:TestSapianSidebarCollapse,/sapian_theme:TestSapianSidebarKeyboard' \
@@ -676,7 +708,12 @@ jobs:
 
           # And the rail was not empty. A one-app rail would satisfy every
           # assertion above while proving nothing about a real tenant.
-          MIN_RAIL_TILES=8
+          # THE SCALE THIS JOB EXISTS FOR. Raised from 8 when the database was
+          # swapped from 14 apps to the product's 36: a job that silently fell
+          # back to a handful of apps would still satisfy every marker above
+          # while testing the configuration we do not sell, which is exactly
+          # how the vacuous scroll assertion survived.
+          MIN_RAIL_TILES=30
           TILES=$(grep -oE "SAPIAN-RAIL viewport=[^ ]+ apps=[0-9]+ tiles=[0-9]+" /tmp/rail.log \
                   | grep -oE "tiles=[0-9]+" | grep -oE "[0-9]+" | head -1)
           TILES=${TILES:-0}
@@ -685,6 +722,17 @@ jobs:
             echo "::error::The rail rendered ${TILES} tiles; expected at least ${MIN_RAIL_TILES}. The install list did not create the apps this job exists to draw."
             exit 1
           fi
+
+          # AND IT MUST ACTUALLY OVERFLOW. The whole point of the swap: at 14
+          # apps everything fitted, so `lastReachableByScrolling=true` meant
+          # "there was nothing to scroll" and could not have been false. If the
+          # rail stops overflowing here, the reachability assertion has gone
+          # back to proving nothing and this job should say so rather than pass.
+          if ! grep -q "overflows=true" /tmp/rail.log; then
+            echo "::error::The rail did not overflow on a ${TILES}-app database, so its scroll and truncation assertions were vacuous. Either the app count collapsed or the row height changed."
+            exit 1
+          fi
+          echo "Rail overflows naturally at ${TILES} apps — the scroll assertions are real."
 
           # THE SIDEBAR'S SCROLL SURVIVED THE COLLAPSE, read as three equal
           # numbers rather than as "the test passed". Collapsing is a re-render
