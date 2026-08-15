@@ -1,23 +1,41 @@
 // =============================================================================
-// The app rail.
+// The app sidebar — icon + label, with a collapse toggle.
 //
-// Two rules that must agree with each other, so they live in ONE media query:
+// Values from docs/SPEC-navigation-chrome.md section 1: 200px expanded, 56px
+// collapsed, 44px rows, 13px/600 labels in the brand, hover a brand pill at
+// ~8% alpha, active a SOLID brand fill with a white label.
+//
+// That last one is the point of the whole section. The competitor's active and
+// inactive links have byte-identical computed styles — there is no way to tell
+// which app you are in from their sidebar. TestSapianSidebarStates asserts ours
+// differ, from getComputedStyle rather than from the class list.
+//
+// Two rules that must agree with each other live in ONE media query:
 //   - the rail is shown from md up;
 //   - the web client is padded from md up to make room for it.
-// Split them and you get the failure where the client is indented by 52px with
-// nothing in the gap.
+// Split them and you get the failure where the client is indented with nothing
+// in the gap.
 //
-// Every colour here derives from $sapian-brand in sapian_variables.scss or
-// from an Odoo/Bootstrap variable. No hex — test_no_raw_hex_outside_palette
-// fails the build otherwise.
+// Every colour here derives from $sapian-brand in sapian_variables.scss or from
+// an Odoo/Bootstrap variable. No hex — test_no_raw_hex_outside_palette fails
+// the build otherwise.
 // =============================================================================
 
-$o-sapian-rail-width: 3.25rem !default;   // 52px at the default root size
-$o-sapian-rail-tile-height: 3rem !default;
-$o-sapian-rail-icon-size: 2rem !default;
-$o-sapian-rail-active-bar: 3px !default;
+$o-sapian-rail-width: 12.5rem !default;            // 200px expanded
+$o-sapian-rail-width-collapsed: 3.5rem !default;   // 56px collapsed
+$o-sapian-rail-row-height: 2.75rem !default;       // 44px
+$o-sapian-rail-icon-size: 1.5rem !default;         // 24px inside a 44px row
+$o-sapian-rail-radius: 0.375rem !default;          // 6px pill
+$o-sapian-rail-icon-radius: 0.1875rem !default;    // square, lightly softened
+$o-sapian-rail-gutter: 0.375rem !default;
+$o-sapian-rail-label-size: 0.8125rem !default;     // 13px
+$o-sapian-rail-label-weight: 600 !default;
 
-// Hidden by default. Below md the rail would eat a fifth of the viewport, and
+// ~8% brand over the panel. rgba() of the one palette value rather than a
+// second hex, so a re-brand moves the hover with it.
+$o-sapian-rail-hover-fill: rgba($sapian-brand, 0.08) !default;
+
+// Hidden by default. Below md the sidebar would eat most of the viewport, and
 // Odoo already ships a full-screen app drawer for that case
 // (web.NavBar.AppsMenu.Sidebar) which DOES draw the icons.
 .o_sapian_rail {
@@ -34,6 +52,10 @@ $o-sapian-rail-active-bar: 3px !default;
         padding-left: $o-sapian-rail-width;
     }
 
+    .o_web_client:has(.o_sapian_rail.o_sapian_rail_collapsed) {
+        padding-left: $o-sapian-rail-width-collapsed;
+    }
+
     .o_sapian_rail {
         position: fixed;
         top: 0;
@@ -43,57 +65,141 @@ $o-sapian-rail-active-bar: 3px !default;
         display: flex;
         flex-direction: column;
         width: $o-sapian-rail-width;
+        padding: 0 $o-sapian-rail-gutter $o-sapian-rail-gutter;
         overflow-y: auto;
         overflow-x: hidden;
         background-color: $o-view-background-color;
         border-right: 1px solid $border-color;
+        // Width only. Animating anything that affects scroll geometry would
+        // race the tests that set scrollTop and measure a frame later, which is
+        // exactly how the overflow test came to be intermittent once already.
+        transition: width 150ms ease;
 
         // The scrollbar is the affordance that says "there is more below".
         // Do not hide it: 36 apps do not fit, and a rail that looks complete
         // while holding half the apps is the truncation this design refuses.
         scrollbar-width: thin;
+
+        &.o_sapian_rail_collapsed {
+            width: $o-sapian-rail-width-collapsed;
+        }
     }
 
-    .o_sapian_rail_app {
+    // THE RAIL MUST NOT SIT UNDER THE FIXED FOOTER — and that rule lives in
+    // sapian_footer.scss, not here. $o-sapian-footer-height is declared there
+    // and that file loads AFTER this one (see __manifest__.py), so a clearance
+    // written here would compile against an undefined variable. It is also the
+    // honest home: the footer file already owns what the footer reserves.
+
+    // Rows and the toggle share their box so the toggle reads as part of the
+    // list rather than as chrome bolted above it.
+    .o_sapian_rail_app,
+    .o_sapian_rail_toggle {
         position: relative;
         flex: 0 0 auto;
         display: flex;
         align-items: center;
-        justify-content: center;
-        height: $o-sapian-rail-tile-height;
+        gap: $o-sapian-rail-gutter;
+        height: $o-sapian-rail-row-height;
+        padding: 0 $o-sapian-rail-gutter;
+        border-radius: $o-sapian-rail-radius;
         text-decoration: none;
+        white-space: nowrap;
+        overflow: hidden;
+        color: $sapian-brand;
 
         &:hover {
-            background-color: $sapian-brand-tint;
+            background-color: $o-sapian-rail-hover-fill;
+            color: $sapian-brand;
         }
 
-        &.o_sapian_rail_app_active {
-            background-color: $sapian-brand-tint;
+        // Keyboard reachability is not the same as a visible focus ring, and
+        // the competitor has neither (SPEC section 7). `:focus-visible` rather
+        // than `:focus` so a mouse click does not leave a ring behind.
+        &:focus-visible {
+            outline: 2px solid $sapian-brand;
+            outline-offset: -2px;
+        }
+    }
 
-            &::before {
-                content: "";
-                position: absolute;
-                top: 0;
-                bottom: 0;
-                left: 0;
-                width: $o-sapian-rail-active-bar;
-                background-color: $sapian-brand;
+    .o_sapian_rail_toggle {
+        // Pinned without moving the scroll container — see app_rail.xml.
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        width: 100%;
+        border: 0;
+        background-color: $o-view-background-color;
+        // The list scrolls under it, so it needs a floor of its own.
+        box-shadow: 0 1px 0 0 $border-color;
+    }
+
+    .o_sapian_rail_app {
+        &.o_sapian_rail_app_active {
+            // SOLID, not a tint, and a white label. This is the state the
+            // competitor does not have.
+            background-color: $sapian-brand;
+            color: $white;
+
+            &:hover {
+                background-color: $sapian-brand-hover;
+            }
+
+            // The brand ring is invisible on a brand fill.
+            &:focus-visible {
+                outline-color: $white;
+            }
+
+            .o_sapian_rail_label {
+                color: $white;
             }
         }
     }
 
     .o_sapian_rail_icon {
+        flex: 0 0 auto;
         width: $o-sapian-rail-icon-size;
         height: $o-sapian-rail-icon-size;
+        // Square with our own radius, NOT a 50% avatar: these are app
+        // tiles, and the competitor drawing them as circles is one of the
+        // things SPEC section 1 says not to take.
+        border-radius: $o-sapian-rail-icon-radius;
         object-fit: contain;
+    }
+
+    .o_sapian_rail_label {
+        flex: 1 1 auto;
+        min-width: 0;
+        font-size: $o-sapian-rail-label-size;
+        font-weight: $o-sapian-rail-label-weight;
+        color: $sapian-brand;
+        text-overflow: ellipsis;
+        overflow: hidden;
+    }
+
+    // Collapsed: icons only, centred. The labels stay in the DOM (see the
+    // template) and are hidden here, so the tile count never changes with the
+    // state and the strings never stop being translated.
+    .o_sapian_rail_collapsed {
+        .o_sapian_rail_app,
+        .o_sapian_rail_toggle {
+            justify-content: center;
+            gap: 0;
+        }
+
+        .o_sapian_rail_label {
+            display: none;
+        }
     }
 
     // Only reached when an app has no icon data at all — a defect the rail's
     // test asserts never happens. Styled anyway so the failure is a readable
     // label rather than a broken image.
     .o_sapian_rail_initial {
+        flex: 0 0 $o-sapian-rail-icon-size;
         font-weight: 700;
         font-size: 0.75rem;
+        text-align: center;
         text-transform: uppercase;
         color: $sapian-brand-ink-on-tint;
     }

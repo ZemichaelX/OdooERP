@@ -41,10 +41,18 @@
  * Nothing is patched and nothing is inherited.
  */
 
+import { browser } from "@web/core/browser/browser";
 import { registry } from "@web/core/registry";
 import { useBus, useService } from "@web/core/utils/hooks";
 
 import { Component, onMounted, onPatched, useRef, useState } from "@odoo/owl";
+
+// Per BROWSER, not per user. A collapse toggle is a use-of-this-screen
+// preference — the same person wants it open on a 27" monitor and shut on a
+// laptop — so it does not belong in a res.users column that would follow them
+// between the two. localStorage also means no write on every click, and no new
+// field to add access rules for.
+export const RAIL_COLLAPSED_KEY = "sapian_theme.rail_collapsed";
 
 export class SapianAppRail extends Component {
     static template = "sapian_theme.AppRail";
@@ -53,7 +61,10 @@ export class SapianAppRail extends Component {
     setup() {
         this.menuService = useService("menu");
         this.railRef = useRef("rail");
-        this.state = useState({ fullscreen: false });
+        this.state = useState({
+            fullscreen: false,
+            collapsed: browser.localStorage.getItem(RAIL_COLLAPSED_KEY) === "1",
+        });
 
         // The apps list changes when a module is installed or uninstalled, and
         // the highlight changes on every app switch. Both arrive on this event.
@@ -124,6 +135,26 @@ export class SapianAppRail extends Component {
      */
     onAppClick(app) {
         this.menuService.selectMenu(app);
+    }
+
+    /**
+     * Collapse to icons, or expand back to icons + labels.
+     *
+     * The competitor has no collapse control at all and hardcodes a width per
+     * breakpoint (SPEC-navigation-chrome.md, section 6). At 36 apps a 200px
+     * column is a fifth of a laptop screen, and there are days when you want
+     * the width back — so this is a real toggle, and it remembers.
+     *
+     * It does NOT touch scrollTop. Collapsing changes the rail's width, not
+     * which app you are in, and `scrollCurrentIntoView` is guarded on the
+     * current app's ID precisely so a re-render for an unrelated reason cannot
+     * throw away where the user had scrolled to (README.md, "On app switch —
+     * not on every render"). Toggling the rail is one of those unrelated
+     * reasons, and TestSapianAppRailKeepsScroll covers it.
+     */
+    toggleCollapsed() {
+        this.state.collapsed = !this.state.collapsed;
+        browser.localStorage.setItem(RAIL_COLLAPSED_KEY, this.state.collapsed ? "1" : "0");
     }
 
     /**

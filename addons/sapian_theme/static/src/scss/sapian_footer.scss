@@ -33,6 +33,21 @@ $o-sapian-footer-height: 1.75rem !default;   // 28px at the default root size
         padding-bottom: $o-sapian-footer-height;
     }
 
+    // AND THE SIDEBAR MUST CLEAR IT. Both are `position: fixed`, both are
+    // removed by the same fullscreen guard, and the sidebar is top:0/bottom:0 —
+    // so without this its last row sits behind this 28px strip: reachable by
+    // scrolling, and unreadable once you get there. Flagged during the
+    // web_responsive evaluation and answered here.
+    //
+    // It lives in THIS file rather than sapian_rail.scss because
+    // $o-sapian-footer-height is declared here and this file loads after the
+    // rail's (see __manifest__.py) — and because what the footer reserves is
+    // the footer's business. Same `:has()` technique as the rule above, so the
+    // clearance appears and disappears with the footer itself.
+    .o_web_client:has(.o_sapian_footer) .o_sapian_rail {
+        bottom: $o-sapian-footer-height;
+    }
+
     .o_sapian_footer {
         position: fixed;
         left: 0;
