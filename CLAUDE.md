@@ -196,6 +196,16 @@ provisioning — a provisioning step, never a migration — and then assert the
 result from the artefact via `verify_launcher` (scripts/lib/check_launcher.py).
 For a tenant that already exists, that one call is the fix.
 
+AND THE PATH IS NOT ENOUGH EITHER. A module that is `installed` in the database
+but absent from the SERVING process's addons_path delivers zero JS and zero CSS
+with no warning and no exception — `ir.asset` reads manifests from
+`registry._init_modules`, so an unreachable module is skipped in silence while
+`state` still reads `installed` and the page still looks branded. Two guards,
+both proved red: `assert_addons_path` before phase 1, and `verify_launcher`,
+which fetches the backend bundle the webclient loads and asserts the launcher
+component is in it BY NAME. Note that a running server keeps the path it
+started with — fixing the config means restarting the stack.
+
 Our own app rail is kept: the two do not conflict, and the rail solves a problem
 the launcher does not. Evidence and the refresh procedure are in
 `vendor/README.md` and `addons/sapian_theme/README.md`.

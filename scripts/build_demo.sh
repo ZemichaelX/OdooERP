@@ -41,6 +41,16 @@ if ! require_docker_stack "${COMPOSE}" db; then
   exit 1
 fi
 
+# FAIL CLOSED, BEFORE ANYTHING IS BUILT.
+# A vendored module that is not on the server's addons path installs fine and
+# then delivers no assets at all, silently — see assert_addons_path. Catching
+# that here costs three file reads; catching it at [5/5] costs the whole build,
+# and not catching it at all costs a demo where the launcher does not exist.
+if ! assert_addons_path "${REPO_ROOT}"; then
+  log_error "!! Aborting before phase 1 — the vendored launcher could not be reached."
+  exit 1
+fi
+
 log_line ">> [1/5] Dropping '${DB_NAME}' and creating it with base only (no demo data)..."
 ${COMPOSE} exec -T db psql -U odoo -d postgres -c \
   "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='${DB_NAME}' AND pid<>pg_backend_pid();" >/dev/null

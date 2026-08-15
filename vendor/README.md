@@ -152,6 +152,63 @@ database that carries `account`. `-u web_responsive` reloads it at position
 selecting its tests; the `launcher-defaults` job runs them where the module is
 loaded on its own terms.
 
+## The failure mode this module has, and the only guard that catches it
+
+A vendored module that is **installed in the database but not on the serving
+process's addons path** delivers nothing, and says nothing. Reproduced on one
+database with two processes:
+
+| | vendor dir on the path | vendor dir absent |
+|---|---|---|
+| `ir_module_module.state` | installed | **installed** |
+| web_responsive JS in bundle | 16 | **0** |
+| web_responsive CSS in bundle | 15 | **0** |
+| `sapian_theme` CSS | 4 | 4 — still branded |
+| warning or exception | none | **none** |
+
+The mechanism is `ir.asset._fill_asset_paths`:
+
+```python
+for addon in addons:                    # addons <- _get_installed_addons_list()
+    for command in Manifest.for_addon(addon)['assets'].get(bundle, ()):
+```
+
+and `_get_installed_addons_list()` returns `registry._init_modules` — the
+modules *this process* pulled into its graph, which requires them to be on
+*this process's* addons path. A module missing from that set never has its
+manifest read. There is no "module not found" branch to log, because from the
+asset pipeline's point of view the module simply does not exist.
+
+What the user sees: the apps grid is Odoo's stock dropdown, login lands on the
+Module Catalog however `is_redirect_home` is set, sticky list headers are gone —
+and the browser console is clean, with `odoo.loader.failed` empty, because
+nothing was ever requested.
+
+Two things make this specifically likely here:
+
+- `config/odoo.runtime.conf` is **gitignored** and is only created from the
+  template when *missing*. An instance set up before `vendor/` existed keeps its
+  old `addons_path` forever, while the tracked `config/odoo.conf.example` — the
+  file everyone reads — looks correct.
+- A running server keeps the addons path it started with. Fixing the config and
+  rebuilding the database is not enough; the serving container has to restart.
+
+Guarded at both ends, and both were proved to go red:
+
+- `assert_addons_path` (`scripts/lib/preflight.sh`) runs **before phase 1** of
+  `build_demo.sh` and `provision_client.sh` — three file reads, so the build
+  stops at second zero instead of at phase 5.
+- `verify_launcher` + `scripts/lib/check_launcher.py` authenticate as admin,
+  fetch the backend bundle the webclient actually loads, and assert
+  `@web_responsive/components/apps_menu/apps_menu.esm` is in the delivered
+  JavaScript **by name**. Byte size does not catch this: in the reproduced
+  failure the bundle was still 6.4 MB with zero web_responsive modules in it.
+
+This is NOT an incompatibility between the OCA port and Odoo 19. With the path
+right, all 31 files resolve, `("remove", "**/*.dark.scss")` strips exactly the
+dark files and nothing else, and the launcher renders — CI's browser tests open
+it on every run.
+
 ## Refreshing the pin
 
 Deliberate, in its own PR, with the UI evidence attached — not a drive-by bump.
