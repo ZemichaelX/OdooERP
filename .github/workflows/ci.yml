@@ -159,9 +159,9 @@ jobs:
             --data-dir=/tmp/odoo-data \
             --addons-path="${GITHUB_WORKSPACE}/addons,${GITHUB_WORKSPACE}/vendor/oca_web,/usr/lib/python3/dist-packages/odoo/addons" \
             -d ci_test \
-            -i sapian_demo_trader,sapian_demo_pharma,sapian_theme,sapian_theme_mail,web_responsive,sapian_dress_rehearsal,l10n_et_calendar,l10n_et_calendar_account,l10n_et_calendar_purchase \
+            -i sapian_demo_trader,sapian_demo_pharma,sapian_theme,sapian_theme_mail,sapian_theme_auth_signup,web_responsive,sapian_dress_rehearsal,l10n_et_calendar,l10n_et_calendar_account,l10n_et_calendar_purchase \
             --test-enable \
-            --test-tags '/sapian_core,/l10n_et_base,/l10n_et_payroll,/l10n_et_reports,/vertical_pharma,/sapian_demo_trader,/sapian_demo_pharma,/sapian_theme,/sapian_theme_mail,/sapian_dress_rehearsal,/l10n_et_calendar,/l10n_et_calendar_account,/l10n_et_calendar_purchase' \
+            --test-tags '/sapian_core,/l10n_et_base,/l10n_et_payroll,/l10n_et_reports,/vertical_pharma,/sapian_demo_trader,/sapian_demo_pharma,/sapian_theme,/sapian_theme_mail,/sapian_theme_auth_signup,/sapian_dress_rehearsal,/l10n_et_calendar,/l10n_et_calendar_account,/l10n_et_calendar_purchase' \
             --workers=0 --max-cron-threads=0 \
             --stop-after-init --log-level=test 2>&1 | tee /tmp/odoo-test.log
           # `set -o pipefail` already makes a non-zero odoo exit fail this step.
@@ -198,11 +198,12 @@ jobs:
           # skip here. They are covered by the `rail-render` job, which installs
           # Chrome and fails if the browser did not actually report.
           #
-          # Raised 350 -> 365 when sapian_theme_mail landed with 15 tests, and
-          # 365 -> 371 when its Settings-UI tests took it to 21. The floor is
-          # what stops a module's suite going missing quietly, so it has to
+          # Raised 350 -> 365 when sapian_theme_mail landed with 15 tests,
+          # 365 -> 371 when its Settings-UI tests took it to 21, and
+          # 371 -> 385 when sapian_theme_auth_signup landed with 14. The floor
+          # is what stops a module's suite going missing quietly, so it has to
           # move with the suite.
-          MIN_EXPECTED_TESTS=371
+          MIN_EXPECTED_TESTS=385
           EXECUTED=$(grep -oE "odoo\.tests\.stats: [A-Za-z0-9_]+: [0-9]+ tests" /tmp/odoo-test.log \
                      | awk '$4 == "tests" { total += $3 } END { print total + 0 }')
           echo "Executed ${EXECUTED} tests (floor ${MIN_EXPECTED_TESTS}):"
@@ -211,6 +212,34 @@ jobs:
             echo "::error::Only ${EXECUTED} tests executed, expected at least ${MIN_EXPECTED_TESTS}. The suite did not run — this is a failure, not a pass."
             exit 1
           fi
+
+          # AND A FLOOR FOR THE MAIL BRIDGES SPECIFICALLY, because the total
+          # above cannot see them go missing. The suite is ~430 tests here; if
+          # all 14 password-reset tests vanished the total would still clear
+          # 385 comfortably and this job would stay green while the only
+          # coverage of a customer-facing email disappeared. A per-module floor
+          # is the only thing that notices.
+          #
+          # These two are singled out rather than every module because they are
+          # the ones whose subject nobody looks at: an unbranded email is
+          # invisible from inside the product, and both of these modules exist
+          # because it stayed invisible for months.
+          #
+          # The floors are deliberately well under the measured figures — 33 and
+          # 22 on a database with website and account installed. A floor is here
+          # to notice a suite GOING MISSING, not to track its size, and one set
+          # a test or two below today's count is a floor that has to be edited
+          # every time somebody adds a case.
+          for pair in "sapian_theme_mail:20" "sapian_theme_auth_signup:12"; do
+            MODULE="${pair%%:*}"; FLOOR="${pair##*:}"
+            RAN=$(grep -oE "odoo\.tests\.stats: ${MODULE}: [0-9]+ tests" /tmp/odoo-test.log \
+                  | grep -oE "[0-9]+ tests" | grep -oE "^[0-9]+" || echo 0)
+            echo "Executed ${RAN} ${MODULE} tests (floor ${FLOOR})"
+            if [ "${RAN}" -lt "${FLOOR}" ]; then
+              echo "::error::Only ${RAN} ${MODULE} tests ran; expected at least ${FLOOR}. The mail branding is untested, so a green result means nothing."
+              exit 1
+            fi
+          done
 
   calendar-standalone:
     name: Calendar installs, and uninstalls, alone
