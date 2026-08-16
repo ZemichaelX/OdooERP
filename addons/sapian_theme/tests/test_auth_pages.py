@@ -42,7 +42,18 @@ from odoo.tests import HttpCase, tagged
 
 from .. import brand
 
-AUTH_ROUTES = ("/web/login", "/web/reset_password")
+# `/web/login` is `web`'s and exists on every database. `/web/reset_password`
+# and `/web/signup` belong to `auth_signup`, which `sapian_theme` does NOT
+# depend on — its manifest is base + web, and a CI job asserts it installs and
+# passes entirely alone. On that database the reset route is a 404.
+#
+# So the list is DERIVED, never skipped: asserting against a route that does
+# not exist measures Odoo's routing, not our branding, and skipping the whole
+# file would take the login assertions with it.
+# `test_the_route_list_did_not_quietly_shrink` is what stops the derivation
+# becoming a way to test nothing.
+BASE_ROUTE = "/web/login"
+SIGNUP_ROUTES = ("/web/reset_password",)
 
 # The class our inheritance of `web.login_layout` puts on <body>. It is OURS,
 # which is the one way this scope is sturdier than the `.oe_login_form` it
@@ -56,6 +67,20 @@ class AuthPageCase(HttpCase):
     def brand_hex(self):
         """From the palette, never a literal — a re-brand must move this."""
         return brand.brand_primary().lower()
+
+    def auth_routes(self):
+        """The auth routes that exist on THIS database."""
+        routes = [BASE_ROUTE]
+        if self.auth_signup_installed():
+            routes.extend(SIGNUP_ROUTES)
+        return tuple(routes)
+
+    def auth_signup_installed(self):
+        return bool(
+            self.env["ir.module.module"]
+            .sudo()
+            .search([("name", "=", "auth_signup"), ("state", "=", "installed")])
+        )
 
     def _page(self, route):
         response = self.url_open(route)
@@ -95,7 +120,7 @@ class TestAuthPagesAreOurs(AuthPageCase):
         Asserted per route, because the whole defect was one route having it
         and another not.
         """
-        for route in AUTH_ROUTES:
+        for route in self.auth_routes():
             html = self._page(route)
             self.assertIn(
                 AUTH_SCOPE,
@@ -139,16 +164,48 @@ class TestAuthPagesAreOurs(AuthPageCase):
                     "narrow one only ever reached /web/login"
                 )
 
+    def test_the_route_list_did_not_quietly_shrink(self):
+        """THE GUARD ON THE DERIVATION.
+
+        Deriving the route list is how these tests run on a database without
+        `auth_signup` instead of skipping. It is also how they could quietly
+        stop covering the page the whole change is about, so: where
+        `auth_signup` IS installed — which is every real tenant, and the
+        configuration the defect lived in — the reset page must be in the list.
+        """
+        routes = self.auth_routes()
+        self.assertIn(BASE_ROUTE, routes, "the login page is not being checked at all")
+        if self.auth_signup_installed():
+            for route in SIGNUP_ROUTES:
+                self.assertIn(
+                    route,
+                    routes,
+                    "auth_signup is installed but %s is not being checked — the "
+                    "page this change exists for is going untested" % route,
+                )
+        else:
+            self.assertEqual(
+                routes,
+                (BASE_ROUTE,),
+                "auth_signup is absent, so only the login route can be checked",
+            )
+
     def test_the_reset_page_is_branded_like_the_login_page(self):
         """The page the whole change is about, asserted against its sibling.
 
         Not "reset looks right" in isolation — the two must agree, which is
         what "the same auth surface" means.
         """
-        login = self._page("/web/login")
-        reset = self._page("/web/reset_password")
-        for name, html in (("login", login), ("reset", reset)):
-            self.assertIn(AUTH_SCOPE, html, "the %s page lost the auth scope" % name)
+        if not self.auth_signup_installed():
+            # Not a skip: the login half still runs, and the derivation guard
+            # above is what proves this branch is not being taken on a database
+            # where the reset page exists.
+            self.assertIn(AUTH_SCOPE, self._page(BASE_ROUTE))
+            return
+        for name, route in (("login", BASE_ROUTE), ("reset", SIGNUP_ROUTES[0])):
+            self.assertIn(
+                AUTH_SCOPE, self._page(route), "the %s page lost the auth scope" % name
+            )
 
     def _logo_slot(self, html, route):
         """The card's logo block, extracted — NOT the whole page.
@@ -180,7 +237,7 @@ class TestAuthPagesAreOurs(AuthPageCase):
         so both pages get it.
         """
         company = self.env.company
-        for route in AUTH_ROUTES:
+        for route in self.auth_routes():
             slot = self._logo_slot(self._page(route), route)
             self.assertTrue(
                 "/web/binary/company_logo" in slot or company.name in slot,
@@ -198,7 +255,7 @@ class TestAuthPagesAreOurs(AuthPageCase):
         """
         self.env.company.logo = False
         self.env.flush_all()
-        for route in AUTH_ROUTES:
+        for route in self.auth_routes():
             slot = self._logo_slot(self._page(route), route)
             self.assertIn(
                 self.env.company.name,

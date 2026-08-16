@@ -408,10 +408,10 @@ class TestLoginPageIsActuallyBranded(HttpCase):
     def test_served_login_stylesheet_brands_the_sign_in_button(self):
         css = self._served_login_css()
         primary = brand.brand_primary()
-        rules = re.findall(r"\.oe_login_form \.btn-primary\{[^}]*\}", css)
+        rules = re.findall(r"\.o_sapian_auth \.btn-primary\{[^}]*\}", css)
         self.assertTrue(
             rules,
-            "no .oe_login_form .btn-primary rule in the served CSS — the login "
+            "no .o_sapian_auth .btn-primary rule in the served CSS — the auth "
             "button is falling back to Odoo's own palette. See "
             "sapian_theme/static/src/scss/sapian_frontend.scss for why this "
             "rule is needed and cannot come from $o-brand-primary.",
@@ -427,5 +427,5 @@ class TestLoginPageIsActuallyBranded(HttpCase):
     def test_served_login_stylesheet_uses_the_derived_hover(self):
         """The hover must move with the brand, from the same single source."""
         css = self._served_login_css()
-        rules = " ".join(re.findall(r"\.oe_login_form \.btn-primary\{[^}]*\}", css))
+        rules = " ".join(re.findall(r"\.o_sapian_auth \.btn-primary\{[^}]*\}", css))
         self.assertIn(brand.brand_secondary().upper(), rules.upper())
