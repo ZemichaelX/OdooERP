@@ -22,16 +22,34 @@
 // to — a hex in a comment drifts as silently as one in a rule.
 //
 // Overriding the editor palette instead would mean reaching into
-// o-color()/o-related-color() and the colour-combination system — a large,
-// recursive surface, for a page whose only frontend consumer we have is the
-// login form. We ship no `website` module. So: one scoped rule, derived from
-// the single palette variable, verified against the CSS the browser is
-// actually served.
+// o-color()/o-related-color() and the colour-combination system — and, more
+// importantly, IT WOULD BE WRONG. That palette is the CLIENT'S: it is what
+// their public website is painted with, and they set it in the editor. The
+// auth pages merely share the bundle with it.
 //
-// FRAGILITY: this is a class-based selector override, the same category as the
-// notebook tab indicator. If `.oe_login_form` is renamed the rule stops
-// matching and the button reverts to Odoo purple — visible, not broken. Listed
-// in "Check these on upgrade" in README.md.
+// SO THE SCOPE IS THE AUTH PAGES, NOT THE FORM. `.o_sapian_auth` is put on
+// <body> by our inheritance of `web.login_layout`
+// (views/login_templates.xml), which is the one template /web/login,
+// /web/signup and /web/reset_password all share. Everything below is scoped to
+// it, so the client's website keeps their colour on every other page — the
+// same stylesheet, two owners, told apart by one class.
+//
+// IT USED TO BE `.oe_login_form`, and that scope was too narrow by exactly one
+// page. Only the login page has a form with that class, so only the login page
+// was branded. Measured on the demo tenant before this change:
+//
+//     /web/login           rgb(20, 69, 79)     the brand
+//     /web/reset_password  rgb(113, 75, 103)   whatever the palette says
+//
+// — the same bundle, the same button, two colours. On a tenant whose editor
+// palette has been changed the second value is that client's colour instead,
+// which is the same defect wearing different paint: the auth page is showing
+// the WEBSITE's identity.
+//
+// FRAGILITY: this is still a class-based override. `.o_sapian_auth` is OURS,
+// though, not Odoo's — nobody upstream can rename it, which is the one way
+// this is sturdier than what it replaces. Listed in "Check these on upgrade"
+// in README.md.
 // =============================================================================
 
 // EVERY STATE, not just the resting one.
@@ -62,7 +80,7 @@
 //   :active  --btn-active-*        (and .active, .show)
 //   :disabled/.disabled  --btn-disabled-*   ← the loading state
 //   :focus-visible       --btn-focus-shadow-rgb
-.oe_login_form {
+.o_sapian_auth {
     .btn-primary {
         --btn-bg: #{$sapian-brand};
         --btn-border-color: #{$sapian-brand};

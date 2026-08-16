@@ -212,3 +212,51 @@ class TestProtectedPageStillRenders(HttpCase):
             response.text.lower(),
             "the protected-page prompt no longer renders its form",
         )
+
+
+@tagged("post_install", "-at_install")
+class TestTheClientsWebsiteKeepsTheirColour(HttpCase):
+    """The auth pages are ours; the website is the client's. Both, on one DB.
+
+    `html_editor` rebuilds Bootstrap's `$theme-colors` from the website editor
+    palette, so the frontend's `.btn-primary` is whatever the CLIENT chose. The
+    auth pages share that bundle, which is why they were falling through to it
+    — and why the fix had to be scoped rather than global.
+
+    This is the half that would catch the opposite mistake: painting the
+    client's public site in our teal. Measured on the same database, in the
+    same run, so "ours is teal" and "theirs is unchanged" cannot both be
+    claimed from different places.
+    """
+
+    AUTH_SCOPE = "o_sapian_auth"
+
+    def test_the_auth_pages_carry_our_scope_and_the_website_does_not(self):
+        for route in ("/web/login", "/web/reset_password"):
+            html = self.url_open(route).text
+            self.assertIn(self.AUTH_SCOPE, html, "%s lost the auth scope" % route)
+
+        home = self.url_open("/")
+        self.assertEqual(home.status_code, 200, "the website home did not render")
+        self.assertNotIn(
+            self.AUTH_SCOPE,
+            home.text,
+            "the client's website carries our auth scope, so their pages are "
+            "being painted in our brand — the inverse of the defect this "
+            "change fixed",
+        )
+
+    def test_the_website_still_renders_its_own_chrome(self):
+        """THE CONTROL. "No auth scope on /" is also what a blank page gives.
+
+        Pairs the absence with a positive: the site is still a site.
+        """
+        html = self.url_open("/").text
+        self.assertGreater(len(html), 2000, "the website home came back empty")
+        for marker in ("<header", "<footer"):
+            self.assertIn(
+                marker,
+                html,
+                "the website home has no %s, so 'our scope is absent from it' "
+                "proves nothing" % marker,
+            )

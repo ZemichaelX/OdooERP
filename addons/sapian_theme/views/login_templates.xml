@@ -90,7 +90,57 @@
              subsequent upgrade — measured, on the database where the 50 was
              tried. Stating the number is what lets such a database self-heal. -->
 
-        <xpath expr="//div[hasclass('text-center')][hasclass('pb-3')]" position="replace"/>
+        <!-- A SCOPE CLASS FOR THE AUTH PAGES, and it is the whole of the
+             colour fix.
+
+             The frontend bundle's `.btn-primary` belongs to the CLIENT: it is
+             rebuilt from the website editor's palette, because `html_editor` is
+             auto_install and reconstructs Bootstrap's $theme-colors from that
+             palette, so $o-brand-primary never reaches the frontend at all.
+             That is correct for the client's website and wrong for OUR auth
+             pages, which happen to share the bundle.
+
+             So the auth pages get a class of their own and the brand is scoped
+             to it. Nothing about the client's website changes — the same
+             stylesheet keeps serving their colour everywhere the class is
+             absent, which is everywhere except these three pages.
+
+             It replaces the narrower `.oe_login_form` scope that used to make
+             ONLY the login button teal. Measured on the demo tenant before
+             this change: /web/login rgb(20, 69, 79), /web/reset_password
+             rgb(113, 75, 103) — the same page, the same bundle, two colours,
+             because only one of them had a form with that class. Set on the
+             LAYOUT, so it covers login, signup and reset password alike. -->
+        <xpath expr="//t[@t-set='body_classname']" position="attributes">
+            <attribute name="t-value">'bg-100 o_sapian_auth'</attribute>
+        </xpath>
+
+        <!-- THE LOGO MOVES HERE, out of `web.login`.
+
+             It was in the content template because `website` used to destroy
+             this card; `sapian_theme_website` stopped that (PR #42), and the
+             consequence is the same one the attribution had: anchored on the
+             login FORM it reached /web/login alone. /web/reset_password and
+             /web/signup extend this LAYOUT and never render `web.login`, so
+             they showed no logo at all — measured, `visibleImages: 0` on the
+             reset page against 1 on login.
+
+             Replacing the stock logo rather than deleting it, for the reason
+             the deletion existed: `/web/binary/company_logo` always returns an
+             image — Odoo's own when the company has set none — so a fresh
+             database would greet a prospect with somebody else's branding.
+             This checks the field and degrades to the company NAME. -->
+        <xpath expr="//div[hasclass('text-center')][hasclass('pb-3')]" position="replace">
+            <t t-set="sapian_company"
+               t-value="env['res.company'].sudo().search([], order='id', limit=1)"/>
+            <div class="text-center pb-3 border-bottom mb-4">
+                <img t-if="sapian_company.logo"
+                     t-attf-src="/web/binary/company_logo{{ '?dbname='+db if db else '' }}"
+                     alt="Logo" style="max-height:120px; max-width: 100%; width:auto"/>
+                <h1 t-else="" class="h4 fw-bold mb-0 text-truncate"
+                    t-esc="sapian_company.name or ''"/>
+            </div>
+        </xpath>
 
         <!-- "Powered by Odoo", removed.
 
@@ -137,20 +187,12 @@
     <template id="login_sapian" inherit_id="web.login"
               name="SapianERP login branding (content)">
 
-        <!-- Logo, or the company name when there is none. Anchored BEFORE the
-             login form, which puts it exactly where the stock logo was inside
-             the card, and keeps it at the top of website's container too. -->
-        <xpath expr="//form[contains(@t-attf-class, 'oe_login_form')]" position="before">
-            <t t-set="sapian_company"
-               t-value="env['res.company'].sudo().search([], order='id', limit=1)"/>
-            <div class="text-center pb-3 border-bottom mb-4">
-                <img t-if="sapian_company.logo"
-                     t-attf-src="/web/binary/company_logo{{ '?dbname='+db if db else '' }}"
-                     alt="Logo" style="max-height:120px; max-width: 100%; width:auto"/>
-                <h1 t-else="" class="h4 fw-bold mb-0 text-truncate"
-                    t-esc="sapian_company.name or ''"/>
-            </div>
-        </xpath>
+        <!-- THE LOGO IS NO LONGER HERE. It moved into the LAYOUT above, so
+             that /web/signup and /web/reset_password — which extend the layout
+             and never render this template — get it too. Left as a note rather
+             than deleted silently, for the same reason the attribution's move
+             was: the form anchor looks arbitrary without the history that
+             produced it. -->
 
         <!-- Support contact line.
 
