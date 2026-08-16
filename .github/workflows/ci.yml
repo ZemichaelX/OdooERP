@@ -674,7 +674,7 @@ jobs:
             -i "sapian_theme,${CATALOG}" \
             --without-demo=all \
             --test-enable \
-            --test-tags '/sapian_theme:TestSapianAppRailRendered,/sapian_theme:TestSapianAppRailOverflow,/sapian_theme:TestSapianAppRailKeepsScroll,/sapian_theme:TestSapianAppRailSmallScreen,/sapian_theme:TestAppRailDataOverHttp,/sapian_theme:TestSapianBackendFooterRendered,/sapian_theme:TestSapianBackendFooterSmallScreen,/sapian_theme:TestBackendFooterDataOverHttp,/sapian_theme:TestSapianSidebarStates,/sapian_theme:TestSapianSidebarStatesDiscriminate,/sapian_theme:TestSapianSidebarCollapse,/sapian_theme:TestSapianSidebarKeyboard,/sapian_theme:TestSapianSidebarHeader,/sapian_theme:TestSapianSidebarHeaderOccludes,/sapian_theme:TestSapianSidebarStandsDownForTheLauncher' \
+            --test-tags '/sapian_theme:TestSapianAppRailRendered,/sapian_theme:TestSapianAppRailOverflow,/sapian_theme:TestSapianAppRailKeepsScroll,/sapian_theme:TestSapianAppRailSmallScreen,/sapian_theme:TestAppRailDataOverHttp,/sapian_theme:TestSapianBackendFooterRendered,/sapian_theme:TestSapianBackendFooterSmallScreen,/sapian_theme:TestBackendFooterDataOverHttp,/sapian_theme:TestSapianSidebarStates,/sapian_theme:TestSapianSidebarStatesDiscriminate,/sapian_theme:TestSapianSidebarCollapse,/sapian_theme:TestSapianSidebarKeyboard,/sapian_theme:TestSapianSidebarHeader,/sapian_theme:TestSapianSidebarHeaderOccludes,/sapian_theme:TestSapianSidebarStandsDownForTheLauncher,/sapian_theme:TestSapianSidebarCornerIsNotAHole' \
             --workers=0 --max-cron-threads=0 \
             --stop-after-init --log-level=test 2>&1 | tee /tmp/rail.log
 
@@ -728,7 +728,11 @@ jobs:
             "centre=header left=header right=header upper=header lower=header" \
             "SAPIAN-SIDEBAR-LAUNCHER before=visible/true open=hidden/false" \
             "openCollapsed=hidden/true" \
-            "after=visible/true"; do
+            "after=visible/true" \
+            "SAPIAN-SIDEBAR-CORNER" \
+            "openVis=visible openAlpha=1" \
+            "covers=true clickable=false" \
+            "railVis=hidden chevron=false"; do
             if ! grep -qF "${marker}" /tmp/rail.log; then
               echo "::error::The browser never reported '${marker}'. The rail tests did not run in a browser — most likely Chrome was missing and browser_js skipped."
               exit 1
@@ -878,6 +882,7 @@ jobs:
             'SAPIAN-RAIL-OCCLUSION closed=true open=false' \
             'reopened=true' \
             'visibility=visible/hidden/visible' \
+            'header=visible/visible/visible' \
             'bodyClass=false/true' \
             'SAPIAN-LAUNCHER-STAYS user=launcher.stays.user earlyUrl=/odoo earlyLauncher=true url=/odoo launcher=true' \
             'actionLoaded=false action=""'; do

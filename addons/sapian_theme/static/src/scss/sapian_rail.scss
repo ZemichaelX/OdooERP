@@ -102,6 +102,30 @@ $o-sapian-rail-hover-fill: rgba($sapian-brand, 0.08) !default;
     // adjacent z-indices partially overlap. Hiding the rail removes the class
     // of defect rather than this instance of it.
     //
+    // BUT NOT THE MARK. Hiding the whole rail hid the brand header with it,
+    // and what that left was worse than the strip: a 200x46 rectangle of PAGE
+    // BACKGROUND in the top-left corner, painted rgb(248, 249, 250) against
+    // the launcher's rgb(20, 69, 79). Measured from screenshot pixels, not
+    // from computed styles — `elementFromPoint` at that spot answers
+    // BODY.o_web_client, because the corner is the web client's own left
+    // padding showing through above the launcher's top edge. It reads as a
+    // rendering fault, not as empty space.
+    //
+    // The distinction the first version missed: the app ROWS duplicate the
+    // launcher and should stand down. The MARK is IDENTITY, not navigation —
+    // it duplicates nothing, and every desktop application keeps its logo over
+    // a full-screen overlay. Keeping it is also what removes the hole, because
+    // the header is the only thing that ever painted that corner.
+    //
+    // The alternative considered was to paint the corner in the NAVBAR's
+    // colour so the top strip reads as one continuous bar. Rejected: our mark
+    // takes its colour from `currentColor` and is the brand, so on a brand-
+    // coloured plate it would have to become white — and web_responsive's
+    // launcher theme is a per-user setting ('milk' is light), so a white mark
+    // would vanish for anyone who switched it. An opaque plate works over any
+    // overlay colour, and it is what the product looked like before the
+    // regression.
+    //
     // The component already does exactly this for a fullscreen action
     // (`state.fullscreen`, from ACTION_MANAGER:UI-UPDATED). "Something is
     // taking the whole viewport, stand down" is an established rule here; the
@@ -126,6 +150,74 @@ $o-sapian-rail-hover-fill: rgba($sapian-brand, 0.08) !default;
     // `.o_sapian_rail`, and `&` has no parent there — SCSS rejects it outright.
     body.o_apps_menu_opened .o_sapian_rail {
         visibility: hidden;
+        // The gutter would show as a strip of page background either side of
+        // the brand plate. Horizontal padding only — the bottom padding is not
+        // in the corner, and changing it would move the scroll content.
+        padding-left: 0;
+        padding-right: 0;
+
+        // And so would the SCROLLBAR gutter: measured, the header reached
+        // 189px of the 200px corner and the remaining 11px was the scrollbar
+        // track, which paints nothing once the rail is `visibility: hidden`.
+        //
+        // Hidden, NOT `overflow: hidden`. Removing the overflow would clamp
+        // scrollTop to zero and lose the user's position — the same trap that
+        // `position: fixed` fell into on the header a moment earlier. Hiding
+        // the scrollbar changes clientWidth and nothing else.
+        scrollbar-width: none;
+
+        &::-webkit-scrollbar {
+            display: none;
+        }
+
+        // And finally the rail's own 1px right border, for the same reason:
+        // it separates the rail from the content beside it, there is no rail
+        // to separate while it is hidden, and `visibility: hidden` means it
+        // paints nothing — leaving the last 1px column of page background.
+        // Measured in three passes: 189px of 200 (padding + scrollbar), then
+        // 199 (scrollbar), then 200. Each strip was invisible in a screenshot
+        // and plain in the numbers.
+        border-right-width: 0;
+    }
+
+    // THE MARK STAYS. `visibility` is the one hiding property a child can
+    // countermand — that is the whole reason it is not `display: none` here as
+    // well as the reason scrollTop survives.
+    body.o_apps_menu_opened .o_sapian_rail_toggle {
+        visibility: visible;
+
+        // IDENTITY, NOT A CONTROL. The collapse toggle resizes a panel the
+        // user cannot see while the launcher is up, so it must not be
+        // clickable — that was a real objection to the strip and it still
+        // stands. `pointer-events: none` keeps the logo and removes the
+        // control, and the chevron goes with it because an affordance for
+        // something that cannot be done is worse than no affordance.
+        pointer-events: none;
+
+        // Cover the corner EXACTLY, and do it WITHOUT LEAVING THE FLOW.
+        //
+        // The exposed corner is the rail's full width by the navbar's height.
+        // The header is inset by the rail's gutter and is 44px tall, so on its
+        // own it leaves a thin L of page background around the plate — the
+        // rail's horizontal padding is dropped for the same rule, and the
+        // height is taken from $o-navbar-height, which is the launcher's own
+        // reference point (web_responsive/…/apps_menu.scss:32 sizes itself
+        // with it) rather than the 46px it happens to be today.
+        //
+        // `position: fixed` was tried here FIRST and is wrong. It takes the
+        // header out of the rail's scroll content, so scrollHeight drops by
+        // the header's height and the browser clamps scrollTop — measured, the
+        // user's position went 50 -> 6 across one launcher round trip, and
+        // TestSapianSidebarStandsDownForTheLauncher failed on exactly that.
+        // The header stays `position: sticky`, which pins it to the corner
+        // while leaving it in the flow it contributes to.
+        height: $o-navbar-height;
+        border-radius: 0;
+        box-shadow: none;
+    }
+
+    body.o_apps_menu_opened .o_sapian_rail_chevron {
+        display: none;
     }
 
     // THE RAIL MUST NOT SIT UNDER THE FIXED FOOTER — and that rule lives in
