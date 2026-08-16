@@ -159,9 +159,9 @@ jobs:
             --data-dir=/tmp/odoo-data \
             --addons-path="${GITHUB_WORKSPACE}/addons,${GITHUB_WORKSPACE}/vendor/oca_web,/usr/lib/python3/dist-packages/odoo/addons" \
             -d ci_test \
-            -i sapian_demo_trader,sapian_demo_pharma,sapian_theme,web_responsive,sapian_dress_rehearsal,l10n_et_calendar,l10n_et_calendar_account,l10n_et_calendar_purchase \
+            -i sapian_demo_trader,sapian_demo_pharma,sapian_theme,sapian_theme_mail,web_responsive,sapian_dress_rehearsal,l10n_et_calendar,l10n_et_calendar_account,l10n_et_calendar_purchase \
             --test-enable \
-            --test-tags '/sapian_core,/l10n_et_base,/l10n_et_payroll,/l10n_et_reports,/vertical_pharma,/sapian_demo_trader,/sapian_demo_pharma,/sapian_theme,/sapian_dress_rehearsal,/l10n_et_calendar,/l10n_et_calendar_account,/l10n_et_calendar_purchase' \
+            --test-tags '/sapian_core,/l10n_et_base,/l10n_et_payroll,/l10n_et_reports,/vertical_pharma,/sapian_demo_trader,/sapian_demo_pharma,/sapian_theme,/sapian_theme_mail,/sapian_dress_rehearsal,/l10n_et_calendar,/l10n_et_calendar_account,/l10n_et_calendar_purchase' \
             --workers=0 --max-cron-threads=0 \
             --stop-after-init --log-level=test 2>&1 | tee /tmp/odoo-test.log
           # `set -o pipefail` already makes a non-zero odoo exit fail this step.
@@ -197,7 +197,11 @@ jobs:
           # NOTE: this job has no browser, so the app rail's browser_js tests
           # skip here. They are covered by the `rail-render` job, which installs
           # Chrome and fails if the browser did not actually report.
-          MIN_EXPECTED_TESTS=350
+          #
+          # Raised 350 -> 365 when sapian_theme_mail landed with 15 tests. The
+          # floor is what stops a module's suite going missing quietly, so it
+          # has to move with the suite.
+          MIN_EXPECTED_TESTS=365
           EXECUTED=$(grep -oE "odoo\.tests\.stats: [A-Za-z0-9_]+: [0-9]+ tests" /tmp/odoo-test.log \
                      | awk '$4 == "tests" { total += $3 } END { print total + 0 }')
           echo "Executed ${EXECUTED} tests (floor ${MIN_EXPECTED_TESTS}):"
