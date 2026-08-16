@@ -144,6 +144,46 @@ So every test posts a message the way the product posts it and reads
 `test_the_footer_really_rendered_or_this_file_proves_nothing` asserts the footer
 is present before anything asserts what is *not* in it.
 
+## The switch is in Settings, because otherwise it is not a switch
+
+The decision above says the line is the client's to remove. That was true of
+the *field* and false of the *product*: `sapian_email_attribution` lived only on
+`res.company`, which a client reaches through Settings > Technical > Companies —
+developer mode. A permission that needs developer mode is a sentence in a
+README, not a permission.
+
+It now sits in **Settings > General Settings**, inside `mail`'s own **Email
+Templates** block (`mail_templates_setting`), directly under **Button Text** and
+**Button Color** — the two fields this module seeds. One place for "what our
+outgoing mail looks like", rather than a Sapian section nobody would open. It
+inherits that block's `groups="mail.group_mail_template_editor,
+base.group_system"`, so it is an administrator's setting.
+
+The tests assert the whole path a client takes — open Settings, untick, save —
+and then assert the **rendered email**, because asserting the field would be
+asserting the part we built again. `test_the_switch_is_on_the_settings_form`
+reads the combined arch from `get_view()`, so it fails if the xpath stops
+matching or the view stops loading.
+
+### Both red proofs, with the expected counts stated first
+
+| break | expected | got |
+|---|---|---|
+| settings view withheld | 2 (the two arch tests) | **2** — the four model-path tests still passed, which is the point |
+| attribution made unconditional | 2 (both switch-off tests) | **2** |
+
+The second one is worth recording because the **first attempt returned 0**. The
+patch script asserted it would find 2 occurrences of
+`t-if="company.sapian_email_attribution"` and there are 4 — the two separator
+tags start with the same string — so the assertion raised, the file was never
+modified, and the run tested unbroken code. Nothing about the output said so
+except the number.
+
+That is the CLAUDE.md rule "a red proof is only evidence if the failure COUNT is
+what you expected", applied to itself within the hour it was written. The break
+is now verified in the file (`grep -c` must print 0) *before* the run is
+launched.
+
 ## Which customer-facing mail is affected
 
 | Mail | Attribution | Purple button | Covered by |
