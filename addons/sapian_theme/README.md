@@ -316,6 +316,97 @@ Finding the second of those also showed the containment test was only checking
 top and bottom, so a tile pushed sideways counted as visible; it now tests all
 four edges.
 
+### The header has to OCCLUDE, not just sit on top
+
+`position: sticky` over a scrolling `<nav>` is only a pin if the header paints
+over the rows passing under it. Ours did not, in exactly one state.
+
+The rows and the header share their hover rule:
+
+```scss
+.o_sapian_rail_app,
+.o_sapian_rail_toggle {
+    &:hover { background-color: $o-sapian-rail-hover-fill; }   // 8% alpha
+}
+```
+
+For a **row** that is correct — the tint composites over the rail's own opaque
+background, directly behind it. For the **sticky header** it is a defect: the
+rows scroll *between* the header and that background, so an 8%-alpha
+`background-color` is a 92% window onto whatever is going past. Measured at 40
+apps with the rail scrolled to 500:
+
+| state | `background-color` |
+|---|---|
+| at rest | `rgb(255, 255, 255)` |
+| hovered | `rgba(20, 69, 79, 0.08)` |
+
+and the header rendered the row "Invoicing" and the wordmark "SapianERP"
+stacked in the same 200×44 box.
+
+**It was not a stacking problem, and that was checked rather than assumed.**
+`elementFromPoint` at the header's centre returned the header in *every* state,
+and the paint order there is `label → button(z=1) → nav(z=1020) → body`. The
+z-index and the hit-testing were already right; only the pixels were wrong. A
+z-index bump would have changed nothing.
+
+The fix layers the tint **over** an opaque base instead of replacing it —
+`background-image` composites on top of `background-color`, which stays opaque
+— so a hovered header is the same colour as a hovered row to the pixel and is
+never see-through.
+
+#### The assertion the brief asked for would not have caught it
+
+Worth stating plainly, because it is the interesting part. `elementFromPoint`
+at the header's centre returns the header on the **broken** code too:
+hit-testing does not care about alpha. Run against the defect, the five samples
+all came back `header`:
+
+```
+restAlpha=1  hoverAlpha=0.08  bgImage=none
+centre=header left=header right=header upper=header lower=header
+```
+
+So `TestSapianSidebarHeaderOccludes` asserts both halves and only one of them
+discriminates: the samples guard the stacking (a real property that must not
+regress) and the **alpha** guards the paint. It also asserts the tint is still
+*present* — an opaque hover state achieved by deleting the tint would pass an
+opacity check while quietly removing the hover affordance.
+
+### The rail stands down while the launcher is open
+
+The launcher is a full-viewport grid of every installed app. The rail is a
+vertical list of the same apps. What was actually on screen was worse than
+either: the launcher is `fixed`, `z-index: 1024`, box `[0, 46, 1366, 854]`; the
+rail is `z-index: 1020` from `y = 0`. A **200×44 strip of rail therefore stuck
+out above the launcher**, in the top-left corner, by construction — visible,
+hoverable and clickable. Hovering it is how the transparency above was found.
+
+That strip is the worst possible amount: too little to navigate by (no app row
+is reachable in 44px), enough to misclick, and the only control in it resizes a
+panel the user cannot see. Its tooltip renders over the launcher, which is the
+same overlap arriving by another route — and it will keep arriving while two
+fixed layers at adjacent z-indices partially overlap.
+
+So the rail is hidden, not merely covered. The component already does this for
+a fullscreen action (`state.fullscreen`); "something is taking the whole
+viewport, stand down" is an established rule here.
+
+| decision | why |
+|---|---|
+| CSS keyed on `body.o_apps_menu_opened` | web_responsive sets that class itself (`apps_menu.esm.js:28`). No JS, no bus subscription, no second piece of state — and **no dependency**: without web_responsive the class never appears and the rule never matches. |
+| `visibility: hidden` | keeps the element laid out, so **scrollTop survives** the round trip. `display: none` and a `t-if` both discard it, and `TestSapianAppRailKeepsScroll` exists because losing that position is a defect we have already shipped once. It also stops hit-testing, which is what makes the corner unreachable rather than merely invisible. |
+
+Measured, expanded and collapsed: `before=visible/true open=hidden/false
+openCollapsed=hidden/true after=visible/true scroll=300/300`.
+
+**One consequence, stated rather than hidden:** a 200×46 patch of page
+background stays in the top-left corner while the launcher is open, because the
+web client keeps its `padding-left`. Dropping the padding would let the
+launcher and navbar span the full width — and would make the navbar jump 200px
+sideways every time the launcher opens, since the navbar is *not* covered by
+the overlay. A blank corner is the cheaper of the two.
+
 ### It clears the fixed footer
 
 Both the sidebar and the footer are `position: fixed`, both are removed by the

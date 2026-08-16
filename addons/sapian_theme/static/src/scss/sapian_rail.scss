@@ -85,6 +85,49 @@ $o-sapian-rail-hover-fill: rgba($sapian-brand, 0.08) !default;
         }
     }
 
+    // THE RAIL STANDS DOWN WHILE THE APP LAUNCHER IS OPEN.
+    //
+    // The launcher is a full-viewport grid of every installed app. The rail is
+    // a vertical list of the same apps. Showing both is the same list twice,
+    // and what was actually on screen was worse than either: the launcher is
+    // `position: fixed; z-index: 1024` with the box [0, 46, 1366, 854], and the
+    // rail is `z-index: 1020` starting at y=0 — so a 200x44 strip of rail stuck
+    // out above the launcher, in the top-left corner. Measured, not inferred.
+    //
+    // That strip is the worst possible amount. Too little to navigate by (no
+    // app row is reachable in 44px), enough to click by accident, and the only
+    // control in it resizes a panel the user cannot see. Its tooltip renders
+    // over the launcher, which is the same overlap arriving again by another
+    // route — and it will keep arriving as long as two fixed layers at
+    // adjacent z-indices partially overlap. Hiding the rail removes the class
+    // of defect rather than this instance of it.
+    //
+    // The component already does exactly this for a fullscreen action
+    // (`state.fullscreen`, from ACTION_MANAGER:UI-UPDATED). "Something is
+    // taking the whole viewport, stand down" is an established rule here; the
+    // launcher is that.
+    //
+    // WHY CSS AND NOT A STATE FLAG. `o_apps_menu_opened` is put on <body> by
+    // web_responsive itself (apps_menu.esm.js:28), so keying off it needs no
+    // JS, no bus subscription and no second piece of state to keep in step —
+    // and it creates NO dependency: sapian_theme must stay installable without
+    // web_responsive, and on such a database the class never appears and this
+    // rule never matches.
+    //
+    // WHY `visibility` AND NOT `display: none` OR unmounting. The rail is a
+    // scroll container and the launcher is opened and closed constantly.
+    // `visibility: hidden` keeps the element laid out, so scrollTop survives
+    // the round trip; `display: none` and a `t-if` both discard it, and
+    // TestSapianAppRailKeepsScroll exists because losing that position is a
+    // defect we have already shipped once. It also stops hit-testing, which is
+    // the half that makes the corner unreachable rather than merely invisible.
+    // Written as a full selector, not `body.o_apps_menu_opened &`: this rule
+    // sits at the top level of the media query rather than nested inside
+    // `.o_sapian_rail`, and `&` has no parent there — SCSS rejects it outright.
+    body.o_apps_menu_opened .o_sapian_rail {
+        visibility: hidden;
+    }
+
     // THE RAIL MUST NOT SIT UNDER THE FIXED FOOTER — and that rule lives in
     // sapian_footer.scss, not here. $o-sapian-footer-height is declared there
     // and that file loads AFTER this one (see __manifest__.py), so a clearance
@@ -132,6 +175,42 @@ $o-sapian-rail-hover-fill: rgba($sapian-brand, 0.08) !default;
         background-color: $o-view-background-color;
         // The list scrolls under it, so it needs a floor of its own.
         box-shadow: 0 1px 0 0 $border-color;
+
+        // THE HEADER MUST BE OPAQUE IN EVERY STATE, HOVER INCLUDED.
+        //
+        // The shared rule above gives rows and this header the same hover fill,
+        // rgba($sapian-brand, 0.08). For a ROW that is correct: the tint
+        // composites over the rail's own opaque background, which is directly
+        // behind it. For a STICKY header it is a defect — the rows scroll
+        // BETWEEN the header and that background, so an 8%-alpha
+        // background-color is a 92% window onto whatever is passing under it.
+        //
+        // Measured on the 40-app database with the rail scrolled to 500:
+        //
+        //     not hovered   background-color: rgb(255, 255, 255)
+        //     hovered       background-color: rgba(20, 69, 79, 0.08)
+        //
+        // and the header then rendered the row "Invoicing" and the wordmark
+        // "SapianERP" stacked in the same 200x44 box.
+        //
+        // NOT a stacking-context problem, and that was checked rather than
+        // assumed: `elementFromPoint` at the header's centre returned the
+        // header in EVERY state, and the paint order there is
+        // label -> button(z=1) -> nav(z=1020) -> body. The z-index and the
+        // hit-testing were already right; only the pixels were wrong. A
+        // z-index bump would have changed nothing.
+        //
+        // So the tint is LAYERED OVER an opaque base rather than replacing it:
+        // `background-image` composites on top of `background-color`, which
+        // stays opaque. The hovered header is the same colour as a hovered row
+        // to the pixel, and is never see-through.
+        &:hover {
+            background-color: $o-view-background-color;
+            background-image: linear-gradient(
+                $o-sapian-rail-hover-fill,
+                $o-sapian-rail-hover-fill
+            );
+        }
     }
 
     // The mark takes the brand from `color` on the button, which is why it is

@@ -679,6 +679,11 @@ async function railOcclusion() {
         launcherOpen: !!document.querySelector('.app-menu-container'),
         tiles: rail.querySelectorAll('.o_sapian_rail_app').length,
         display: getComputedStyle(rail).display,
+        visibility: getComputedStyle(rail).visibility,
+        // The class our CSS keys off. web_responsive puts it on <body>
+        // (apps_menu.esm.js:28); sapian_rail.scss hides the rail from it.
+        bodyClass: document.body.classList.contains('o_apps_menu_opened'),
+        scrollTop: rail.scrollTop,
     };
 }
 
@@ -738,9 +743,25 @@ async function railOcclusion() {
             + 'should not be');
     }
 
-    // 2. Open the launcher. It is a fullscreen overlay, so it is EXPECTED to
-    //    cover the rail; asserting that makes the behaviour a decision on the
-    //    record rather than an accident nobody measured.
+    // 2. Open the launcher. THE RAIL NOW STANDS DOWN COMPLETELY.
+    //
+    //    AMENDED. This step used to assert only that the launcher COVERS the
+    //    rail, and it passed while a 200x44 strip of rail stuck out above the
+    //    overlay in the top-left corner — the launcher is fixed at z-index
+    //    1024 with the box [0, 46, 1366, 854], the rail is z-index 1020 from
+    //    y=0, so the top 46px was never covered by construction. It was
+    //    hoverable and clickable there, and hovering it is how the header's
+    //    transparency was found.
+    //
+    //    This probe could not see that: it samples the rail's centre at
+    //    y = min(height/2, 300), which the overlay does cover. Sampling one
+    //    point and calling it occlusion is the same shape of mistake as
+    //    measuring the login card and calling it the page.
+    //
+    //    So the decision on the record has changed: the rail is HIDDEN while
+    //    the launcher is open, not merely covered. The launcher already lists
+    //    every app; the rail lists the same apps; a strip too small to
+    //    navigate by and large enough to misclick is the worst of both.
     document.querySelector('.o_grid_apps_menu__button').click();
     if (!await waitFor(launcherIsOpen, 5000)) {
         // One retry: a late action update can swallow the first click.
@@ -763,9 +784,24 @@ async function railOcclusion() {
         throw new Error('opening the launcher changed the rail from '
             + closed.tiles + ' tiles to ' + open.tiles);
     }
+    if (!open.bodyClass) {
+        throw new Error('the launcher is open but <body> does not carry '
+            + 'o_apps_menu_opened — that class is what sapian_rail.scss keys '
+            + 'off, so the rule under test is keyed to something that does '
+            + 'not happen');
+    }
+    if (open.visibility !== 'hidden') {
+        throw new Error('the launcher is open but the rail computes '
+            + 'visibility=' + open.visibility + ' — it should stand down '
+            + 'entirely, not merely be covered where the overlay reaches');
+    }
+    // STILL IN THE DOM, and this half of the old assertion is kept unchanged.
+    // `visibility` was chosen over `display: none` and over unmounting
+    // precisely so the element keeps its box and its scrollTop across a round
+    // trip the user makes constantly.
     if (open.display === 'none') {
-        throw new Error('opening the launcher HID the rail; it should be '
-            + 'covered, not removed — it must come straight back on dismiss');
+        throw new Error('opening the launcher REMOVED the rail from layout; it '
+            + 'must stay laid out so its scroll position survives');
     }
 
     // 3. Dismiss it. The rail must be reachable again, undamaged.
@@ -792,10 +828,23 @@ async function railOcclusion() {
         throw new Error('the rail came back with ' + after.tiles
             + ' tiles instead of ' + closed.tiles);
     }
+    if (after.visibility !== 'visible') {
+        throw new Error('the launcher closed but the rail is still '
+            + 'visibility=' + after.visibility);
+    }
+    if (after.scrollTop !== closed.scrollTop) {
+        throw new Error('the rail lost its scroll position across the launcher '
+            + 'round trip: ' + closed.scrollTop + ' -> ' + after.scrollTop
+            + ' — which is what `display: none` would have cost');
+    }
 
     console.log('SAPIAN-RAIL-OCCLUSION closed=' + closed.railReachable
         + ' open=' + open.railReachable + ' owner="' + open.topOwner + '"'
         + ' reopened=' + after.railReachable
+        + ' visibility=' + closed.visibility + '/' + open.visibility
+        + '/' + after.visibility
+        + ' bodyClass=' + closed.bodyClass + '/' + open.bodyClass
+        + ' scroll=' + closed.scrollTop + '/' + after.scrollTop
         + ' tiles=' + closed.tiles + '/' + open.tiles + '/' + after.tiles);
     console.log('test successful');
 })();
@@ -804,12 +853,20 @@ async function railOcclusion() {
 
 @tagged("post_install", "-at_install", "-standard", "sapian_launcher")
 class TestRailOcclusionUnderTheLauncher(HttpCase):
-    """The rail is covered while the launcher is up, and reachable after.
+    """The rail stands down while the launcher is up, and returns intact.
 
     Added because the rail's existing suite asserts geometry and content but
     not occlusion, so it would stay green if the launcher started covering the
     rail permanently, or stopped covering it and let the rail paint over the
-    app grid. Both are things a client would see immediately and CI would not.
+    app grid.
+
+    AMENDED once already, and the amendment is the lesson: asserting occlusion
+    at ONE point (the rail's centre) passed while a 200x44 strip of rail stuck
+    out above the overlay at the top-left corner, where this probe does not
+    look. It now asserts the rail's computed `visibility` — a property of the
+    whole element — and that the body class our CSS keys off is really set by
+    the real launcher, which is the half a hand-added class in
+    `test_app_rail.py` cannot prove.
     """
 
     browser_size = "1366x900"
