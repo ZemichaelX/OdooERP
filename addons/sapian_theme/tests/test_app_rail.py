@@ -1278,6 +1278,300 @@ SIDEBAR_HEADER_JS = SIDEBAR_SETTLE_JS + """
 """
 
 
+# THE HEADER OCCLUDES WHAT SCROLLS UNDER IT — the assertion nothing had.
+#
+# Every sidebar test in this file measured row geometry and computed styles,
+# and every one passed while the header was 92% transparent on hover and the
+# rows behind it were legible through it. Geometry cannot see through a box.
+#
+# ONE OF THE TWO CHECKS BELOW WOULD NOT HAVE CAUGHT IT, and that is worth
+# stating rather than discovering later. `elementFromPoint` at the header's
+# centre returns the header on the BROKEN code too: the stacking was always
+# right — label -> button(z=1) -> nav(z=1020) -> body — and only the paint was
+# wrong. Hit-testing does not care about alpha. It is kept because the stacking
+# half is a real property that must not regress, but the check that
+# discriminates is the OPACITY one.
+#
+# Opacity is read as the effective background: `background-color` must be fully
+# opaque, and any `background-image` layered on top of it is fine (that is how
+# the hover tint is now applied) but must not be the only thing there. Both are
+# sampled at REST and while HOVERING, because the defect existed in exactly one
+# of those states.
+SIDEBAR_OCCLUSION_JS = SIDEBAR_SETTLE_JS + SAPIAN_FORCED_HEIGHT + """
+function sapianAlphaOf(colour) {
+    // 'rgba(20, 69, 79, 0.08)' -> 0.08 ; 'rgb(255, 255, 255)' -> 1
+    const m = /^rgba?\\(([^)]+)\\)$/.exec((colour || '').trim());
+    if (!m) { return colour === 'transparent' ? 0 : 1; }
+    const parts = m[1].split(',').map((s) => parseFloat(s));
+    return parts.length > 3 ? parts[3] : 1;
+}
+
+function sapianHeaderReport(label) {
+    const rail = document.querySelector('.o_sapian_rail');
+    const head = rail.querySelector('.o_sapian_rail_toggle');
+    const problems = [];
+    const cs = getComputedStyle(head);
+    const hb = head.getBoundingClientRect();
+
+    // WHAT IS PAINTED THERE. Five points, not one: a centre-only sample passes
+    // on a header whose background is inset, or whose label is the only opaque
+    // thing in the box.
+    const points = [
+        ['centre', hb.left + hb.width / 2, hb.top + hb.height / 2],
+        ['left',   hb.left + 4,            hb.top + hb.height / 2],
+        ['right',  hb.right - 4,           hb.top + hb.height / 2],
+        ['upper',  hb.left + hb.width / 2, hb.top + 3],
+        ['lower',  hb.left + hb.width / 2, hb.bottom - 3],
+    ];
+    const hits = [];
+    for (const [name, x, y] of points) {
+        const el = document.elementFromPoint(x, y);
+        const row = el && el.closest && el.closest('.o_sapian_rail_app');
+        const mine = el && (el === head || head.contains(el));
+        hits.push(name + '=' + (mine ? 'header' : row ? 'ROW' : 'other'));
+        if (row) {
+            problems.push(label + ': a rail row ("'
+                + (row.getAttribute('aria-label') || '?')
+                + '") is on top at the header\\'s ' + name);
+        } else if (!mine) {
+            problems.push(label + ': something that is not the header is on top '
+                + 'at its ' + name + ' (' + (el ? el.tagName : 'nothing') + ')');
+        }
+    }
+
+    // AND IS IT SOLID. This is the half that goes red on the defect.
+    const alpha = sapianAlphaOf(cs.backgroundColor);
+    if (alpha < 1) {
+        problems.push(label + ': the header background is ' + cs.backgroundColor
+            + ' (alpha ' + alpha + ') — rows scrolling under it show through');
+    }
+    return {
+        problems,
+        alpha,
+        bg: cs.backgroundColor,
+        bgImage: cs.backgroundImage === 'none' ? 'none' : 'layered',
+        hits: hits.join(' '),
+    };
+}
+
+async function sapianCheckHeader(width) {
+    const rail = document.querySelector('.o_sapian_rail');
+    const head = rail.querySelector('.o_sapian_rail_toggle');
+
+    // THE ROWS MUST ACTUALLY BE PASSING UNDER IT, or there is nothing to
+    // occlude and this whole test is vacuous — the RAIL_RENDERS_JS lesson.
+    //
+    // The overflow is FORCED rather than waited for, exactly as
+    // TestSapianAppRailOverflow and TestSapianAppRailKeepsScroll already do.
+    // Measured: on the theme-alone database the rail holds two apps in an
+    // 872px box, scrollTop stays 0, and the precondition above aborted the run
+    // — correctly, but it left the assertion unrun in the one CI job that
+    // installs nothing else. Forcing the height makes this hold at two apps
+    // and at forty.
+    const tiles = [...rail.querySelectorAll('.o_sapian_rail_app')];
+    const forced = sapianForcedHeight(
+        rail, tiles[0].getBoundingClientRect().height, tiles.length);
+    rail.style.height = forced + 'px';
+    await settle(200);
+    rail.scrollTop = rail.scrollHeight;
+    await settle(400);
+    if (rail.scrollTop < 10) {
+        rail.style.height = '';
+        throw new Error(width + ': could not force the rail to overflow '
+            + '(scrollTop=' + rail.scrollTop + ', scrollHeight='
+            + rail.scrollHeight + ' vs clientHeight=' + rail.clientHeight
+            + '), so nothing was underneath the header');
+    }
+    const hb = head.getBoundingClientRect();
+    const under = [...rail.querySelectorAll('.o_sapian_rail_app')].filter((r) => {
+        const b = r.getBoundingClientRect();
+        return b.top < hb.bottom && b.bottom > hb.top;
+    });
+    if (!under.length) {
+        rail.style.height = '';
+        throw new Error(width + ': no row overlaps the header box after '
+            + 'scrolling, so there is nothing for the header to occlude');
+    }
+
+    const rest = sapianHeaderReport(width + ' at rest');
+
+    // HOVER. The defect lived here and nowhere else: the header shared its
+    // hover fill with the rows, and that fill is 8% alpha.
+    const evt = (type) => head.dispatchEvent(new MouseEvent(type,
+        { bubbles: true, cancelable: true, view: window }));
+    evt('mouseover'); evt('mouseenter'); evt('mousemove');
+    await settle(300);
+    // :hover cannot be forced from script in Chrome, so ask the stylesheet
+    // what it WOULD paint rather than trusting a synthetic event.
+    const hoverRule = [...document.styleSheets].flatMap((sheet) => {
+        try { return [...sheet.cssRules]; } catch (e) { return []; }
+    }).flatMap((rule) => rule.cssRules ? [...rule.cssRules] : [rule])
+      .filter((rule) => rule.selectorText
+          && /\\.o_sapian_rail_toggle:hover\\b/.test(rule.selectorText));
+    const declared = hoverRule.map((r) => r.style.backgroundColor).filter(Boolean);
+    const hoverBg = declared.length ? declared[declared.length - 1] : rest.bg;
+    const hoverAlpha = sapianAlphaOf(hoverBg);
+    // AND THE TINT MUST STILL BE THERE. Asserting only that the hover colour
+    // is opaque is satisfied by deleting the tint altogether, which would
+    // silently drop the hover affordance the SPEC asks for — a fix that passes
+    // by removing the feature. The tint is now a background-image layered over
+    // the opaque colour, so that is what to look for.
+    const hoverImages = hoverRule.map((r) => r.style.backgroundImage)
+        .filter((v) => v && v !== 'none');
+    const hoverTint = hoverImages.length ? hoverImages[hoverImages.length - 1] : 'none';
+
+    console.log('SAPIAN-SIDEBAR-OCCLUSION ' + width + ' rows=' + under.length
+        + ' scrollTop=' + rail.scrollTop
+        + ' restBg="' + rest.bg + '" restAlpha=' + rest.alpha
+        + ' hoverBg="' + hoverBg + '" hoverAlpha=' + hoverAlpha
+        + ' hoverTint=' + (hoverTint === 'none' ? 'MISSING' : 'present')
+        + ' bgImage=' + rest.bgImage
+        + ' ' + rest.hits);
+
+    if (rest.problems.length) {
+        throw new Error(rest.problems.join(' | '));
+    }
+    if (hoverAlpha < 1) {
+        throw new Error(width + ': the header\\'s :hover rule paints ' + hoverBg
+            + ' (alpha ' + hoverAlpha + '). It is position: sticky over a '
+            + 'scrolling list, so a translucent hover state is a window onto '
+            + 'the rows passing under it.');
+    }
+    if (hoverTint === 'none') {
+        rail.style.height = '';
+        throw new Error(width + ': the header has an opaque hover colour but no '
+            + 'tint layered on it — the hover state was made opaque by removing '
+            + 'it, not by compositing it, so the row no longer lights up.');
+    }
+    rail.style.height = '';
+    rail.scrollTop = 0;
+}
+
+(async () => {
+    await sapianSidebarSettle();
+    const rail = document.querySelector('.o_sapian_rail');
+    const toggle = rail.querySelector('.o_sapian_rail_toggle');
+
+    // BOTH WIDTHS. The collapsed header is 56px of the same sticky box over the
+    // same scrolling list, and a rule that fixed only the expanded one would
+    // leave half the product broken with a green suite.
+    await sapianCheckHeader('expanded');
+    toggle.click();
+    await settle(700);
+    if (!rail.classList.contains('o_sapian_rail_collapsed')) {
+        throw new Error('the rail did not collapse, so the collapsed half of '
+            + 'this test measured the expanded rail twice');
+    }
+    await sapianCheckHeader('collapsed');
+    toggle.click();
+    await settle(700);
+    console.log('test successful');
+})();
+"""
+
+# And the launcher half: the rail stands down entirely while it is open.
+#
+# Keyed on the BODY CLASS rather than on web_responsive, and that is deliberate
+# — the rule under test is a CSS rule keyed on exactly that class, so adding it
+# by hand exercises the whole of our contract and the test runs on a database
+# with no web_responsive at all. That the class is real is a separate question,
+# asserted against the actual launcher by
+# TestSapianRailStandsDownForTheRealLauncher, which runs in the CI job that
+# installs web_responsive.
+SIDEBAR_LAUNCHER_JS = SIDEBAR_SETTLE_JS + SAPIAN_FORCED_HEIGHT + """
+(async () => {
+    await sapianSidebarSettle();
+    const rail = document.querySelector('.o_sapian_rail');
+    // Forced, for the same reason as the occlusion block: the scroll-survives
+    // assertion is the whole point of choosing `visibility` over
+    // `display: none`, and it needs a rail that genuinely scrolls on a
+    // two-app database as well as on a forty-app one.
+    const tiles = [...rail.querySelectorAll('.o_sapian_rail_app')];
+    rail.style.height = sapianForcedHeight(
+        rail, tiles[0].getBoundingClientRect().height, tiles.length) + 'px';
+    await settle(200);
+    rail.scrollTop = rail.scrollHeight;
+    await settle(300);
+    const scrolledTo = rail.scrollTop;
+    if (scrolledTo < 10) {
+        rail.style.height = '';
+        throw new Error('could not force the rail to overflow, so the '
+            + 'scroll-survives assertion below would prove nothing');
+    }
+
+    const cornerIsRail = () => {
+        const b = rail.getBoundingClientRect();
+        const el = document.elementFromPoint(b.left + b.width / 2, b.top + 20);
+        return !!(el && (el === rail || rail.contains(el)));
+    };
+
+    const before = { vis: getComputedStyle(rail).visibility, hit: cornerIsRail() };
+
+    document.body.classList.add('o_apps_menu_opened');
+    await settle(300);
+    const open = { vis: getComputedStyle(rail).visibility, hit: cornerIsRail() };
+
+    // COLLAPSED TOO, while the launcher is still open: the rule keys off the
+    // rail, not off its width, but a 56px rail that stayed visible would be
+    // the same defect in a narrower strip.
+    rail.querySelector('.o_sapian_rail_toggle').click();
+    await settle(700);
+    const openCollapsed = {
+        vis: getComputedStyle(rail).visibility,
+        collapsed: rail.classList.contains('o_sapian_rail_collapsed'),
+    };
+    rail.querySelector('.o_sapian_rail_toggle').click();
+    await settle(700);
+
+    document.body.classList.remove('o_apps_menu_opened');
+    await settle(300);
+    const after = {
+        vis: getComputedStyle(rail).visibility,
+        hit: cornerIsRail(),
+        scrollTop: rail.scrollTop,
+    };
+
+    rail.style.height = '';
+    console.log('SAPIAN-SIDEBAR-LAUNCHER before=' + before.vis + '/' + before.hit
+        + ' open=' + open.vis + '/' + open.hit
+        + ' openCollapsed=' + openCollapsed.vis + '/' + openCollapsed.collapsed
+        + ' after=' + after.vis + '/' + after.hit
+        + ' scroll=' + scrolledTo + '/' + after.scrollTop);
+
+    if (before.vis !== 'visible' || !before.hit) {
+        throw new Error('the rail was already hidden before the launcher '
+            + 'opened, so this test cannot tell that opening it did anything');
+    }
+    if (open.vis !== 'hidden') {
+        throw new Error('with the launcher open the rail computes visibility='
+            + open.vis + ' — it is still painted over/under the overlay');
+    }
+    if (open.hit) {
+        throw new Error('the rail still answers elementFromPoint with the '
+            + 'launcher open, so its corner is still clickable');
+    }
+    if (!openCollapsed.collapsed) {
+        throw new Error('the rail did not collapse while the launcher was '
+            + 'open, so the collapsed half measured the expanded rail');
+    }
+    if (openCollapsed.vis !== 'hidden') {
+        throw new Error('collapsed, with the launcher open, the rail computes '
+            + 'visibility=' + openCollapsed.vis);
+    }
+    if (after.vis !== 'visible' || !after.hit) {
+        throw new Error('the rail did not come back when the launcher closed: '
+            + after.vis + '/' + after.hit);
+    }
+    // THE REASON IT IS `visibility` AND NOT `display: none`.
+    if (after.scrollTop !== scrolledTo) {
+        throw new Error('the rail lost its scroll position across the launcher '
+            + 'round trip: ' + scrolledTo + ' -> ' + after.scrollTop);
+    }
+    console.log('test successful');
+})();
+"""
+
+
 class SidebarBrowserCase(HttpCase):
     """Shared setup: tours off, and the brand read from the palette."""
 
@@ -1343,6 +1637,27 @@ class TestSapianSidebarHeader(SidebarBrowserCase):
 
     def test_the_header_is_the_logo_and_says_whether_it_is_expanded(self):
         self.run_sidebar(SIDEBAR_HEADER_JS)
+
+
+@tagged("post_install", "-at_install")
+class TestSapianSidebarHeaderOccludes(SidebarBrowserCase):
+    """The sticky header paints over the rows scrolling under it.
+
+    Nothing asserted this before. Every sidebar test measured geometry and
+    computed styles, and all of them passed on a header that was 92%
+    transparent on hover with the rows legible through it.
+    """
+
+    def test_the_header_is_opaque_and_nothing_shows_through_it(self):
+        self.run_sidebar(SIDEBAR_OCCLUSION_JS)
+
+
+@tagged("post_install", "-at_install")
+class TestSapianSidebarStandsDownForTheLauncher(SidebarBrowserCase):
+    """With the app launcher open the rail is neither painted nor clickable."""
+
+    def test_the_rail_hides_while_the_launcher_is_open_and_keeps_its_scroll(self):
+        self.run_sidebar(SIDEBAR_LAUNCHER_JS)
 
 
 @tagged("post_install", "-at_install")
