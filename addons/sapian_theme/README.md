@@ -400,12 +400,48 @@ viewport, stand down" is an established rule here.
 Measured, expanded and collapsed: `before=visible/true open=hidden/false
 openCollapsed=hidden/true after=visible/true scroll=300/300`.
 
-**One consequence, stated rather than hidden:** a 200×46 patch of page
-background stays in the top-left corner while the launcher is open, because the
-web client keeps its `padding-left`. Dropping the padding would let the
-launcher and navbar span the full width — and would make the navbar jump 200px
-sideways every time the launcher opens, since the navbar is *not* covered by
-the overlay. A blank corner is the cheaper of the two.
+#### The mark stays — a correction to the above
+
+The first version of this hid the **whole** rail, and the note here said a
+200×46 patch of page background was an acceptable consequence. It was not. On
+screen it is a white rectangle where the logo had been, against the launcher's
+teal, and it reads as a rendering fault rather than as empty space. Measured
+from screenshot pixels rather than from computed styles — `elementFromPoint`
+answers `BODY.o_web_client` there, because the corner is the web client's own
+left padding showing above the launcher's top edge:
+
+| | page-background pixels in the 200×46 corner |
+|---|---|
+| whole rail hidden | **9200 / 9200 (100%)** |
+| mark kept | **3 / 9200 (0.0%)** — antialiasing on the logo's edge |
+
+The distinction the first version missed: the app **rows** duplicate the
+launcher and should stand down. The **mark** is identity, not navigation. It
+duplicates nothing, every desktop application keeps its logo over a full-screen
+overlay, and keeping it is what removes the hole — the header is the only thing
+that ever painted that corner.
+
+`visibility` is the one hiding property a child can countermand, so the rail
+goes `hidden` and the header comes back `visible`. It is `pointer-events: none`
+there and its chevron is hidden: the collapse toggle resizes a panel the user
+cannot see, so the objection that the strip was *clickable* still stands — the
+mark stays, the control does not.
+
+**Painting the corner exactly took three measured passes**, each invisible in a
+screenshot and plain in the numbers: 189px of 200 (the rail's gutter *and* its
+scrollbar), then 199 (the scrollbar), then 200 (the rail's 1px right border).
+All three are suppressed only while the launcher is open.
+
+**And one wrong turn worth recording.** The header was first made
+`position: fixed` to cover the corner. That takes it out of the rail's scroll
+content, so `scrollHeight` drops by its height and the browser clamps
+`scrollTop` — the user's position went **50 → 6** across one launcher round
+trip, and `TestSapianSidebarStandsDownForTheLauncher` failed on exactly that.
+The header stays `position: sticky`, which pins it while leaving it in the flow
+it contributes to. The rejected alternative — painting the corner in the
+navbar's colour so the strip reads as one bar — is in the SCSS comment: our
+mark is the brand and would have to turn white, and web_responsive's launcher
+theme is a per-user setting whose 'milk' variant is light.
 
 ### It clears the fixed footer
 

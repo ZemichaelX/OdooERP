@@ -1478,6 +1478,139 @@ async function sapianCheckHeader(width) {
 # asserted against the actual launcher by
 # TestSapianRailStandsDownForTheRealLauncher, which runs in the CI job that
 # installs web_responsive.
+# THE CORNER MUST NOT BE A HOLE.
+#
+# Hiding the whole rail for the launcher (PR #43) hid the brand header with it,
+# and left a 200x46 rectangle of PAGE BACKGROUND in the top-left corner —
+# rgb(248, 249, 250) against the launcher's rgb(20, 69, 79). Measured from
+# screenshot pixels: 9200 of 9200 pixels in that region were page background.
+# With the mark restored it is 3 of 9200, and those three are antialiasing on
+# the logo's edge.
+#
+# `browser_js` CANNOT SAMPLE PIXELS — there is no screenshot inside the page —
+# so this asserts the three facts that together determine what is painted
+# there, rather than the CSS rule that produces them:
+#
+#   1. the header's computed `visibility` is visible;
+#   2. its background is OPAQUE, so it paints rather than letting the page
+#      through (the same alpha check the occlusion guard uses);
+#   3. its box COVERS the exposed corner — from the viewport origin to the
+#      rail's width and the navbar's bottom, which is where the launcher's own
+#      top edge is.
+#
+# An opaque, visible element covering the region is what paints the region.
+# The pixel figures above are the evidence that these three produce the
+# intended result, and they are recorded in the module README.
+#
+# `elementFromPoint` is deliberately NOT used to find the header: it is
+# `pointer-events: none` on purpose, so hit-testing passes straight through it
+# to the body. That is asserted too — the mark is identity, and identity is not
+# a button.
+SIDEBAR_CORNER_JS = SIDEBAR_SETTLE_JS + """
+(async () => {
+    await sapianSidebarSettle();
+    const rail = document.querySelector('.o_sapian_rail');
+    const head = rail.querySelector('.o_sapian_rail_toggle');
+    const navbar = document.querySelector('.o_main_navbar');
+    if (!navbar) { throw new Error('no navbar, so the corner has no known height'); }
+
+    const alphaOf = (colour) => {
+        const m = /^rgba?\(([^)]+)\)$/.exec((colour || '').trim());
+        if (!m) { return colour === 'transparent' ? 0 : 1; }
+        const parts = m[1].split(',').map((s) => parseFloat(s));
+        return parts.length > 3 ? parts[3] : 1;
+    };
+
+    // The exposed corner: the launcher starts at the navbar's bottom edge, and
+    // the web client is padded by the rail's width. That rectangle is what had
+    // nothing painting it.
+    const railWidth = Math.round(rail.getBoundingClientRect().width);
+    const cornerBottom = Math.round(navbar.getBoundingClientRect().bottom);
+
+    const read = () => {
+        const cs = getComputedStyle(head);
+        const b = head.getBoundingClientRect();
+        return {
+            vis: cs.visibility,
+            bg: cs.backgroundColor,
+            alpha: alphaOf(cs.backgroundColor),
+            box: [Math.round(b.left), Math.round(b.top),
+                  Math.round(b.right), Math.round(b.bottom)],
+            covers: b.left <= 0.5 && b.top <= 0.5
+                && b.right >= railWidth - 0.5 && b.bottom >= cornerBottom - 0.5,
+            clickable: (() => {
+                const el = document.elementFromPoint(railWidth / 2, cornerBottom / 2);
+                return !!(el && (el === head || head.contains(el)));
+            })(),
+        };
+    };
+
+    const closed = read();
+    document.body.classList.add('o_apps_menu_opened');
+    await settle(400);
+    const open = read();
+    const railVis = getComputedStyle(rail).visibility;
+    const chevron = head.querySelector('.o_sapian_rail_chevron');
+    const chevronShown = chevron
+        ? getComputedStyle(chevron).display !== 'none' : false;
+    document.body.classList.remove('o_apps_menu_opened');
+    await settle(400);
+    const after = read();
+
+    console.log('SAPIAN-SIDEBAR-CORNER railWidth=' + railWidth
+        + ' cornerBottom=' + cornerBottom
+        + ' closedVis=' + closed.vis
+        + ' openVis=' + open.vis + ' openAlpha=' + open.alpha
+        + ' openBg="' + open.bg + '"'
+        + ' openBox=' + open.box.join(',')
+        + ' covers=' + open.covers
+        + ' clickable=' + open.clickable
+        + ' railVis=' + railVis
+        + ' chevron=' + chevronShown
+        + ' afterVis=' + after.vis);
+
+    // THE ROWS STILL STAND DOWN — the half of PR #43 that was right.
+    if (railVis !== 'hidden') {
+        throw new Error('the rail is ' + railVis + ' with the launcher open; '
+            + 'the app rows duplicate the launcher and must stand down');
+    }
+    // THE MARK DOES NOT.
+    if (open.vis !== 'visible') {
+        throw new Error('the brand header is ' + open.vis + ' with the launcher '
+            + 'open, so the top-left corner paints page background — a white '
+            + 'rectangle where the logo was');
+    }
+    if (open.alpha < 1) {
+        throw new Error('the brand header paints ' + open.bg + ' (alpha '
+            + open.alpha + '), so the page shows through the corner');
+    }
+    if (!open.covers) {
+        throw new Error('the brand header box ' + open.box.join(',')
+            + ' does not cover the exposed corner 0,0,' + railWidth + ','
+            + cornerBottom + ' — page background is left showing around it');
+    }
+    // IDENTITY, NOT A CONTROL.
+    if (open.clickable) {
+        throw new Error('the brand header is still clickable with the launcher '
+            + 'open — it collapses a panel the user cannot see');
+    }
+    if (chevronShown) {
+        throw new Error('the collapse chevron is still shown with the launcher '
+            + 'open, offering a control that does nothing visible');
+    }
+    // AND IT GOES BACK TO BEING A CONTROL AFTERWARDS.
+    if (after.vis !== 'visible') {
+        throw new Error('the header did not survive the launcher round trip: '
+            + after.vis);
+    }
+    if (!after.clickable) {
+        throw new Error('the header is no longer clickable after the launcher '
+            + 'closed, so the collapse toggle is dead');
+    }
+    console.log('test successful');
+})();
+"""
+
 SIDEBAR_LAUNCHER_JS = SIDEBAR_SETTLE_JS + SAPIAN_FORCED_HEIGHT + """
 (async () => {
     await sapianSidebarSettle();
@@ -1658,6 +1791,14 @@ class TestSapianSidebarStandsDownForTheLauncher(SidebarBrowserCase):
 
     def test_the_rail_hides_while_the_launcher_is_open_and_keeps_its_scroll(self):
         self.run_sidebar(SIDEBAR_LAUNCHER_JS)
+
+
+@tagged("post_install", "-at_install")
+class TestSapianSidebarCornerIsNotAHole(SidebarBrowserCase):
+    """With the launcher open the corner is the mark, not page background."""
+
+    def test_the_brand_header_paints_the_corner_and_is_not_a_control(self):
+        self.run_sidebar(SIDEBAR_CORNER_JS)
 
 
 @tagged("post_install", "-at_install")

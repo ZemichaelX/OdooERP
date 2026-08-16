@@ -680,6 +680,13 @@ async function railOcclusion() {
         tiles: rail.querySelectorAll('.o_sapian_rail_app').length,
         display: getComputedStyle(rail).display,
         visibility: getComputedStyle(rail).visibility,
+        // The brand header stands apart from the rows: identity, not
+        // navigation. Read separately because hiding the rail hid this too
+        // once, leaving a rectangle of page background in the corner.
+        headerVisibility: (() => {
+            const head = rail.querySelector('.o_sapian_rail_toggle');
+            return head ? getComputedStyle(head).visibility : 'NO-HEADER';
+        })(),
         // The class our CSS keys off. web_responsive puts it on <body>
         // (apps_menu.esm.js:28); sapian_rail.scss hides the rail from it.
         bodyClass: document.body.classList.contains('o_apps_menu_opened'),
@@ -795,6 +802,14 @@ async function railOcclusion() {
             + 'visibility=' + open.visibility + ' — it should stand down '
             + 'entirely, not merely be covered where the overlay reaches');
     }
+    // BUT THE MARK STAYS, against the REAL launcher rather than a hand-added
+    // body class. Hiding it left a 200x46 hole of page background in the
+    // corner — 9200 of 9200 pixels, measured from a screenshot.
+    if (open.headerVisibility !== 'visible') {
+        throw new Error('the brand header is ' + open.headerVisibility
+            + ' with the real launcher open, so the top-left corner paints '
+            + 'page background instead of the logo');
+    }
     // STILL IN THE DOM, and this half of the old assertion is kept unchanged.
     // `visibility` was chosen over `display: none` and over unmounting
     // precisely so the element keeps its box and its scrollTop across a round
@@ -843,6 +858,8 @@ async function railOcclusion() {
         + ' reopened=' + after.railReachable
         + ' visibility=' + closed.visibility + '/' + open.visibility
         + '/' + after.visibility
+        + ' header=' + closed.headerVisibility + '/' + open.headerVisibility
+        + '/' + after.headerVisibility
         + ' bodyClass=' + closed.bodyClass + '/' + open.bodyClass
         + ' scroll=' + closed.scrollTop + '/' + after.scrollTop
         + ' tiles=' + closed.tiles + '/' + open.tiles + '/' + after.tiles);
