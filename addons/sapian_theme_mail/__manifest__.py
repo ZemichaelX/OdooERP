@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     "name": "SapianERP Theme — Mail bridge",
-    "version": "19.0.1.0.0",
+    "version": "19.0.1.1.0",
     "summary": "Brands OUTGOING EMAIL: the call-to-action button takes the "
     "house colour, and the footer stops attributing the client's invoices to "
     "Odoo.",
@@ -37,6 +37,9 @@
     "auto_install": True,
     "data": [
         "views/mail_attribution.xml",
+        # The attribution switch, in mail's own "Email Templates" settings
+        # block. A permission the client cannot find is not a permission.
+        "views/res_config_settings.xml",
     ],
     # Seeds the email button colour on companies that never chose one. Existing
     # tenants keep mailing Odoo purple otherwise — the fields carry a column

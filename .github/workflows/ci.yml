@@ -198,10 +198,11 @@ jobs:
           # skip here. They are covered by the `rail-render` job, which installs
           # Chrome and fails if the browser did not actually report.
           #
-          # Raised 350 -> 365 when sapian_theme_mail landed with 15 tests. The
-          # floor is what stops a module's suite going missing quietly, so it
-          # has to move with the suite.
-          MIN_EXPECTED_TESTS=365
+          # Raised 350 -> 365 when sapian_theme_mail landed with 15 tests, and
+          # 365 -> 371 when its Settings-UI tests took it to 21. The floor is
+          # what stops a module's suite going missing quietly, so it has to
+          # move with the suite.
+          MIN_EXPECTED_TESTS=371
           EXECUTED=$(grep -oE "odoo\.tests\.stats: [A-Za-z0-9_]+: [0-9]+ tests" /tmp/odoo-test.log \
                      | awk '$4 == "tests" { total += $3 } END { print total + 0 }')
           echo "Executed ${EXECUTED} tests (floor ${MIN_EXPECTED_TESTS}):"

@@ -192,6 +192,35 @@ demonstrated. The same applies to sample sizes: an invented denominator is worse
 than an ugly one, so report the sample you actually ran even when the two halves
 do not match.
 
+## A red proof is only evidence if the failure COUNT is what you expected
+
+State the expected number of failures BEFORE running the proof, then check the
+number you got. Too few failures does not mean the defect was narrower than you
+thought — it usually means the guard did not run.
+
+Caught on the outgoing-email PR, and no existing rule above would have caught
+it. The red proof was expected to fail the rendered-body tests — the ones the
+whole task was about — and it failed only the colour-seeding tests: 3 of 15. The
+gap was **eight silent skips**. The tests searched for a posted invoice and
+called `skipTest` when they found none, which was every database in CI, so they
+had never run in EITHER direction. The green run before it had reported "12 of
+13 passed" and meant nothing.
+
+It slipped past the other three rules because it looked like none of them: it
+was not a proxy (the tests read the rendered body), not an aborted run (the
+suite started, the database was up, the runner reported), and the fix genuinely
+worked when exercised by hand. Only the arithmetic gave it away.
+
+So, concretely:
+
+- Write down which tests you expect to go red, and how many, before you run it.
+- Compare against what came back. A shortfall is a defect in the guard until
+  proved otherwise.
+- Count skips explicitly and treat a non-zero count as a failure of the proof —
+  `grep -c 'skipped'` on the log, not a glance at the summary line.
+- A test that cannot construct its own fixture will skip on some database
+  somewhere. Prefer creating the fixture in the test over searching for one.
+
 ## Platform-specific fixes must be verified on that platform
 A fix for a platform-specific failure is NOT verified until it is verified on
 that platform. Linux evidence is not proof for a Windows bug.

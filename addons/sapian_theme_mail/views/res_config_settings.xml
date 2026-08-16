@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- The attribution switch, in Settings > General Settings > Discuss,
+         inside mail's own "Email Templates" block — the one that already holds
+         Button Text and Button Color, the two fields this module seeds.
+
+         WHY HERE AND NOT IN A SECTION OF OUR OWN. The decision this switch
+         exists to honour (views/mail_attribution.xml) is that the line is the
+         CLIENT's to remove, because it rides on their correspondence. A switch
+         they cannot find is not a switch they have — it lived on res.company
+         only, which means Settings > Technical > Companies, which means
+         developer mode. Putting it beside the other "what does our outgoing
+         mail look like" settings is the difference between a permission and a
+         sentence in a README.
+
+         The block carries groups="mail.group_mail_template_editor,
+         base.group_system", which this field inherits: an administrator's
+         setting, not a portal user's.
+
+         THE HELP TEXT SAYS WHAT SWITCHING IT OFF DOES, including the part a
+         client would reasonably worry about — that removing our name does not
+         hand the space to somebody else. -->
+
+    <record id="res_config_settings_view_form_sapian_mail" model="ir.ui.view">
+        <field name="name">res.config.settings.form.sapian.mail</field>
+        <field name="model">res.config.settings</field>
+        <field name="inherit_id" ref="mail.res_config_settings_view_form"/>
+        <field name="arch" type="xml">
+            <!-- Anchored on the block's id rather than on a field, so a change
+                 to which colour fields mail shows does not move our switch. -->
+            <xpath expr="//setting[@id='mail_templates_setting']" position="inside">
+                <div class="mt-2">
+                    <field name="sapian_email_attribution"
+                           class="d-inline-block me-2"/>
+                    <span class="d-inline-block">Sign emails "Powered by SapianERP"</span>
+                    <div class="text-muted small">
+                        Adds one line to the footer of notification emails —
+                        invoices, quotations and receipts — that your customers
+                        receive. Switch it off and the line is removed entirely;
+                        nothing takes its place.
+                    </div>
+                </div>
+            </xpath>
+        </field>
+    </record>
+
+</odoo>

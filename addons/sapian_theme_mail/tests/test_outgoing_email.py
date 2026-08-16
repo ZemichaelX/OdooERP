@@ -474,3 +474,114 @@ class TestNoOdooPurpleReachesAnyMailTemplate(TransactionCase):
             "the sweep did not notice a template that plainly hardcodes the "
             "purple, so its green result means nothing",
         )
+
+
+@tagged("post_install", "-at_install")
+class TestTheAttributionSwitchIsReachable(MailBodyCase):
+    """The switch is in Settings, and using it from there really works.
+
+    The decision in views/mail_attribution.xml is that the line is the CLIENT's
+    to remove. That was true of the field and false of the product: it lived on
+    res.company only, which means Settings > Technical > Companies, which means
+    developer mode. A permission that needs developer mode is not a permission.
+
+    These tests assert the whole path a client takes — open Settings, untick,
+    save — and then assert the email that comes out. Asserting the field alone
+    would be asserting the part we built again.
+    """
+
+    def _settings(self, **values):
+        """Open Settings, set values, save — the client's actual path."""
+        settings = self.env["res.config.settings"].create(values)
+        settings.execute()
+        return settings
+
+    def test_the_switch_is_on_the_settings_form(self):
+        """In the DOM of the form a client opens, not merely on the model.
+
+        `fields_view_get` returns the combined arch, so this fails if the view
+        does not apply — a wrong xpath, an anchor mail renamed, our module not
+        loading its view at all.
+        """
+        arch = self.env["res.config.settings"].get_view()["arch"]
+        self.assertIn(
+            "sapian_email_attribution",
+            arch,
+            "the switch is not on the Settings form, so a client cannot reach "
+            "it without developer mode",
+        )
+
+    def test_it_sits_in_mails_own_email_block(self):
+        """Beside Button Text and Button Color, not in a section of our own."""
+        arch = self.env["res.config.settings"].get_view()["arch"]
+        before, _, after = arch.partition("sapian_email_attribution")
+        # The colour fields are the block's other contents; ours must be inside
+        # the same setting, which means one of them appears before it.
+        self.assertIn(
+            "email_secondary_color",
+            before,
+            "the switch is not inside mail's Email Templates block — a client "
+            "looking at their email settings would not see it",
+        )
+        self.assertTrue(after, "the arch ended at our field, which cannot be right")
+
+    def test_it_defaults_to_on_in_settings(self):
+        settings = self.env["res.config.settings"].create({})
+        self.assertTrue(
+            settings.sapian_email_attribution,
+            "the switch reads as off before anyone touches it",
+        )
+
+    def test_switching_it_off_from_settings_reaches_the_company(self):
+        self._settings(sapian_email_attribution=False)
+        self.assertFalse(
+            self.env.company.sapian_email_attribution,
+            "saving Settings did not write the company field",
+        )
+
+    def test_switching_it_off_from_settings_removes_the_line_from_the_email(self):
+        """THE ONE THAT MATTERS. The client's path, then the rendered body.
+
+        And the third assertion is the promise made in the module README:
+        removing our name must not hand the space to Odoo.
+        """
+        self._settings(sapian_email_attribution=False)
+        record, partner = self._subject_record()
+        body = self._customer_mail_for(
+            record,
+            partner,
+            "mail.mail_notification_layout_with_responsible_signature",
+        )
+        self.assertNotIn(
+            "SapianERP",
+            body,
+            "unticking the setting did not remove our attribution from the mail",
+        )
+        self.assertNotIn(
+            "Powered by",
+            body.replace("\n", " "),
+            "unticking the setting left a dangling 'Powered by'",
+        )
+        self.assertNotIn(
+            "odoo.com",
+            body,
+            "removing our attribution restored Odoo's — off must stay off",
+        )
+        self.assertNotIn(
+            "Odoo",
+            body,
+            "Odoo's name came back into the mail when ours was switched off",
+        )
+
+    def test_switching_it_back_on_restores_ours(self):
+        """The other direction, so 'off' is a switch and not a one-way door."""
+        self._settings(sapian_email_attribution=False)
+        self._settings(sapian_email_attribution=True)
+        record, partner = self._subject_record()
+        body = self._customer_mail_for(
+            record,
+            partner,
+            "mail.mail_notification_layout_with_responsible_signature",
+        )
+        self.assertIn("SapianERP", body, "the attribution did not come back")
+        self.assertNotIn("odoo.com", body)
