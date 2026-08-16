@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- OUTGOING EMAIL: whose name is at the bottom.
+
+         THE DEFECT, measured on the demo tenant by posting a real invoice to
+         its customer with the context `account.move.send` uses
+         (account/models/account_move_send.py:558,
+         `email_notification_allow_footer=True`):
+
+             Powered by <a href="https://www.odoo.com?utm_source=db&amp;utm_medium=email"
+                           style="color: #875A7B;">Odoo</a>
+
+         That line is in the mail sent to the CLIENT'S CUSTOMER, over the
+         client's name, with the client's invoice attached. It is the most
+         externally visible surface in the product and nothing had looked at it.
+
+         WHOSE NAME BELONGS HERE — deliberately NOT the same answer as the
+         backend footer.
+
+         The backend footer is Sapian's, from constants a tenant cannot edit,
+         because that surface is OUR product being used by the client's staff:
+         they know what they bought, and a client rewriting our support number
+         would be a defect. This email is a different thing. It is the CLIENT's
+         commercial correspondence to THEIR customer — a document about a debt
+         owed to the client, not about our software. So the two halves are
+         separated:
+
+         1. "Powered by Odoo" is simply WRONG, and goes unconditionally. It
+            attributes the client's business software to a vendor that is not
+            us, and links the client's own customer into a competitor's
+            marketing funnel (`utm_source=db&amp;utm_medium=email`). No licence
+            requires it — the position is in README.md, "Odoo attribution":
+            `mail` is LGPL-3, GPL-3 §5(d) covers Appropriate Legal Notices, and
+            a UTM-tagged marketing link is not one.
+
+         2. "Powered by SapianERP" replaces it, ON BY DEFAULT, and the client
+            can switch it off (`res.company.sapian_email_attribution`).
+            On by default because this is the highest-reach surface we have and
+            a white-label ERP vendor is normally discovered exactly here.
+            Switchable because it rides on the client's letterhead: a trading
+            company emailing a formal invoice has a legitimate say in what that
+            document advertises, in a way it does not have over the chrome of
+            software it licences from us. "Ours, always" would be taking a
+            decision that is not ours to take; "nothing at all" would give up
+            the reach for no gain to anyone.
+
+            Off means OFF — the line disappears. It never falls back to Odoo.
+
+         WHERE. Two layouts carry it:
+           * mail.mail_notification_layout — every message_post notification,
+             so the invoice and the quotation, both of which pass
+             `email_notification_allow_footer=True` (account_move_send.py:558,
+             sale_order.py:1077).
+             `mail.mail_notification_layout_with_responsible_signature` is a
+             PRIMARY inheritance of it and picks this up for free — which
+             matters, because that is the layout invoices actually use
+             (`_get_mail_layout`, account_move_send.py:583).
+           * mail.mail_notification_light — the compact layout, used by the
+             payment receipt.
+
+         THE XPATH IS THE ANCHOR'S PARENT, not the div's position. The obvious
+         `//div[@t-if='show_footer'][2]` is positional and there are two such
+         divs; `//a[contains(@href, 'odoo.com')]/..` names the one node that can
+         only be this one. Same matched-by-href reasoning as the login page.
+
+         AND IT REPLACES THE WHOLE CONTAINER, not just the anchor, because the
+         words "Powered by" sit OUTSIDE the anchor in upstream's markup — so
+         removing the anchor alone would leave a dangling "Powered by" on a
+         company that switched the attribution off. The container also holds the
+         UNFOLLOW link, which is a real feature and is carried across unchanged.
+
+         THE BUTTON COLOUR IS NOT FIXED HERE. Every template involved reads
+         `company.email_secondary_color or '#875A7B'`, so setting that one field
+         fixes the button everywhere at once — including templates this file
+         does not touch, such as the portal invitation and the password reset.
+         See models/res_company.py. -->
+
+    <template id="mail_notification_layout_sapian"
+              inherit_id="mail.mail_notification_layout"
+              name="SapianERP: outgoing mail attribution">
+        <xpath expr="//a[contains(@href, 'odoo.com')]/.." position="replace">
+            <div t-if="show_footer" style="color: #555555; font-size:11px;">
+                <t t-if="company.sapian_email_attribution">
+                    Powered by <a target="_blank" href="https://sapiantech.com"
+                                  t-att-style="'color: ' + (company.email_secondary_color or '#14454F') + ';'"
+                                  >SapianERP</a>
+                </t>
+                <span t-if="show_unfollow" id="mail_unfollow">
+                    <t t-if="company.sapian_email_attribution"> | </t>
+                    <a href="/mail/unfollow" style="text-decoration:none; color:#555555;">Unfollow</a>
+                </span>
+            </div>
+        </xpath>
+    </template>
+
+    <template id="mail_notification_light_sapian"
+              inherit_id="mail.mail_notification_light"
+              name="SapianERP: outgoing mail attribution (compact layout)">
+        <xpath expr="//a[contains(@href, 'odoo.com')]/.." position="replace">
+            <td align="center" style="min-width: 590px;">
+                <t t-if="company.sapian_email_attribution">
+                    Powered by <a target="_blank" href="https://sapiantech.com"
+                                  t-att-style="'color: ' + (company.email_secondary_color or '#14454F') + ';'"
+                                  >SapianERP</a>
+                </t>
+                <span t-if="show_unfollow" id="mail_unfollow">
+                    <t t-if="company.sapian_email_attribution"> | </t>
+                    <a href="/mail/unfollow" style="text-decoration:none; color:#555555;">Unfollow</a>
+                </span>
+            </td>
+        </xpath>
+    </template>
+
+</odoo>
