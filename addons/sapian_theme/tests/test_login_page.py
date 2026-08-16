@@ -207,9 +207,17 @@ class TestLoginPageAsAVisitor(HttpCase):
         ui.js:190), so it is the colour of the button for as long as the login
         request takes. It was Odoo purple at 65% opacity while every other
         check reported the brand.
+
+        THE SELECTOR CHANGED, and that is the point of the change it tracks.
+        It was `.oe_login_form .btn-primary` — a scope only the LOGIN page
+        matched, so /web/reset_password and /web/signup fell through to the
+        website editor's palette. It is `.o_sapian_auth` now, set on the shared
+        auth layout, and `test_auth_pages.py` asserts every auth page carries
+        it. This test keeps doing what it did: reading all five button states
+        out of the CSS the browser is served.
         """
         expected = brand.brand_primary()
-        rule = re.search(r"\.oe_login_form \.btn-primary\{([^}]*)\}", self._login_css())
+        rule = re.search(r"\.o_sapian_auth \.btn-primary\{([^}]*)\}", self._login_css())
         self.assertTrue(rule, "the login button rule is not in the served CSS")
         declarations = rule.group(1)
 
@@ -249,10 +257,10 @@ class TestLoginPageAsAVisitor(HttpCase):
         """
         expected = brand.brand_primary()
         as_shipped = (
-            ".oe_login_form .btn-primary{--btn-bg: %s; --btn-border-color: %s; "
+            ".o_sapian_auth .btn-primary{--btn-bg: %s; --btn-border-color: %s; "
             "--btn-hover-bg: #376169; --btn-active-bg: #376169;}" % (expected, expected)
         )
-        declarations = re.search(r"\.oe_login_form \.btn-primary\{([^}]*)\}", as_shipped).group(
+        declarations = re.search(r"\.o_sapian_auth \.btn-primary\{([^}]*)\}", as_shipped).group(
             1
         )
         self.assertNotRegex(

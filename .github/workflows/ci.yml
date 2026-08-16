@@ -420,7 +420,7 @@ jobs:
             --addons-path="${GITHUB_WORKSPACE}/addons,${GITHUB_WORKSPACE}/vendor/oca_web,/usr/lib/python3/dist-packages/odoo/addons" \
             -d ci_theme_website \
             -i website,website_sale,sapian_theme --without-demo=all \
-            --test-enable --test-tags '/sapian_theme:TestSapianThemeLogin,/sapian_theme:TestLoginPageAsAVisitor,/sapian_theme_website' \
+            --test-enable --test-tags '/sapian_theme:TestSapianThemeLogin,/sapian_theme:TestLoginPageAsAVisitor,/sapian_theme:TestAuthPagesAreOurs,/sapian_theme:TestAuthScopeDoesNotLeak,/sapian_theme_website' \
             --workers=0 --max-cron-threads=0 \
             --stop-after-init --log-level=test 2>&1 | tee /tmp/theme-website.log
 
@@ -475,7 +475,10 @@ jobs:
           # attribution, the sign-up link and the support line are anchored on
           # the login FORM precisely so they survive `website` replacing the
           # card, and this is the only job that proves it.
-          MIN_LOGIN_TESTS=13
+          # Raised 13 -> 20 when the auth-page tests landed: login, signup and
+          # reset password are one surface now, and this is the only job that
+          # serves them beside a real website.
+          MIN_LOGIN_TESTS=20
           EXECUTED=$(grep -oE "odoo\.tests\.stats: sapian_theme: [0-9]+ tests" /tmp/theme-website.log \
                      | grep -oE "[0-9]+ tests" | grep -oE "^[0-9]+" || echo 0)
           echo "Executed ${EXECUTED} sapian_theme tests with website installed (floor ${MIN_LOGIN_TESTS})"
@@ -495,7 +498,7 @@ jobs:
           # with test_login_chrome as well. 20 therefore cannot be reached
           # unless the new file is actually selected, which is the whole job of
           # a floor, and leaves headroom under 25.
-          MIN_BRIDGE_TESTS=20
+          MIN_BRIDGE_TESTS=22
           BRIDGE=$(grep -oE "odoo\.tests\.stats: sapian_theme_website: [0-9]+ tests" /tmp/theme-website.log \
                    | grep -oE "[0-9]+ tests" | grep -oE "^[0-9]+" || echo 0)
           echo "Executed ${BRIDGE} sapian_theme_website tests (floor ${MIN_BRIDGE_TESTS})"
