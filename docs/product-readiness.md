@@ -192,3 +192,63 @@ blank (Yonas Transport, BuildSoft Cloud) — which is the 30% punitive path's
 fixture. `l10n_et_business_licence_no`, `_expiry`, `l10n_et_has_valid_licence` and
 `l10n_et_wht_compliant` all exist as fields. Whether any of them *drives* the tax
 applied is flow (d)'s question, not this one's.
+
+---
+
+### (b) Accountant — vendor bill → post → pay
+
+**Role:** accountant, as `admin`.
+
+**Steps taken.** Bill from Derba Midroc Cement Depot (partner 11, TIN
+`0011223344`), 100 × *Cement PPC Derba 50kg* at 900.00 = 90,000.00 net. Let the
+product default its own purchase taxes. Posted. Paid in full from the bank
+journal. Read the ledger back.
+
+**Measured.**
+
+| | Value |
+|---|---|
+| Tax defaulted on the line | `15%` purchase VAT only |
+| **Draft** totals | untaxed 90,000.00 · tax 13,500.00 · **total 103,500.00** |
+| **Posted** as | `BILL/26-27/08/0001`, **total 100,800.00** |
+| Journal entry | 230100 Goods in Transit **dr 90,000.00** · 221200 VAT Receivable on Purchases **dr 13,500.00** · 300200 Trade Creditors **cr 100,800.00** · **300600 Withholding Tax Payable cr 2,700.00** |
+| WHT arithmetic | 90,000 × 3% = 2,700.00, i.e. **3% of the VAT-exclusive base**, not of 103,500 |
+| Structure vs tax reference §6 | base 90,000 + VAT 13,500 − WHT 2,700 = **100,800 payable** — the reference's worked example exactly |
+| Supplier payable before / after posting | −77,056.00 → **−177,856.00** (moved −100,800.00) |
+| Payment | `PBNK1/26-27/0002`, state `paid`, **100,800.00** — the net, not the gross |
+| Payment entry | 211004 Outstanding Payments **cr 100,800.00** · 300200 Trade Creditors **dr 100,800.00**, payable line `reconciled=True` |
+| Bill after payment | `payment_state` **paid**, residual **0.0** |
+| Supplier payable after payment | −177,856.00 → **−77,056.00** (moved +100,800.00), back to its pre-bill figure |
+| Whole ledger | Σdebit − Σcredit = **0.0** across 36 posted lines |
+
+**Outcome: WORKS**, and the withholding half is better than the register expected.
+The supplier is paid **100,800**, the 2,700 sits in *Withholding Tax Payable*
+awaiting remittance to the MoR, and the 3% is computed on the base rather than on
+the VAT-inclusive total — the single most commonly-got-wrong figure in Ethiopian
+AP, and this gets it right. **Attribution: OUR CODE** (`l10n_et_base`) for the WHT
+leg, **STOCK ODOO** for the bill and payment mechanics.
+
+**Finding b-1 — the withholding appears only on posting, so the draft total lies.**
+Draft total reads **103,500.00**; the same bill posts at **100,800.00**. Nothing
+in the draft shows the 2,700 that is about to be deducted. An accountant checking
+a bill against a supplier's invoice before posting — which is exactly accountant
+2's manual voucher check in register item 13 — sees a figure the system will not
+use. **Attribution: OUR CODE.** **Severity: SERIOUS**, not blocking: the posted
+number is the correct one, so nothing is misstated in the ledger; the cost is
+that the pre-post check an accountant actually performs is done against the wrong
+total.
+
+**Finding b-2 — a consumable's purchase debits `230100 Goods in Transit`.**
+Measured above. `Goods in Transit` is a transit/clearing account; nothing in this
+flow ever clears it, so on a trader who buys and sells over the counter it
+accumulates. Whether that is the ET chart's mapping or the demo products'
+`property_account_expense_id` is not established here — it needs one more
+measurement, so this is recorded as **unattributed pending that check**, not as a
+defect. Picked up again in flow (g), which is where a receipt actually exists to
+clear it.
+
+**Could not test in this flow:** partial payment, payment by cash journal,
+supplier credit notes, the WHT certificate PDF the supplier is entitled to
+(the module ships one per CLAUDE.md; it was not rendered here), and whether the
+2,700 in *Withholding Tax Payable* is picked up by the WHT summary report — that
+is flow (c)'s neighbour and was not run as part of this flow.
