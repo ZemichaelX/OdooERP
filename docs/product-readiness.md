@@ -356,3 +356,133 @@ passing.
 (stock `web.html_container`). It does not appear in the PDF output and is not
 customer-visible in the attachment, but it is another instance of register item 4's
 concern and would be visible in an HTML preview.
+
+---
+
+### (d) Withholding, on a sale and on a purchase
+
+**The brief's expectation was that none of the three conditions in
+`docs/ethiopian-tax-reference.md` §6 exists. That expectation is REFUTED for two
+of the three, and confirmed for the third.** This is the flow where reading the
+register would have produced the wrong answer and measuring produced the right
+one, so the evidence is given in full.
+
+**Role:** accountant, as `admin`.
+
+**Expectations written down before running**, per CLAUDE.md's red-proof rule:
+(1) goods 5,000 → no WHT; (2) services 8,000 → no WHT; (3) services 15,000 → 3%;
+(4) goods 50,000 from a supplier with no TIN → 30%; (5) and (6) sale to a PLC vs
+to an individual → unknown, measure; (7) two sub-threshold bills to one supplier
+→ expect nothing to flag the split.
+
+**The configuration the engine actually read:** `WHT 3% from 2025-08-01`,
+`threshold_goods=20,000`, `threshold_service=10,000`, `rate_standard=0.03`,
+`rate_punitive=0.30`, `punitive_respects_thresholds=True`. Those are the tax
+reference §6 figures exactly, and they are effective-dated configuration, not
+constants in code — CLAUDE.md rule 4 holds here.
+
+**Measured — purchase side (all four as predicted):**
+
+| # | Bill | WHT tax applied | WHT amount | Bill total |
+|---|---|---|---|---|
+| 1 | goods 5,000 (under 20,000) | *none* | 0.00 | 5,750.00 |
+| 2 | services 8,000 (under 10,000) | *none* | 0.00 | 9,200.00 |
+| 3 | services 15,000 (over 10,000) | `3% WHT (Services)` | **450.00** | 16,800.00 |
+| 4 | goods 50,000, supplier **no TIN** | `30% WHT (No TIN/Licence)` | **15,000.00** | 42,500.00 |
+
+Row 3 proves the **services threshold is distinct from the goods threshold** —
+15,000 is under the goods threshold and over the services one, and it withheld.
+Row 4 proves the **supplier-credentials test discriminates**: Yonas Transport has
+`l10n_et_tin=False`, `l10n_et_has_valid_licence=False`, `l10n_et_wht_compliant=False`,
+and got 30%, while Derba (`tin=0011223344`, `licence_no=AA/5678/2015`,
+`has_valid_licence=True`) got 3%. Rows 1 and 2 prove the thresholds are not
+decoration: identical suppliers and products, below the line, withheld nothing.
+
+Row 4 also disposes of a worry in register item 8 — *"applies it instead of the
+15% VAT"*: 50,000 + 7,500 VAT − 15,000 WHT = **42,500**, so VAT is charged
+**alongside** withholding, not replaced by it. On the purchase side the observed
+behaviour is right.
+
+**Measured — sale side:**
+
+| # | Invoice | Taxes applied | Untaxed | Tax | Total |
+|---|---|---|---|---|---|
+| 5 | 60,000 to Mebrat Construction **PLC** (a withholding agent) | `15%` only | 60,000.00 | 9,000.00 | 69,000.00 |
+| 6 | 60,000 to a **walk-in individual** (never an agent) | `15%` only | 60,000.00 | 9,000.00 | 69,000.00 |
+
+**Identical.** Nothing on the sale side consults who the customer is.
+
+**Measured — the sale-side tax, applied by hand.** The tax
+`3% WHT (Withheld by Customer)` exists and is never applied automatically. Applied
+manually alongside 15% VAT on a 100,000 sale it produces:
+
+```
+110000 Sales of Goods and Services            cr 100,000.00
+300700 VAT Payable                            cr  15,000.00
+221300 Withholding Receivable on Sale         dr   3,000.00
+221100 Trade Debtors                          dr 112,000.00
+```
+
+**112,000.00 — the tax reference §6 worked example, to the birr**, with the 3%
+taken on the base and not on the VAT-inclusive total, and posted to a
+*receivable* (the buyer withheld it; the seller reclaims it). The machinery is
+right. Only the decision to use it is missing.
+
+**Measured — splitting:** two separate 9,000 goods bills to the same supplier on
+the same day. Both withheld **nothing**; no warning, no activity, no chatter
+message mentioning a split. A search of every model in the database for
+`contract`/`agreement` returns only `hr.contract.type` and
+`publisher_warranty.contract` — **there is no supply-contract concept in the
+product.**
+
+**Outcome, split by condition:**
+
+| Tax reference §6 condition | Status | Evidence |
+|---|---|---|
+| **1. Buyer is a withholding agent** | **ABSENT** | No `res.partner` field matching `agent`; rows 5 and 6 identical. Moot on purchases (the buyer is always the company, a PLC) — **the gap is entirely on the sale side** |
+| **2. Value clears the threshold** — per transaction | **PRESENT and discriminating** | Rows 1–3, and per-kind at that |
+| **2b. …judged on the supply contract** | **ABSENT** | Splitting test; no contract model exists |
+| **3. Supplier TIN and licence** | **PRESENT and discriminating** | Row 4 at 30% vs row 3 at 3% |
+
+**Purchase side: WORKS.** **Sale side: ABSENT** (the tax exists, the automation
+does not). **Attribution: OUR CODE** throughout — `l10n_et_base`, both for what
+works and for what is missing.
+
+**Severity.** Purchase side, nothing to fix. Sale side, **SERIOUS, not a
+BLOCKER**: the client can issue a correct withheld invoice by selecting a tax
+that already computes correctly, so nothing is unfileable and no number is wrong
+— but on every PLC or government sale a human must remember, and on a walk-in
+sale must remember *not* to. Register item 8's decided design (a company setting
+*show the withholding deduction on the invoice*, defaulting ON) is **not built**:
+`res.company` has no field matching `wht`/`withhold`, and `res.partner` has no
+withholding-agent flag. The one partner field that exists, `l10n_et_wht_compliant`,
+describes the partner *as a supplier*, not as a buyer.
+
+**Where the product silently assumes one reading** (this job's rule 5):
+
+1. **Presentation.** Tax reference §6 marks *whether withholding appears on the
+   invoice* as **CONTESTED** and resolves it to *permitted, not required → a
+   setting*. The product ships **neither** behaviour as a setting; it ships "off",
+   by having no automation. That is a defensible default and an undocumented one.
+2. **The threshold unit.** §6 is explicit, on accountant 2's stronger answer, that
+   *"the key factor is the total agreement value, not the size of each small
+   invoice"*. The engine applies the threshold **per transaction**, which is
+   accountant 1's rougher reading. The code comment says this deliberately
+   (*"the per-transaction thresholds are defined on the original supply"*), so the
+   assumption is conscious — but nothing in the product records that a
+   contract-level agreement exists, and nothing surfaces the split pattern the
+   system cannot decide. §6's *"achievable design"* names surfacing that pattern
+   as **the differentiator**. It is the missing piece.
+3. **`punitive_respects_thresholds=True`** encodes the register's reading that
+   thresholds gate the 30% too. That reading is marked as the confirmed default in
+   CLAUDE.md, and it is at least a named, dated, switchable flag — good practice,
+   worth keeping.
+
+**Could not test in this flow:** foreign-digital withholding at 15%
+(`l10n_et_is_foreign_digital` — no such partner in the demo data); a supplier with
+a **valid TIN but an expired licence**, which is the one combination that would
+prove the *licence* half of condition 3 independently of the TIN half (Yonas
+Transport is missing both, so row 4 cannot separate them); WHT on payment rather
+than on bill; the WHT certificate PDF; and the WHT summary report's figures
+(the `l10n.et.wht.summary` model exists and was not run — it belongs with flow (c)
+and was not reached).
