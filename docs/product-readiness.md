@@ -1183,3 +1183,133 @@ forcing it open would measure a configuration this product does not ship); FIFO 
 average costing, since `cost_method` is `standard` everywhere; landed costs; a
 count sheet PDF (`stock.report_inventory` exists and was not rendered); and
 inventory at a second location or warehouse.
+
+---
+
+### (k) Employee self-service — portal login, time-off, expense claim, own payslip
+
+**Role:** an employee with a login.
+
+**Steps taken.** Checked what is installed, linked an employee record to a real
+user account (the plain-employee user from flow (h)) the way an employer enabling
+self-service would, and then asked whether that employee can reach their own
+payslip.
+
+**Measured.**
+
+| Capability | Result |
+|---|---|
+| `hr_holidays` (time off) | **uninstalled** — `hr.leave` model does not exist |
+| `hr_expense` (expense claims) | **uninstalled** — `hr.expense` model does not exist |
+| `hr_attendance` | **uninstalled** |
+| `portal` | installed |
+| Employee linked to a user | done: *Meseret Bekele* → `tigist@selam.test` |
+| That employee reading **their own payslip** | **AccessError** — *"You are not allowed to access 'Ethiopian Payslip' records"* |
+| `l10n.et.payslip` inheritance | `['base']` — **no `portal.mixin`**, no mail thread |
+| Portal controllers in our addons (`/my/…`) | **none found** across all of `addons/` |
+
+**Outcome: ABSENT**, in all four parts. There is no time-off request, no expense
+claim, no portal route to a payslip, and an employee linked to their own employee
+record **cannot read their own payslip even over ORM** — the model carries no
+owner-scoped rule, only the HR-group ACL that correctly blocked flow (h)'s plain
+employee.
+
+**Attribution, split, because it matters for what to do about it:**
+
+- Time off and expenses: **CONFIGURATION** of the shipped set, not missing
+  capability. Both modules are present in the addons path and merely uninstalled;
+  they are stock Odoo and free. A client who wants them gets them by installing
+  them.
+- Own payslip: **OUR CODE.** `l10n.et.payslip` is our model, and it was written
+  as an HR-only back-office record — no portal mixin, no controller, no
+  own-record rule. There is nothing to switch on.
+
+**Severity: NOT NEEDED YET** for a first Ethiopian trading client with seven
+employees, who will hand out printed payslips and keep leave on paper — which is
+also what makes it a safe thing to leave undone. It is recorded here so that the
+absence is a decision on the record rather than a surprise: the moment a client
+with fifty staff asks for self-service, the payslip half is a build, not a
+setting.
+
+**Could not test in this flow:** an actual portal login as an employee (there is
+no portal route to reach, so there was nothing to log in *to* — this is an
+absence, not an untested pass); whether payslips can be **emailed** to employees,
+which is the realistic substitute for self-service and was not exercised; and
+time-off or expense behaviour after installing those modules, which would measure
+a configuration this product does not currently ship.
+
+---
+
+### (l) Customer portal — view an invoice, pay it
+
+**Role:** the client's customer.
+
+**Steps taken.** Created a portal user against Mebrat Construction PLC, logged in
+over HTTP, walked `/my` → `/my/invoices` → an invoice page, downloaded the PDF,
+tried to pay, and checked what the page says about who sent it.
+
+**Measured — viewing:**
+
+| | Value |
+|---|---|
+| Portal login | HTTP 200, lands on `/my`, `share=True` |
+| `/my` | 200, 20,425 bytes; offers **Invoices** and **Quotations** |
+| `/my/invoices` | 200; lists **4** invoices — ids 1, 10, 18, 22, **all of them Mebrat's own** |
+| An invoice page | 200; `INV/26-27/0003`, 37,950.00 Br, marked **Paid** |
+| **PDF download** | **217,264 bytes**, magic `%PDF-` |
+| **Access scoping** | requesting invoice **26** (another customer's) **redirects to `/my`** — correctly refused |
+| Footer | `Copyright © Selam General Trading PLC` · **`Powered by SapianERP`** |
+
+**Measured — paying:**
+
+| | Value |
+|---|---|
+| Payment providers present | 24 (`Wire Transfer`, `Demo`, `Adyen`, `Stripe`, …) |
+| Payment providers **enabled** | **0** — every one is `state=disabled` |
+| Ethiopian providers (Telebirr / CBE Birr / Chapa / Amole) | **none exist** in Odoo at all |
+| Unpaid invoice `INV/26-27/0004` (69,000.00) | page renders, **no payment section at all** |
+| Unpaid invoice `INV/26-27/0006` (112,000.00) | same |
+| Paid invoice | shows a *"Pay Invoice"* heading reading *"There is no amount to be paid"* |
+
+**Outcome: viewing WORKS; paying is ABSENT.** A customer can log in, see only their
+own invoices, read them and download a real PDF. They cannot pay, and on an unpaid
+invoice they are not even told that paying is unavailable — the section simply is
+not rendered. **Attribution: STOCK ODOO** (providers ship disabled by design) plus
+a genuine market gap: **no Ethiopian payment provider exists in Odoo**, so this is
+a build, not a configuration, and CLAUDE.md already has payments in the DEFERRED
+list. **Severity: NOT NEEDED YET** for a first client whose customers pay by bank
+transfer and cheque — but the portal is a real, working sales asset today, which
+is worth knowing.
+
+**Finding l-1 — the customer-facing portal page's `<title>` is `Odoo`.**
+Measured on the invoice page a client's customer sees. The footer is correct
+(`Powered by SapianERP`, client copyright), so the theme reaches the body and not
+the title tag. This is the branding rule on an outward-facing surface, and it is a
+**new instance** not covered by register items 3, 4 or 5, which concern mail
+templates and Discuss. **Attribution: OUR CODE** (theme scope gap).
+**Severity: COSMETIC**, but it is on the client's customer's browser tab.
+
+**Finding l-2 — the bot is still `OdooBot`, and it renders on that same page.**
+Measured: `res.users` uid 1 is `name='OdooBot'`, login `__system__`, and the string
+**`SapianBot` does not appear anywhere in `addons/`**. The register's branding rule
+states the bot is `SapianBot`, a constant in `vendor.py`; that is a *decision*, and
+on current master it is **not built** — consistent with item 5 recording #49 as
+red and unmerged. The portal invoice page shows `-- OdooBot --` in the chatter
+signature, so this reaches the client's customer exactly as the register's
+"accepted consequence" paragraph anticipated — except with Odoo's name rather than
+ours. **Attribution: OUR CODE (unbuilt).** **Severity: COSMETIC**; recorded to
+confirm by measurement that #49 is still outstanding, not as a new entry.
+
+**A correction to guard against, about my own method:** the portal page also shows
+`Salesperson: OdooBot`. **That is an artefact of this assessment, not a product
+defect** — every document here was created through a script running as
+`SUPERUSER_ID` (uid 1), so uid 1 became the salesperson. An invoice created by a
+real user in the UI would name that user. The product fact in the paragraph above
+is the uid-1 *name*, not its appearance in the salesperson field.
+
+**Could not test in this flow:** an actual online payment (no provider can be
+enabled without credentials, and enabling `Demo` would measure a configuration no
+client ships); portal signup and the invitation email (which would leave as
+`OdooBot <odoobot@example.com>` per register entry 25); `/my/quotes` and sales
+order acceptance; and whether the portal PDF is the same document as the emailed
+one — both rendered, neither was compared byte-for-byte.
