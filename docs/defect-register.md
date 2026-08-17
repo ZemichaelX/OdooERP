@@ -82,20 +82,18 @@ and renders teal, which is the giveaway.
 inside `.o_sapian_auth` rather than adding a rule per control, or we chase
 elements forever.
 
-**2. A purple wedge at the top-left of both auth pages**
-Verified present on tenant *after* the #47 upgrade — so it survives #47.
+**2. ~~A purple wedge at the top-left of both auth pages~~ — CLOSED, NOT OURS**
+Closed 17 Aug. It disappears in an incognito window with extensions disabled, so
+it was a **browser extension badge**, not anything this repository serves.
 
-Candidate, measured pre-upgrade: `portal/views/portal_templates.xml:12`,
-`<a class="o_skip_to_content btn btn-primary rounded-0 visually-hidden-focusable
-position-absolute start-0">`, computed `#714B67`, and the only rule for it in the
-served bundle is `.o_skip_to_content{z-index:1031}`. Top-left, square corners,
-absolutely positioned, `btn-primary`.
-
-**Unexplained:** if it carries `.btn-primary` inside a body with `o_sapian_auth`,
-our rule should reach it. Either it is not that element, or `--btn-bg` is not
-what this Bootstrap build reads. Needs a measurement on an upgraded page.
-
-Same corner as #46's white rectangle, different cause.
+Recorded rather than deleted because the elimination was earned twice and both
+halves are reusable. First, `--btn-bg` IS what this Bootstrap build reads —
+measured on the upgraded tenant, `.o_skip_to_content` computes `#14454F` and the
+winning rule is `.o_sapian_auth .btn-primary`, beating `.btn-primary`'s
+`#714B67`. So the candidate could not have stayed purple. Second, the element is
+`[x,y,w,h] = [-1,-1,1,1]`, clipped to `rect(0,0,0,0)` and off-viewport, and Tab
+on the tenant goes straight to "Choose a user" — there is no skip-to-content
+link in the tab order at all.
 
 **3. Five shipped templates hardcode a purple** — pinned
 Journal Notification, New eInvoices Notification, two Purchase templates, 2FA.
@@ -114,6 +112,16 @@ One concern: *no mail leaving a client's system advertises Odoo.*
 The three `auth_signup` ones are `mail.template` data records, not views, so they
 need a `body_html` override. They go in the existing `sapian_theme_auth_signup`
 bridge. The livechat one needs a new `im_livechat` bridge.
+
+**4b. The module graph order is not stable between identical CI runs**
+Measured 17 Aug, same commit, two runs of the `SapianBot survives an upgrade`
+job: `sapian_theme_mail` loaded at **27/30** and then at **26/30**. `mail_bot` is
+in that set and loads at **22/30 locally** — before us — so a defect that depends
+on loading after `mail_bot` will reproduce intermittently forever.
+
+**Consequence for whatever the SapianBot fix turns out to be: it must not depend
+on our module loading after `mail_bot`.** An ordering that happens to hold today
+is not a fix.
 
 **5. Odoo's identity elsewhere in Discuss** — #49, red, not merged
 Nine leaks swept 16 Aug against a 229-module database. Six in scope for #49
@@ -292,6 +300,52 @@ Expired a few weeks before 17 Aug. Decision: leave the links wired, because this
 is a demo. **Two things must happen before any client sees this build:** renew
 the domain, and re-check `support@sapiantech.com` in the backend footer, which is
 currently dead mail on every page of the product.
+
+---
+
+**9. The website record is still called "My Website"**
+Verified on tenant, 17 Aug. The browser tab reads `Login | My Website`. The
+`website` record's name was never moved off Odoo's default, so it leaks into the
+tab title, the page metadata and some mail templates. Zemichael is fixing this
+one in Settings on his tenant.
+
+**The code owed is prevention, not that fix:** `scripts/build_demo.sh` should
+seed the website name from the company name, so a fresh demo never ships "My
+Website" and nobody has to remember the Settings step. Same shape as the
+launcher-defaults provisioning call — installing the module is not enough.
+
+---
+
+## Claude Code's own open state, 17 Aug
+
+Left here deliberately so a fresh session picks it up from the repository rather
+than from a transcript (rule 5: the environment that verifies is not the
+environment that runs — and a transcript is neither).
+
+- **PR #49 is RED and must not be merged.** Its `SapianBot survives an upgrade`
+  job fails at step 1. H2 is answered: the row reads `name='OdooBot'`,
+  `email='odoobot@example.com'`, `image_sha1` equal to OUR file — so the hook
+  wrote the image and something wrote exactly two fields back, as uid 1. The
+  write-tracing probe is pushed and verified loading locally
+  (`SAPIAN-TRACE res.partner.write is patched`, one captured write, ours, all
+  three fields). **The CI traceback has not been read yet. Read it before
+  proposing any fix**, and note what would have to be true for `mail_bot` to be
+  responsible: its data block names only `odoobot_state`, so the write would
+  have to reach `name` and `email` through `res.users` rather than from that
+  block's fields.
+- **The palette guard has ESTABLISHED NOTHING.** `TestEveryControlIsInThePalette`
+  is written and committed, and its first run ended in a CDP `TimeoutError` —
+  rule 3, a run that could not start. It is not known to pass, and it is not
+  known to discriminate. The `SAPIAN-PALETTE` marker never printed, which is at
+  least the CI grep's own failure mode behaving as designed.
+- **Three approved Job 2 additions are NOT BUILT:** the focus-ring / outline
+  colour inside `.o_sapian_auth` (colour and outline, not colour alone); a guard
+  that enumerates controls on a page **with a stored user list**, because
+  "Choose a user" only renders when a remembered session exists and a clean page
+  is blind to the exact element that started this; and the timeout fix the guard
+  needs before either can be measured.
+- **PR #50's Windows verification is the operator's**, rule 4. Linux evidence
+  through a compose shim is a substitute, not a measurement.
 
 ---
 

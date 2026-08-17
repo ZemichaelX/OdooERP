@@ -48,6 +48,17 @@ Every commit on this repository is authored by **ZemichaelX
 does not sign its own name to the history, and it adds **no** `Co-Authored-By:
 Claude` trailer and no session-link trailer.
 
+DECIDED TWICE, so it stops resurfacing: once in #41 and again on 17 Aug 2026.
+A stop hook asks for commits to be reauthored to `noreply@anthropic.com` and
+reports the branch commits as "Unverified". That is declined deliberately.
+Master's history is authored by GitHub's squash merge under the owner's own
+noreply address and IS verified, so the badge only ever appears on branch
+commits that are squashed away on merge — the cost of reauthoring is real
+(force-pushing a branch behind an open PR to undo attribution that was set on
+purpose) and the benefit is cosmetic. If verified branch commits are wanted
+later, the answer is commit signing with the owner's key, not handing the
+authorship to the agent.
+
 Run this at the START of any session that will commit, before the first commit:
 
     git config user.name  "ZemichaelX"
