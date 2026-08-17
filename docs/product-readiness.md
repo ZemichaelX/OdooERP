@@ -1433,6 +1433,81 @@ entry that periodic valuation requires; and how much of the 453,800.00 is closin
 stock versus cost of goods sold — that needs a physical count valued at cost,
 which flow (j) showed the product cannot currently produce.
 
+#### Addendum — what OCA actually covers, measured from the 19.0 branches
+
+Requested before deciding between vendoring and building. **Nothing was vendored.**
+Both repositories were cloned read-only into the container's scratch space and
+read; neither was installed.
+
+**Coverage against the four reports we lack — the expectation is CONFIRMED:**
+
+| Report we lack | `account_financial_report` | `mis_builder` |
+|---|---|---|
+| **General ledger** | **YES** | via KPI expressions |
+| **Trial balance** | **YES** | via KPI expressions |
+| **Profit & loss** | **NO** | **engine only — no template ships** |
+| **Balance sheet** | **NO** | **engine only — no template ships** |
+
+`account_financial_report` (OCA/account-financial-reporting, branch `19.0`)
+provides exactly seven reports, read from its wizards, report models and menu
+entries: **Aged Partner Balance, General Ledger, Journal Ledger, Open Items, Open
+Items Partner, Trial Balance, VAT Report**. A case-insensitive search of the whole
+module for `profit and loss` / `profit_loss` / `balance sheet` / `balance_sheet` /
+`income statement` returns **nothing**. So: GL, trial balance, open items and aged
+partner balance — exactly as expected — and **no P&L and no balance sheet.**
+
+`mis_builder` (OCA/mis-builder, branch `19.0`) is a **report engine, not a set of
+statements**. The core module ships **no `data/` report templates at all**; the
+only `mis.report` record in the repository is `mis_report_expenses` ("Demo
+Expenses") in `mis_builder_demo`. Its KPIs are expressions over account codes —
+`balp[600%]`, `balp[211000,212100,212300]`. **Vendoring it would not hand us a
+P&L; it would hand us a framework in which we must author one against the `et`
+chart.** That authoring is ours either way.
+
+**Maintenance — both look genuinely maintained, not merely present:**
+
+| | account-financial-reporting | mis-builder |
+|---|---|---|
+| Branch `19.0` exists | yes | yes |
+| Branch HEAD | `7e6f489`, **2026-08-17** (today; a Weblate translation) | `58a237a`, **2026-08-03** |
+| Last substantive code commit | **2026-07-29** — *"[FIX] account_financial_report: Define the appropriate group in the menu"*; a 27 Jul fix to decimal analytic percentages in XLSX exports | **2026-08-03** merge of PR #823; 29 Jul menu-group fix |
+| Non-translation commits, last 90 days | **34** | **35** |
+| Distinct non-bot authors, last 90 days | **17** | **6** |
+| Manifest declares 19.0 | `account_financial_report` **19.0.0.0.19**, `partner_statement` 19.0.1.1.0, `account_tax_balance` 19.0.1.0.3 | `mis_builder` **19.0.1.2.0**, `mis_builder_budget` 19.0.1.0.1 |
+| Licence | AGPL-3 | AGPL-3 |
+
+The `19.0.0.0.19` patch level on `account_financial_report` is itself a signal: the
+port has been iterated nineteen times on the 19.0 branch rather than tagged once
+and abandoned.
+
+**A cost neither of us had counted: this is not two repos, it is four.** Both
+modules depend on **`date_range`** and **`report_xlsx`**, and neither is in Odoo
+core (verified: `board` is core, those two are not). `date_range` comes from
+OCA/server-ux and `report_xlsx` from OCA/reporting-engine. So:
+
+- vendoring **AFR alone** → 3 repos pinned and hash-checked;
+- vendoring **mis_builder alone** → 3 repos;
+- vendoring **both** → **4 repos**, against the one (`vendor/oca_web`) the project
+  carries today, each needing a `check_vendor.sh` pin and a refresh procedure.
+
+**Licence note, flagged not resolved:** both are **AGPL-3**, where `web_responsive`
+is LGPL-3. That is a different obligation for a product sold to clients and it
+should be looked at by someone qualified before either is shipped, not decided
+here.
+
+**The argument for building, stated as fairly as I can put it.** The one thing
+this assessment found that no competitor does is flow (c)'s **GL tie-out block** —
+the VAT report printing its total, the ledger's total and `OK` beside them, aimed
+squarely at two accountants who told us they re-add computed numbers by hand. A
+P&L and balance sheet in that shape would be the same idea applied to the
+statements a bank and the MoR actually ask for, and neither Odoo, nor OCA, nor
+GraceERP prints a statement that proves it reconciles. Set against that: OCA gives
+GL and trial balance today for the cost of pinning repos, and those two are pure
+plumbing with no Ethiopian character worth owning. **The split those facts suggest
+— take GL and trial balance from OCA, build P&L and balance sheet ourselves in the
+tie-out shape — is a recommendation, not a decision, and the decision is
+Zemichael's.**
+
 ---
 
 ## Tier 2 — summary

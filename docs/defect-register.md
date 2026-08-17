@@ -469,7 +469,17 @@ ships to our clients under our name.
 **Fix shape, therefore, is not what the first version of this entry implied:**
 override `expense_account_id` in our chart extension so every Ethiopian company
 gets a real expense account. Assigning products to categories is a secondary
-tidy-up, not the fix. Worth raising upstream with Odoo as well.
+tidy-up, not the fix.
+
+**THIS IS NOT ONLY OUR DEFECT — it affects every Odoo-based Ethiopian deployment.**
+The mapping lives in Odoo's own `l10n_et` chart template, so any company anywhere
+running Odoo on the Ethiopian chart books its purchases into a current-asset
+transit account by default, sees no cost of sales in its P&L, and overstates
+profit until someone notices. That includes every competitor building on the same
+localisation. **Raise it upstream with Odoo** — a one-line change to
+`expense_account_id` in `template_et.py` fixes it for everyone, and our own
+override should be treated as the interim measure rather than the destination.
+Doing both is right: upstream fixes are slow, and our clients ship now.
 
 Separately, `data-templates/`, which CLAUDE.md describes as spreadsheet import
 templates for onboarding, contains **only `README.md`** — so there is no import
