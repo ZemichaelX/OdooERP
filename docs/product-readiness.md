@@ -252,3 +252,107 @@ supplier credit notes, the WHT certificate PDF the supplier is entitled to
 (the module ships one per CLAUDE.md; it was not rendered here), and whether the
 2,700 in *Withholding Tax Payable* is picked up by the WHT summary report — that
 is flow (c)'s neighbour and was not run as part of this flow.
+
+---
+
+### (c) Accountant — produce the VAT figures for a period
+
+Her longest monthly job (register item 13, tax reference §5).
+
+**Role:** accountant, as `admin`.
+
+**Steps taken.** Created an `l10n.et.vat.declaration` for 1–31 August 2026 — the
+month containing flow (a)'s invoice and flow (b)'s bill. Read its computed totals.
+Then recomputed the same figures independently, twice: once from GL account
+movements, once from the posted `account.move.line` tax lines, so the report is
+not its own witness. Exported the CSV and rendered the PDF. Then created a
+September declaration to see what happens to August's credit.
+
+**Measured.**
+
+| | Value |
+|---|---|
+| Declaration | id 2, `VAT Declaration 2026-08`, `off_chart=False` |
+| Report says | output VAT **4,950.00** · input VAT **13,500.00** · net **−8,550.00** |
+| GL 300700 VAT Payable, Aug movement | **−4,950.00** — agrees |
+| GL 221200 VAT Receivable on Purchases, Aug movement | **13,500.00** — agrees |
+| Tax lines, independently | `15%` on INV/26-27/0003 −4,950.00; `15%` on BILL/26-27/08/0001 +13,500.00 — agrees |
+| CSV | `vat_declaration_2026_08.csv`, **556 bytes**, 14 rows |
+| CSV tie-out block | `Output VAT vs GL,300700,4950.00,4950.00,OK` and `Input VAT vs GL,221200,13500.00,13500.00,OK` |
+| PDF | **22,442 bytes**, magic `%PDF-`, via `l10n_et_reports.report_vat_declaration` |
+| PDF carries | taxpayer name, **TIN 0088776655**, `Period: 08/01/2026 – 08/31/2026 (monthly, Proc 1341/2024)`, all rows, and the GL reconciliation block |
+| Net treatment | *"VAT credit carried forward 8,550.00"* — matches tax reference §5 (excess input VAT carries forward; refunds are exporter/investor processes) |
+
+**Outcome: WORKS, with two gaps that bite in month two rather than month one.**
+
+The arithmetic is right, it reconciles to the ledger in two independent
+recomputations, and it produces both artefacts. **The tie-out block is the single
+best thing found in this assessment**: both accountants in register item 13 said
+they re-check tax figures by hand and do not trust the totals, and this report
+answers that by printing the total *and* the GL figure *and* the word `OK` beside
+them. That is the "show its working" tile of item 13, already built and shipping.
+**Attribution: OUR CODE** (`l10n_et_reports`).
+
+**Finding c-1 — the credit carried forward is stated but never carried.**
+August's declaration ends *"VAT credit carried forward 8,550.00"*. The September
+declaration, created immediately after, reports **output 0.00, input 0.00, net
+0.00**. The full field list is
+`company_id, csv_export_file, csv_export_filename, currency_id, date_from,
+date_to, input_vat_total, name, net_vat, off_chart, output_vat_total` — there is
+**no field for a brought-forward credit** (`[]` for any field named
+forward/carry/previous/opening). So each month is computed in isolation, and the
+8,550 the client is owed exists only as a sentence in last month's PDF. The
+accountant must track it herself, outside the system, exactly as she does today in
+Excel. **Attribution: OUR CODE.** **Severity: SERIOUS** — the product's pitch on
+this flow is that it removes the Excel, and on the one line that spans months it
+does not.
+
+**Finding c-2 — nothing prevents two declarations for the same month, and none of
+them has a state.** Creating a second 1–31 August declaration succeeded: two
+records both named `VAT Declaration 2026-08`. There is no `state`, `locked`,
+`filed` or `submitted` field. So there is no record of *what was filed*, and
+nothing stops a figure being regenerated after filing and silently disagreeing
+with the return the MoR holds. **Attribution: OUR CODE.** **Severity: SERIOUS**
+for a client who will be audited; **not** a go-live blocker, since a first month
+can be filed from a freshly generated report.
+
+**Finding c-3 — WRONG FOR ETHIOPIA, or at least silently assumed: the period is a
+Gregorian month.** The declaration is bounded by `date_from`/`date_to` and named
+`2026-08`; the PDF prints `08/01/2026 – 08/31/2026`. There is **no Ethiopian month
+anywhere in the model** — and `l10n_et_calendar` is `uninstalled` in the shipped
+set, so no Ethiopian date exists in this database at all.
+
+Per this job's rule 5 I am reporting the assumption, not building on it:
+`docs/ethiopian-tax-reference.md` §2 establishes the Ethiopian-month filing window
+for **employment income tax** and is **silent on the VAT period**. So I cannot say
+this is wrong. What I can say is that the product has **silently chosen the
+Gregorian reading** and shows no sign of having been asked the question. If the
+MoR's VAT period is an Ethiopian month, every declaration this report produces is
+mis-sliced by roughly a week at both ends, and the error is invisible because the
+figures tie out perfectly to a GL sliced the same wrong way — a tie-out cannot
+catch a period boundary. **This is a question for Zemichael's MoR call, not a
+defect to fix from here.** Cross-references register items 9 and 13(4).
+
+**Finding c-4 — "can she get what she actually files?" is still open, and this
+assessment cannot close it.** She gets a correct, reconciled, well-presented
+*SapianERP* VAT summary. Whether it is the *MoR return* is unknown: the register's
+"Still owed by Zemichael" list records that neither accountant has supplied an
+example filing file, and CLAUDE.md's own note on `l10n_et_reports` says to verify
+layouts against current MoR forms before filing. The CSV's column layout
+(`Section,Row,Base,Tax`) is our own invention. **Severity: BLOCKER for filing,
+but it is a BLOCKER ON INFORMATION, not on code** — nothing can be built until
+one real form or upload file exists. It is already on the register's owed list;
+this assessment raises its priority rather than adding a new item.
+
+**Could not test in this flow:** filing itself (etax.mor.gov.et), whether the CSV
+is accepted by any MoR system, Category A vs B treatment (tax reference §7, marked
+UNVERIFIED — deliberately not designed against), multi-company VAT, and any period
+containing exempt or zero-rated sales, since the demo data has none — every
+zero-rated and exempt row above is **0.00 because no such transaction exists**,
+not because they were exercised. Those rows are therefore **untested**, not
+passing.
+
+**Note, cosmetic:** the rendered HTML wrapper's page title is `Odoo Report`
+(stock `web.html_container`). It does not appear in the PDF output and is not
+customer-visible in the attachment, but it is another instance of register item 4's
+concern and would be visible in an HTML preview.
