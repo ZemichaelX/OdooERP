@@ -804,6 +804,85 @@ is a **go-live configuration and training decision** — someone must decide whe
 counter sales go through a delivery, and the client must be taught that an invoice
 is not a goods issue.
 
+## Product default decisions — not defects
+
+*These are choices the product has made by inheriting Odoo's defaults. Both are
+correct behaviour for the software and arguably wrong for the market. Recorded so
+the default is a decision on the record rather than an accident. **Neither is
+decided here.***
+
+**39. VAT is added on top of the shelf price at the counter** — decision pending
+New 17 Aug, measured (`docs/product-readiness.md` flow (n)).
+
+A POS sale of 5 × *Cement OPC Dangote 50kg* priced at **1,100.00** produced
+untaxed 5,500.00 + VAT 825.00 = **6,325.00** — i.e. **1,265.00 a bag** at the
+till. The taxes are configured tax-EXCLUSIVE (`price_include` off), which is
+Odoo's default and is what our demo data implies.
+
+**Ethiopian retail shelf prices are normally VAT-inclusive**, so a customer handed
+6,325.00 for goods marked 1,100.00 will dispute it at the counter, every time.
+
+**The trade-off, not a verdict:**
+
+- Odoo fully supports tax-inclusive pricing; this is a tax-configuration setting,
+  not a code change.
+- **For a counter/retail client, inclusive is almost certainly what they want** —
+  the sticker is the price.
+- **For a B2B trader invoicing construction firms, exclusive is the convention** —
+  the invoice shows base, VAT and total separately, which is also what the VAT
+  invoice format expects.
+- Selam General Trading PLC is **both**, which is exactly why this needs deciding
+  rather than defaulting: the same product sells over the counter and on a
+  30-day invoice.
+
+**The question is whether tax-inclusive should be OUR default**, per price list or
+per POS config rather than globally. **STOCK ODOO** default inherited.
+**Severity: not a defect** — but it is a go-live conversation with every retail
+client, and getting it wrong is visible to their customers on day one.
+
+**40. Periodic valuation means no per-sale cost of sales, so there is no gross
+margin** — decision pending
+New 17 Aug, measured (flows (f), (j), (m), (n)).
+
+After two POS sales of cement, `511100 Cost of Goods and Services` was
+**unchanged** and the `STJ` (Inventory Valuation) journal held **0 entries**.
+Every product category ships `property_valuation = periodic` and
+`cost_method = standard`, which is Odoo's default.
+
+Under periodic valuation Odoo posts **no cost entry when something is sold**. Cost
+reaches the P&L as *purchases*, and a physical stock count at period end adjusts
+it. That is a legitimate, widely used method — and note that **entry 26's fix was
+still necessary and is unaffected**: it decided *which account* purchases land in,
+which matters under either method.
+
+**What it costs the client:**
+
+- **No gross margin per product, per sale or per day.** For a trader, that is the
+  number they care about most — the whole business is buy low, sell higher.
+- The P&L's cost line reads *"what we bought"*, not *"what we sold"*, until
+  someone counts the stock.
+- Inventory does not sit on the balance sheet between counts (measured: 452,000.00
+  of stock on hand, `235100 Stock` reading **0.00**).
+
+**What automated (perpetual) valuation would give:**
+
+- A cost entry on every sale, so gross margin is readable per product and per day.
+- Inventory continuously on the balance sheet.
+- **At the price of** configuring valuation and stock-input/output accounts per
+  category, a costing method decision (standard / FIFO / average — note **every**
+  category currently reads `standard`), and a discipline the client's staff must
+  actually keep: perpetual valuation punishes sloppy receipts far harder than
+  periodic does, because every mis-scanned delivery immediately misstates COGS.
+
+**The trade-off is real in both directions and is not decided here.** A small yard
+that counts stock monthly and trusts nobody's data entry may be genuinely better
+off periodic. A client who asks "what did I make today?" cannot be answered
+periodic. **STOCK ODOO** default inherited. **Severity: not a defect** — but it is
+the single most consequential default in the product for a trading client, and it
+interacts with the P&L design now being specified.
+
+---
+
 **38. An employee cannot read their own payslip**
 New 17 Aug, measured (flow (k)). An employee record was linked to a real user
 account, the way an employer enabling self-service would; that user then got
