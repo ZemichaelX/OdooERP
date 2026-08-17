@@ -722,12 +722,15 @@ Consequences, for a trading company whose largest asset is stock:
 
 **Attribution: two parts, and they should not be merged.** The periodic-valuation
 default is **STOCK ODOO** and is a legitimate choice for a small trader who counts
-stock physically. The **12 of 12 products with no category at all** is
-**DEMO DATA produced by OUR CODE** (`sapian_demo_trader` creates them). **Severity:
-SERIOUS.** For the demo it is embarrassing — a prospect asking "what's my gross
-margin?" gets nothing. For a first client it is a go-live configuration decision
-that must be made deliberately: periodic with a physical count, or perpetual with
-categories, accounts and a costing method configured.
+stock physically. The absence of **any product category at all** is **OUR CODE**:
+the product ships no default category wired to the `et` chart, so this is not a
+client misconfiguration but the state the product arrives in. `sapian_demo_trader`
+reproduces it in the demo, but the demo is the symptom, not the cause.
+
+**Severity: BLOCKER** — see register entry 26 and the tier 1 summary for why this
+was regraded from SERIOUS. For the demo it is embarrassing: a prospect asking
+"what's my gross margin?" gets nothing. For a client it means the accounts cannot
+answer the question the business is run on.
 
 **Could not test in this flow:** partial deliveries and backorders; a return;
 delivery of a lot/serial-tracked product (`tracking=none` on all demo products);
@@ -787,12 +790,12 @@ fixed once, in one place.
 The consequence for the accountant, stated plainly: **every purchase this company
 makes is being capitalised into a transit asset account, so the P&L shows revenue
 with no cost of sales, and the balance sheet carries a "Goods in Transit" balance
-that only grows.** **Attribution: DEMO DATA produced by OUR CODE** (products
-created by `sapian_demo_trader` without a category), with **STOCK ODOO** supplying
-the fallback. **Severity: SERIOUS** — judged against the go-live scale it is not a
-BLOCKER, because the client can still operate, invoice, pay and file every
-statutory return; but it is the most consequential thing found in tier 1, and no
-demo should be given with it in place.
+that only grows.** **Attribution: OUR CODE** — no default product category ships wired to the `et`
+chart, with **STOCK ODOO** supplying the fallback account. **Severity: BLOCKER**
+(regraded; register entry 26). The client can still invoice, pay and file every
+statutory return — which is why an earlier draft graded this SERIOUS — but an
+accounting system that cannot show a trading company its cost of sales is not
+doing the job it was bought for.
 
 **Related gap, recorded because it decides whether a real client reproduces this:**
 `data-templates/`, described in CLAUDE.md as *"spreadsheet import templates for
@@ -921,10 +924,26 @@ here says whether an *accountant* role is scoped correctly; and password policy,
 
 ## Tier 1 — summary
 
-**All eight flows were run. None was skipped. No BLOCKER was found**, on the
-scale defined above — the client can operate every core flow and can file every
-statutory return, though on two of them by retyping figures a human read off a
-PDF.
+**All eight flows were run. None was skipped. One BLOCKER was found** — the
+missing product category (finding f-2/b-2/g, register entry 26). Every other core
+flow operates and every statutory return can be filed, though two of them by
+retyping figures a human read off a PDF.
+
+**This grading was corrected after review, and the correction is the more useful
+half of this summary.** The first draft of this document graded the product-category
+finding SERIOUS, reasoning that the client could still operate and still file.
+That reasoning **conflated two different axes: how cheap a fix is, and how much it
+blocks.** The fix is an afternoon's work; what it blocks is an accounting system's
+ability to tell a trading company what it earned. A P&L that shows revenue with no
+cost is not something that company can run itself on, whatever it can still submit
+to the MoR. Cheapness was allowed to argue down consequence, and it should not
+have been.
+
+The attribution was corrected in the same pass, from CONFIGURATION to **OUR CODE**,
+for a reason worth stating: the product ships **no default product category wired
+to the `et` chart**, so there is nothing for a client to misconfigure. Every client
+meets this on their first purchase, by default, having done nothing wrong. A defect
+that arrives with the product is ours.
 
 ### What works, with the measurement that proves it
 
@@ -954,7 +973,7 @@ PDF.
 
 | # | Finding | Attribution | Severity |
 |---|---|---|---|
-| **f-2 / b-2 / g** | **12 of 12 products have no product category**, so purchases capitalise into `230100 Goods in Transit` (now 453,800.00), there is no COGS, and inventory is off the balance sheet | DEMO DATA via OUR CODE + STOCK ODOO fallback | **SERIOUS** (worst found) |
+| **f-2 / b-2 / g** — register **26** | **No default product category ships wired to the `et` chart**, so purchases capitalise into `230100 Goods in Transit` (now 453,800.00), the `STJ` journal is empty, there is no COGS, the P&L shows revenue with no cost, and inventory never reaches the balance sheet. Every client hits it on their first purchase | **OUR CODE** | **BLOCKER** |
 | **c-4 / e-4** | What the client actually files is still unknown — no MoR form or upload example exists, so the VAT CSV layout and the two payroll CSVs are guesswork | Blocked on INFORMATION, already on the register's owed list | **SERIOUS**, highest value |
 | **e-3 / c-3** | No Ethiopian filing month anywhere; payroll and VAT periods are Gregorian and the mandatory mapping is absent | OUR CODE (absent) | **SERIOUS** |
 | **e-1** | The payslip PDF prints an exempt allowance as `Taxable: Yes`; the word "exempt" never appears | OUR CODE | **SERIOUS** |
@@ -974,7 +993,11 @@ PDF.
 
 ### The one thing to fix first
 
-**Product categories.** One configuration decision — categories with income,
-expense and (if perpetual) valuation accounts — closes b-2, f-2 and the
-Goods-in-Transit balance at once, and it is what stands between this tenant and a
-P&L that shows a gross margin. It is also the cheapest item on the list.
+**Ship a default product category wired to the `et` chart.** One change — a
+category carrying income, expense and (if perpetual) valuation accounts, applied
+as a product default rather than left to each client — closes b-2, f-2, the
+Goods-in-Transit balance and the empty `STJ` journal at once, and it is what
+stands between this tenant and a P&L that shows a gross margin.
+
+It is both **the cheapest item on this list and the only BLOCKER on it.** Those
+two facts are independent, and the second is the one that decides the queue.

@@ -143,7 +143,63 @@ an RST README.
 Referenced at a `localhost` URL Gmail cannot reach. **Probably a local
 artifact.** Confirm on a real domain before treating it as a defect.
 
-**8. Withholding tax has no threshold logic and no buyer test**
+**8. Withholding has no buyer test and no contract aggregation**
+**Rewritten 17 Aug after measurement. The previous title — "no threshold logic and
+no buyer test" — was half wrong, and the half that was wrong had been written from
+reading the symptom rather than exercising the engine.** See
+`docs/product-readiness.md` flow (d) for the run.
+
+**Thresholds and the supplier-credentials test both EXIST, and both discriminate.**
+Measured on a scratch tenant, four bills, expectations written down before running:
+
+| Bill | Withheld |
+|---|---|
+| goods 5,000 (under the 20,000 threshold) | **nothing** |
+| services 8,000 (under the 10,000 threshold) | **nothing** |
+| services 15,000 (over 10,000, under goods' 20,000) | **450.00** at 3% |
+| goods 50,000, supplier with **no TIN** | **15,000.00** at 30% |
+
+Row three proves the services threshold is a separate figure from the goods one;
+row four proves the punitive path fires on credentials. The configuration the
+engine read is effective-dated, not hard-coded: `WHT 3% from 2025-08-01`,
+`threshold_goods=20,000`, `threshold_service=10,000`, `rate_standard=0.03`,
+`rate_punitive=0.30`, `punitive_respects_thresholds=True`.
+
+**The "instead of VAT" claim below is also refuted for the purchase side:**
+50,000 + 7,500 VAT − 15,000 WHT = **42,500**, so VAT is charged alongside
+withholding. The 1,100-birr sale invoice that prompted this entry was a
+hand-selected tax on a sale line — the sale side has no automation to have got it
+wrong.
+
+**What is genuinely absent, and this is now the whole of the entry:**
+
+1. **The buyer-is-a-withholding-agent test.** Measured: a 60,000 sale to Mebrat
+   Construction **PLC** and a 60,000 sale to a **walk-in individual** produce
+   byte-identical invoices — `15%` VAT only on both. There is no `res.partner`
+   field matching `agent`, and no `res.company` field matching `wht`/`withhold`.
+   Moot on purchases, where the buyer is always the company; **the gap is entirely
+   on the sale side.**
+2. **Contract aggregation.** Measured: two 9,000 goods bills to one supplier on
+   one day withheld nothing and raised no warning, activity or chatter note. A
+   search of every model in the database for `contract`/`agreement` returns only
+   `hr.contract.type` and `publisher_warranty.contract` — there is no
+   supply-contract concept. The engine applies the threshold **per transaction**,
+   which is accountant 1's rougher reading; the tax reference resolves the unit to
+   **the agreement** on accountant 2's stronger answer.
+3. **The company setting decided below** — *show the withholding deduction on the
+   invoice*, defaulting ON — **was never built.** The sale-side tax
+   `3% WHT (Withheld by Customer)` exists and, applied by hand, is correct:
+   100,000 + 15,000 VAT − 3,000 = **112,000**, debiting *Withholding Receivable on
+   Sale*. Only the decision to apply it is missing.
+
+**Lesson worth keeping:** this entry asserted three missing tests from one bad
+invoice. Two of the three were present and working. An entry that says "none of
+these exist" needs a run behind it, not an inference from a symptom.
+
+---
+
+The presentation question below stands unchanged, and was the useful half.
+
 Two accountants answered on 17 Aug and they **disagree about presentation** while
 agreeing on everything that decides the amount.
 
@@ -160,20 +216,16 @@ deduction on the invoice* — defaulting to ON, because it tells the customer wh
 to pay. **This corrects an earlier entry in this register that called the invoice
 model wrong; it is not.**
 
-What *is* wrong is that there are no conditions. `INV/26-27/0003` applies
-withholding to a **1,100 birr** sale of goods when the threshold is **20,000**,
-and applies it *instead of* the 15% VAT rather than alongside it, so a
-VAT-registered seller issued an invoice with no VAT.
-
-Withholding needs **three tests**, none of which exist:
+The three statutory tests, for reference — **2 and 3 are built and proved above;
+1 is not:**
 
 1. **Is the buyer a withholding agent?** A government body, a PLC or Share
    Company, or a WHT-registered organisation — yes. An ordinary individual
-   buying for personal use — no. Needs a flag on the partner.
-2. **Is the value over the threshold?** 20,000 goods / 10,000 services, judged on
-   the **transaction or supply contract**, not the individual invoice.
+   buying for personal use — no. Needs a flag on the partner. **ABSENT.**
+2. **Is the value over the threshold?** 20,000 goods / 10,000 services.
+   **BUILT per transaction; the contract unit is ABSENT.**
 3. **Does the supplier have a valid TIN and business licence?** If not, the buyer
-   must withhold **30%**, and it becomes a final tax.
+   must withhold **30%**, and it becomes a final tax. **BUILT and proved.**
 
 See `docs/ethiopian-tax-reference.md`.
 
@@ -191,21 +243,6 @@ not optional is the **mapping to the Ethiopian filing month and its window** —
 that is the same for both, and it is the part the module does not have.
 
 Smaller than the rework this register previously described.
-
-**10. The transport allowance exemption is not implemented**
-— rule **RESOLVED** 17 Aug. No payslip carries a non-taxable allowance and
-`taxable_income = gross` on all six, so no exemption logic can be observed.
-
-The rule is the **lower of 2,200 and a quarter of the salary.** Accountant 2:
-*"Below 2200 or quarter of the salary"* and, to the direct question,
-*"That is exactly correct."* Accountant 1 had given only the 2,200 cap — which is
-what always binds above roughly 8,800 birr salary, so her answer was incomplete
-rather than wrong.
-
-The safer default this register had already chosen turns out to be the actual
-rule. Build `min(25% × salary, 2,200)`, keep the cap and the percentage as
-settings so a directive change is a settings edit, and show on the payslip which
-limit bound.
 
 **11. A client with `website_sale` can never open customer self-registration**
 The override returns `b2b` unconditionally, and Settings → Website still reads
@@ -293,9 +330,173 @@ is a demo. **Two things must happen before any client sees this build:** renew
 the domain, and re-check `support@sapiantech.com` in the backend footer, which is
 currently dead mail on every page of the product.
 
+**23. The payslip PDF prints an exempt allowance as "Taxable: Yes"**
+New 17 Aug, measured on a scratch tenant (`docs/product-readiness.md` flow (e)).
+Carried forward from item 10, which asked for the opposite behaviour.
+
+The rendered payslip for an employee on basic 6,000 with a 2,000 transport
+allowance reads:
+
+```
+Earnings   Description                    Amount        Taxable
+           Basic Salary                   6,000.00 Br   Yes
+           Transport allowance August     2,000.00 Br   Yes
+           Gross                          8,000.00 Br
+```
+
+**Only 500.00 of that 2,000.00 was taxable.** The engine knows it — PAYE was
+computed on 6,500 and is correct — so the document contradicts the calculation
+behind it. The word **"exempt" does not appear anywhere in the payslip**, checked
+against the rendered text rather than the template.
+
+Consequences: an employee or a labour inspector reconciling the payslip by hand
+cannot arrive at the PAYE shown, and the payslip is the document staff argue
+about. The tax reference asks explicitly to *"show on the payslip which limit
+bound"* — that is unbuilt, and the column that does exist states the wrong thing.
+
+Ledger and filings are unaffected. **OUR CODE.** Fix shape: the split is already
+computed, so the payslip template needs the exempt/taxable portions and the
+binding limb, not new arithmetic.
+
+**24. The bank salary file exports with empty account numbers and does not warn**
+New 17 Aug, measured. **This is rule 2 exactly** — an export that succeeds while
+carrying nothing a bank can use.
+
+Two newly-hired employees with no bank account produced a named, sized, reported
+export:
+
+```
+Employee Name,Bank Name,Account Number,Net Pay
+Meseret Bekele — መሰረት በቀለ,,,6780.00
+Tesfaye Alemu — ተስፋዬ አለሙ,,,9395.00
+TOTAL,,,16175.00
+```
+
+`_l10n_et_identifier_warnings()` returned `[]`. Reading its source: it checks
+**employee TIN** and **POESSA pension ID** and nothing else. There is no bank
+check. The six demo employees *do* carry account numbers (`1000200030001`…`6`), so
+the field exists and is normally populated — **the failure appears only for a
+newly-hired employee, which is the routine event**, and it appears in the file the
+client hands to their bank.
+
+The TOTAL row reconciles to the run's net (16,175.00), so even the internal
+cross-check passes. Nothing in the artefact distinguishes "exported correctly"
+from "exported unusable".
+
+**OUR CODE.** Fix shape: extend the warning function that already exists for the
+other two identifiers — it is the right place and it already has the reporting
+path into chatter and the report banner.
+
+**25. Onboarding collects no company email and no outgoing mail server, so a
+customer invoice leaves as `OdooBot <odoobot@example.com>`**
+New 17 Aug, captured at the SMTP boundary, not inferred from settings.
+
+Sending a posted customer invoice by email produced a real message whose `From:`
+header read, verbatim: **`OdooBot <odoobot@example.com>`**. Measured causes on the
+tenant as the product's own onboarding leaves it:
+
+| Setting | Value |
+|---|---|
+| `company.email`, company partner email | `False`, `False` |
+| admin user email / partner email | `False` / `False` |
+| `ir.mail_server` records | **0** |
+| `mail.default.from` / `mail.catchall.domain` | `False` / `False` |
+
+`sapian_core/wizard/sapian_onboarding_wizard.py` collects `company_name`, `tin`,
+`street`, `city`, `fiscal_year`, `logo`, `primary_color` and the module picks. It
+collects **no email address and no mail server**. So a tenant provisioned entirely
+through the product's own go-live path is *by construction* unable to send a
+customer-acceptable email, and the send reports success either way — rule 2 again.
+
+**These are two defects wearing one symptom, and they must not be merged.** #49
+and PR 4 address Odoo's **name** appearing in outgoing mail. This entry is about
+the **absence of an address to send from**. Fixing every "Powered by Odoo" string
+in the product leaves this invoice going out from `odoobot@example.com`; and
+conversely, configuring SMTP by hand leaves the strings. Neither fix touches the
+other.
+
+This is also the branding rule pointed at the most outward-facing surface there
+is — an invoice to the client's own customer — and it is in the `From:` line
+rather than the footer.
+
+**OUR CODE (onboarding gap) + CONFIGURATION.** Fix shape: onboarding asks for the
+company email and either SMTP credentials or an explicit "mail is configured
+elsewhere" acknowledgement, and go-live refuses to report success without one.
+
+**26. Every client hits Goods in Transit on their first purchase** — **BLOCKER**
+New 17 Aug, measured (`docs/product-readiness.md` flows (b), (f), (g)).
+
+On the demo tenant, **12 of 12 products have no product category** (`categ_id` is
+`False`) while three categories exist unused. With no category and no account on
+the product, Odoo falls back and resolves purchases to **`230100 Goods in Transit`,
+an `asset_current` account**. Measured consequences:
+
+- That account stands at **453,800.00** across the tenant's bills, and **nothing
+  clears it.**
+- The `STJ` (Inventory Valuation) journal holds **0 entries** after a completed
+  receipt of 200 units and a completed delivery of 40.
+- So **no cost of goods sold is ever posted**: the P&L shows revenue with no cost,
+  gross margin cannot be read from the accounts, and inventory — a trader's
+  largest asset — never reaches the balance sheet.
+
+**Why this is OUR CODE and not CONFIGURATION**, which is the whole point of the
+entry: the product ships **no default product category wired to the `et` chart**.
+There is nothing for a client to misconfigure. Every client reaches this on their
+first purchase, by default, having done nothing wrong. `data-templates/`, which
+CLAUDE.md describes as spreadsheet import templates for onboarding, contains
+**only `README.md`** — so there is not even an import path that could carry a
+category column.
+
+**Why BLOCKER and not SERIOUS.** *Cheap to fix* and *blocking* are different axes,
+and an earlier draft of the readiness report conflated them: it reasoned that the
+client could still operate and file, and graded it SERIOUS on that basis. But this
+is an **accounting system sold to a trading company**, and a P&L that shows revenue
+with no cost is not a product that company can use to run itself, whatever it can
+still file. The fix being an afternoon's work does not change what it blocks.
+
+The periodic-valuation default is stock Odoo's and is a legitimate choice; the
+absence of any category at all is ours.
+
 ---
 
 ## Closed
+
+*(Numbers are identities and do not renumber when an entry moves here. Item 10
+began life in Open and keeps its number.)*
+
+**10. The transport allowance exemption**
+— **CLOSED 17 Aug. It was UNTESTED, not absent** — which is precisely the
+distinction this entry was complaining about, so it is worth saying plainly: the
+entry said *"no exemption logic can be observed"*, and it was right that nothing
+could be observed. It was wrong to leave the reader with "not implemented" in the
+title. **The logic was there the whole time; the demo data could not exercise it.**
+
+**Implemented and seeded**, as `l10n.et.allowance.type` with the rule as
+configuration rather than as constants:
+
+| code | rule | ceiling ETB | ceiling % of basic |
+|---|---|---|---|
+| `transport` | capped | **2,200.00** | **0.25** |
+| `hardship`, `medical` | exempt | — | — |
+| `housing`, `position` | taxable | — | — |
+
+**Both limbs verified 17 Aug** on a scratch tenant, figures hand-computed before
+the run (`docs/product-readiness.md` flow (e)):
+
+| Case | Which limb binds | Exempt | Taxable excess | Taxable income | PAYE | Result |
+|---|---|---|---|---|---|---|
+| basic 9,000 + transport 2,500 | the **2,200 cap** (25% = 2,250 is higher) | 2,200 | 300 | 9,300 | **1,475.00** | exact |
+| basic 6,000 + transport 2,000 | the **quarter** (1,500 < 2,200) | 1,500 | 500 | 6,500 | **800.00** | exact |
+
+The second row is the one that matters: it is the low-earner case accountant 1's
+"flat 2,200" answer gets wrong, and the case the tax reference warns
+*"under-taxes low earners and leaves the employer liable for the shortfall plus
+penalties."* Eleven figures in total (gross, taxable income, PAYE, both pension
+sides, net) matched hand arithmetic exactly across the two employees.
+
+**One thing this entry asked for is still not done, and is carried forward as
+entry 23:** *"show on the payslip which limit bound"*. The payslip PDF does the
+opposite.
 
 **16. The auth pages took their colour from the frontend palette**
 — **FIXED, #47 (`a03d1bd`). Verified on tenant 17 Aug** after
