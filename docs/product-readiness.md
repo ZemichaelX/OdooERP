@@ -807,3 +807,112 @@ product question rather than a demo-data question.
 purchase of a service against a PO, and the RFQ email to the supplier — flow (a)
 established that outbound mail leaves as `OdooBot`, so a supplier RFQ would carry
 the same `From:` and this was not separately measured.
+
+---
+
+### (h) Administrator — create a user, assign rights, log in as them
+
+**Role:** administrator, then the new user.
+
+**Steps taken.** Created an internal user with **only** `base.group_user` — a plain
+employee, no accounting, sales, purchase or HR rights. Probed access two
+independent ways: at ORM level with `check_access`, and — because that is the
+thing actually asked for — by **logging in over HTTP** and issuing the same RPC
+calls the web client issues. The Odoo HTTP server was started for this flow.
+(The scratch password is not recorded in this document; it exists only in this
+container's throwaway database.)
+
+**Measured — the login itself:**
+
+| | Value |
+|---|---|
+| Login | `POST /web/login` → **HTTP 200**, redirected to `/odoo`, session cookie set |
+| Session | `uid=5`, name *Tigist Haile (plain employee)*, **`is_admin=False`** |
+| `GET /odoo` | HTTP 200, 6,755 bytes |
+| Groups (explicit + implied) | 6: *Role/User*, *Technical Features*, *Basic Pricelists*, *Multiple UoM*, *Multi Currencies*, *delivery reminder* — stock Odoo's implied set for an internal user |
+| Apps visible in the menu | **5**: `SapianERP`, `Discuss`, `Dashboards`, `Employees`, `Apps` |
+
+**Measured — what is blocked.** Every one of these was refused, both at ORM level
+and over authenticated RPC:
+
+| Model | Result |
+|---|---|
+| `l10n.et.payslip` | **AccessError** — *"You are not allowed to access 'Ethiopian Payslip' records"* |
+| `l10n.et.payroll.run` | AccessError |
+| `hr.version` (where wages live) | AccessError |
+| `account.move`, `account.move.line` | AccessError |
+| `account.journal` | AccessError |
+| `l10n.et.vat.declaration`, `l10n.et.wht.summary` | AccessError |
+| `l10n.et.wht.config`, `ir.config_parameter` | AccessError |
+| `sale.order`, `purchase.order`, `stock.picking` | AccessError |
+| `ir.module.module` **write** (i.e. installing) | AccessError |
+
+**Measured — field-level, on the employee record.** This is the sharpest test,
+because `hr.employee` *is* partly readable (the staff directory) and the question
+is what comes with it:
+
+| Fields requested | Result |
+|---|---|
+| `name` | ALLOWED — 9 employees, the directory |
+| `name, l10n_et_tin` | **BLOCKED** |
+| `name, l10n_et_pension_id` | **BLOCKED** |
+| `name, private_street, private_phone` | **BLOCKED** |
+| `name, bank_account_ids` | **BLOCKED** |
+| `name, birthday, identification_id` | **BLOCKED** |
+| `name, version_id` (the route to wage) | **BLOCKED** |
+
+**Outcome: WORKS.** A plain employee cannot reach a single payslip, wage,
+journal entry, invoice, order, tax configuration or colleague's private data.
+**Our own added fields behave correctly**: `l10n_et_tin` and `l10n_et_pension_id`
+on `hr.employee` are group-restricted along with Odoo's own sensitive HR fields,
+which is CLAUDE.md rule 8 being honoured rather than asserted. **Attribution:
+STOCK ODOO** for the framework, **OUR CODE** for our models' ACLs, both correct.
+
+**A discrepancy in my own method, recorded because it would mislead anyone
+repeating this:** ORM `check_access('read')` on `hr.employee` reported denied,
+while an authenticated RPC `search_read` returned 9 rows. The **RPC result is the
+authoritative one** — it is what a real logged-in user gets. Any access audit on
+this project should be done through an actual session, not through `check_access`
+alone.
+
+**Finding h-1 — every internal user can read the full module list.**
+`ir.module.module search_read` returned **693 modules** (`sale_management`,
+`pos_restaurant`, `account`, `crm`, …), and the `Apps` root menu is in a plain
+employee's menu. Installing is correctly blocked. **Attribution: STOCK ODOO.**
+**Severity: COSMETIC** — it exposes nothing about the business, but it does show
+every employee a catalogue of software the company has not bought, which sits
+oddly beside the product's own tiered module catalogue.
+
+**Finding h-2 — every internal user can read product cost prices.**
+`product.product search_read` with `standard_price` returned all 12 products with
+their costs (Binding Wire 200.00, Cement OPC Dangote 1,000.00, Cement PPC Derba
+910.00) alongside the selling prices. For a trading company **the buying price is
+the margin**, and it is readable by any employee with a login — a storekeeper, a
+driver, a new hire. **Attribution: STOCK ODOO default.** **Severity: SERIOUS for
+this specific business**, and it is a **CONFIGURATION decision at go-live**
+(restrict the cost field or the product form), not a code defect. Flagged because
+a first client will not think to ask, and because it is the kind of thing an owner
+discovers after it has already gone round the yard.
+
+**Finding h-3 — the SapianERP app opens the Module Catalog for plain employees
+too.** `sapian.module.catalog` is readable by every internal user (**38 rows**:
+*SapianERP Core*, *Ethiopian Accounting*, *Ethiopian Payroll*, *Ethiopian
+Compliance*, …), and `SapianERP` is the first app in their menu. This is register
+item 13 — *"the front door of the product is a configuration list"* — seen from
+the employee's side, where it is worse: for them it is a configuration list they
+have no reason to see and cannot act on. **Attribution: OUR CODE.** **Severity:
+COSMETIC** on its own, but it strengthens item 13's case that the landing page
+should be a slot with a real default.
+
+**Also measured, and deliberately not raised as a finding:** partner TINs and
+business licence numbers are readable by any internal user (7 partners with TINs
+returned). That is ordinary ERP behaviour — a salesperson needs partner data and
+the TIN is printed on the invoice anyway.
+
+**Could not test in this flow:** a *portal* user as opposed to an internal one
+(that is flow (l), untested); multi-company record rules with a second company,
+which cannot be exercised on a single-company tenant and is the case CLAUDE.md
+rule 3 cares most about; the accountant and salesperson group combinations a real
+client would actually use — only the plain-employee floor was tested, so nothing
+here says whether an *accountant* role is scoped correctly; and password policy,
+2FA and session expiry.
