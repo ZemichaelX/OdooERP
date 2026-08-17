@@ -1510,6 +1510,73 @@ Zemichael's.**
 
 ---
 
+## DECISION — build our own financial statements
+
+**Taken by Zemichael, 17 August 2026, on the coverage facts above.** It went
+further than the recommendation: **build all of them.** Recorded here because the
+reasoning matters more than the verdict, and because the reversal point is part of
+the decision.
+
+**Not vendoring OCA. Not installing `base_accounting_kit`. We build the
+statements.**
+
+### Why
+
+1. **The P&L and balance sheet are ours in every scenario anyway.** `mis_builder`
+   ships **zero** report templates — its only `mis.report` record in the entire
+   repository is `mis_report_expenses`, in the demo module. Vendoring it buys a
+   framework to author inside, not a statement. Since the authoring against the
+   `et` chart is ours either way, the only question left was whether to carry a
+   dependency while doing it.
+2. **Licence.** OCA's modules are **AGPL-3**; `web_responsive`, the one thing
+   already vendored, is **LGPL-3**. For a product sold to clients those are
+   different obligations. The best outcome is not a favourable legal opinion — it
+   is **not needing one.**
+3. **Two classes of report is worse than either extreme.** If the VAT report
+   proves it ties to the ledger and the P&L does not, the product teaches the
+   accountant that some of its numbers are checkable and some are not — worse than
+   a product where none are, because it makes the tie-out look like a quirk of one
+   screen rather than a promise. Uniformity is the feature.
+4. **"Every statement proves it ties to the ledger" is the product thesis**, and
+   it is already half-built: flow (c)'s VAT declaration prints its total, the GL's
+   total, and `OK` beside them. Both accountants said they re-add computed numbers
+   by hand. Extending that across the statements is the differentiator; importing
+   someone else's statements would forfeit it.
+
+### The reversal point, stated in advance
+
+**If our general ledger proves hard at real volumes** — a client with hundreds of
+thousands of move lines, where pagination, multi-currency and performance are the
+actual work rather than the arithmetic — **`account_financial_report` stays
+maintained** (34 non-translation commits in 90 days, 17 non-bot authors, manifest
+`19.0.0.0.19`). Vendoring **one** repo for **one** report is a far smaller
+decision than the four-repo commitment weighed above, and taking it later costs
+nothing already spent. **The GL is the piece to watch. The P&L and balance sheet
+are not the risky part.**
+
+### The competitive fact this sits against
+
+Measured from **GraceERP's own Reporting menu**: they run **`base_accounting_kit`
+(Cybrosys)** — *Day Book*, *Cash Book*, *Bank Book* and *Assets* together are that
+module's signature, and their presence identifies it.
+
+The honest position, without flattering ourselves:
+
+- **They have a P&L and a balance sheet today. We do not** (entry 27).
+- **It cost them a free install.** Parity here is an afternoon's work for anyone,
+  us included.
+- **What they do not have is any Ethiopian character in those reports, or any
+  proof the numbers tie to the ledger.** `base_accounting_kit` is a generic
+  accounting pack: it knows nothing of the Ethiopian filing month, the `et`
+  chart's peculiarities, or the 3% withholding.
+
+**We are not building to catch up. We are building to pass them.** And if a sale
+ever needs parity *tomorrow*, that same free module is the escape hatch — worth
+knowing precisely so that the schedule never becomes the reason to abandon the
+thesis.
+
+---
+
 ## Tier 2 — summary
 
 All five flows were run. **A second BLOCKER was found in (m)**, and it was not
