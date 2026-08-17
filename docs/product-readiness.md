@@ -1577,6 +1577,188 @@ thesis.
 
 ---
 
+### (n) Point of Sale — the counter sale, added to tier 1
+
+**Added to tier 1 after the fact, not left in tier 3**, because flow (f) proved
+the thing that makes it a tier 1 concern: **posting a customer invoice moves stock
+by exactly 0.00.** A building-materials yard in Addis sells over the counter, so
+the question of whether POS moves stock is not a "needed soon" question — it
+decides whether the client's inventory is right at all.
+
+**Run after job 1**, so that where cost of sales posts had already been corrected
+(register entry 26). Confirmed on this tenant before starting:
+`company.expense_account_id = 511100 Cost of Goods and Services`, type `expense`.
+
+**Role:** counter cashier, then shop supervisor, then accountant.
+
+#### What installing POS actually gives a trader
+
+| | Value |
+|---|---|
+| `pos.config` records after install | **0** — no shop exists |
+| `pos.payment.method` records after install | **0** — no cash method exists |
+| Cash journal | **none existed**; one had to be created |
+| Products flagged `available_in_pos` | **0 of 14** |
+
+So a trader who installs POS opens it onto nothing: no counter, no payment
+method, no cash journal, and an empty product list. All of it is ordinary
+configuration and none of it is hard, but **it is a setup job, not a switch**, and
+the product ships no POS preset. **Attribution: CONFIGURATION** (the modules are
+stock Odoo and behave normally with demo data; our build installs
+`--without-demo=all` deliberately, per `build_demo.sh`). **Severity: SERIOUS for
+onboarding** — it belongs with entry 34, the missing `data-templates/`.
+
+Setting up a counter (*Selam Counter*, cash method, cash journal `CSH1`, 10
+storable products flagged) took one script. POS also **refused to open a session
+as superuser** — *"You do not have permission to open a POS session"* — so the
+session was opened as the admin user carrying `group_pos_manager`, which is what a
+shop supervisor actually is.
+
+#### Measured — the counter sale
+
+| Step | Value |
+|---|---|
+| Session opened | `Selam Counter`, opening cash **0.00** |
+| Cash sale | 5 × *Cement OPC Dangote 50kg* @ 1,100.00 → untaxed **5,500.00** · VAT **825.00** · total **6,325.00** |
+| VAT arithmetic | 5,500 × 15% = 825.00 exactly |
+| Order state | `paid` |
+| **On-hand before → after** | **60.0 → 55.0** |
+
+**Stock moves on a POS sale.** That is the finding this flow exists for, and it is
+the answer to the counter-selling problem flow (f) exposed: an invoice moves
+nothing, a POS sale moves five bags. **STOCK ODOO, works.**
+
+#### Measured — the sale to a registered customer, invoiced
+
+| | Value |
+|---|---|
+| Order | 10 × cement to Mebrat Construction PLC → untaxed 11,000.00 · tax **1,650.00** · total 12,650.00 |
+| Invoice raised from the order | `INV/26-27/0009`, **posted** |
+| Journal entry | 110000 Sales of Goods and Services **cr 11,000.00** · 300700 VAT Payable **cr 1,650.00** · 221100 Trade Debtors **dr 12,650.00** |
+| VAT check | 11,000 × 15% = 1,650.00 — **the same accounts and the same figure a normal invoice produces** (compare flow (a)) |
+
+**WORKS.** A POS invoice is indistinguishable from a back-office invoice in the
+ledger, which is what an accountant reconciling the two channels needs.
+
+Note, consistent with flow (d): **no withholding is applied on the POS sale
+either.** Sale-side WHT remains manual everywhere.
+
+#### Measured — closing the session and counting the cash
+
+| | Value |
+|---|---|
+| Orders in session | 2, totalling **18,975.00** |
+| Cash payments taken | 6,325.00 + 12,650.00 = **18,975.00** |
+| Counted cash entered | 18,975.00 |
+| **Session difference** | **0.00** |
+| Session state | `closed` |
+| Session journal entry | `POSS/26-27/08/0002`, posted, balances to **0.00** |
+| Entry | 300700 VAT Payable **cr 825.00** · 110000 Sales **cr 5,500.00** · 221500 Trade Debtors (PoS) **dr 18,975.00** / **cr 12,650.00** |
+| Cash journal `CSH1` account 211005 | **18,975.00** |
+| 221500 Trade Debtors (PoS) | **0.00 over 4 lines** — the clearing account fully cleared |
+| Whole ledger | Σdr − Σcr = **0.00** over 106 lines |
+
+**WORKS, and it reconciles end to end**: the drawer, the clearing account and the
+cash account all agree, and the invoiced order is correctly credited out of the
+POS receivable so it is not counted twice. *(A correction to my own first reading:
+I initially took the `221500` debit to mean the cash had not reached a cash
+account. It had — the clearing account nets to zero and 211005 holds the
+18,975.00. The intermediate line is the clearing step, not a resting place.)*
+
+#### Finding n-1 — cost of sales does NOT post on a POS sale
+
+`511100 Cost of Goods and Services` reads **54,350.00 over 2 lines** after the POS
+sales — unchanged, both lines from job 1's own test purchase. `STJ` (Inventory
+Valuation) holds **0 entries**.
+
+**Job 1 fixed where purchases go. It did not, and could not, make a sale
+recognise cost**, because valuation is still `periodic` (finding f-2). Under
+periodic valuation Odoo posts no per-sale COGS at all: cost reaches the P&L as
+*purchases*, and the year-end stock count adjusts it. That is a legitimate method
+and it is **STOCK ODOO** behaving correctly.
+
+What it means for the client, stated plainly: **there is no gross margin per sale,
+per product or per day**, which is the number a counter-selling trader most wants,
+and the P&L's cost line is "what we bought" rather than "what we sold" until
+somebody counts the stock. **Severity: SERIOUS** — and it is a **decision to take
+at go-live**, not a defect: periodic with a disciplined physical count, or
+perpetual with categories, valuation accounts and a costing method configured.
+
+#### Finding n-2 — the POS receipt carries no TIN
+
+`pos.order` has **no `ir.actions.report` at all** — the receipt is a client-side
+OWL template
+(`point_of_sale/static/src/app/screens/receipt_screen/receipt/order_receipt.xml`),
+not a server-rendered PDF, so it **could not be rendered server-side here**. What
+follows is read from the template, and is labelled as a template read rather than
+a rendered artefact.
+
+The receipt renders: company name, street, city, state, ZIP, phone, email,
+website; the POS config name; the lines; price excluding tax; a tax-group block
+(name, label, base amount, tax amount); total including tax; payment method and
+amount; change; total discount; a portal URL; the ticket code; and a configurable
+receipt footer.
+
+**The tax identifier is guarded by `t-if="company.vat"`.** On this tenant
+`company.vat` is `False` — our localisation stores the TIN in **`l10n_et_tin`**
+(measured: `0088776655`). So **the receipt prints no TIN.**
+
+This generalises beyond POS and is the more useful half of the finding: **any core
+Odoo template that prints `company.vat` prints nothing on a SapianERP tenant.**
+Our own documents are unaffected — flow (a)'s invoice PDF and flow (c)'s VAT
+declaration both carry the TIN, because they are our templates reading
+`l10n_et_tin`.
+
+**Attribution: OUR CODE** — storing the TIN outside `vat` is our design decision,
+and nothing bridges it. **Severity: SERIOUS**, and possibly moot; see the open
+question below.
+
+#### Finding n-3 — VAT is added on top of the shelf price
+
+The cement is priced 1,100.00 and the counter total came to 1,265.00 a bag
+(5 → 6,325.00). Ethiopian retail shelf prices are normally **VAT-inclusive**, so a
+customer handed a 6,325.00 total for goods marked 1,100.00 will dispute it.
+This is a pricelist/tax configuration choice (`price_include`), not a defect —
+**STOCK ODOO**, **CONFIGURATION** — but it is a go-live decision that must be made
+deliberately, and the demo data currently implies the exclusive convention.
+
+#### THE OPEN QUESTION THAT MAY MOOT MOST OF THIS
+
+**Ethiopia may require VAT-registered traders to issue receipts from a certified
+sales register machine (an EFD/fiscal device).** `docs/ethiopian-tax-reference.md`
+§5 records that Regulation **570/2025** brings real-time EFD and QR invoices for
+VAT-registered traders, and CLAUDE.md flags fiscal-device integration as high
+priority for retail — **but neither states whether an ERP-generated receipt is
+legally sufficient on its own.** Zemichael is asking his accountants. **Nothing
+here should be built on either answer.**
+
+**If the answer is YES — a certified device is required:**
+
+- An Odoo POS receipt **is not a legal receipt**, and POS becomes an
+  **integration with a certified device**, not a configuration. That is a
+  completely different size of job: device certification, a driver or middleware,
+  offline behaviour, and a supplier relationship with an accredited vendor.
+- **Findings n-2 and n-3 become moot**, because the legal receipt would be printed
+  by the device, not by Odoo — the TIN and the price convention would be the
+  device's problem.
+- The parts that **stay true regardless** are the ones that matter most: **stock
+  moves on a POS sale** (60 → 55), the invoice path produces an identical ledger
+  entry to a back-office invoice, the session reconciles to 0.00, and **cost of
+  sales still does not post** (n-1). None of those depend on who prints the paper.
+
+**If the answer is NO**, n-2 and n-3 are ordinary defects to fix and POS is close
+to usable for a first client after the setup work described above.
+
+**Outcome: WORKS for stock, VAT and cash reconciliation; ABSENT for cost of sales
+and for any fiscal-device compliance.**
+
+**Could not test in this flow:** the POS user interface itself (everything here
+was driven through the backend ORM, so no screen was exercised and no touch
+workflow, offline mode, or receipt printer was tested); refunds and returns;
+partial and split payments; a second cashier or concurrent sessions; the customer
+display; barcode scanning (`stock_barcode` is `uninstallable` here); and the
+receipt as a rendered artefact, for the reason given in n-2.
+
 ## Tier 2 — summary
 
 All five flows were run. **A second BLOCKER was found in (m)**, and it was not
