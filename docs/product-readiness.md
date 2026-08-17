@@ -734,3 +734,76 @@ delivery of a lot/serial-tracked product (`tracking=none` on all demo products);
 the delivery-note PDF; multi-warehouse; and — because valuation is periodic — any
 COGS or margin figure at all, which is not a gap in the testing but a consequence
 of the configuration described above.
+
+---
+
+### (g) Purchase — RFQ → purchase order → receipt → vendor bill
+
+**Role:** buyer then accountant, as `admin`.
+
+**Steps taken.** RFQ to Derba Midroc for 200 × *Cement PPC Derba 50kg* at 880.00
+(176,000.00 net). Confirmed to a purchase order, validated the receipt Odoo
+created, then generated the vendor bill **from the order** and posted it.
+
+**Measured.**
+
+| Step | Value |
+|---|---|
+| On-hand before | **0.0** |
+| RFQ | `P00003`, draft, untaxed 176,000.00 · tax 26,400.00 · total 202,400.00; line tax `15%` |
+| Confirm | state `purchase`; receipt **`WH/IN/00002`** created, state `assigned` |
+| Receipt validated | state **`done`**; on-hand **0.0 → 200.0** |
+| PO after receipt | `qty_received=200.0`, `qty_invoiced=0.0`, `invoice_status=to invoice` |
+| Bill from order, draft | 202,400.00 |
+| Bill posted | `BILL/26-27/08/0008`, **197,120.00** |
+| Entry | 230100 Goods in Transit **dr 176,000.00** · 221200 VAT Receivable **dr 26,400.00** · 300200 Trade Creditors **cr 197,120.00** · 300600 Withholding Tax Payable **cr 5,280.00** |
+| WHT arithmetic | 176,000 × 3% = **5,280.00** — correct, on the VAT-exclusive base |
+| Three-way match data | PO `P00003`: received **200.0**, invoiced **200.0**, `invoice_status=invoiced`, bill `invoice_origin='P00003'` and linked back to the order |
+| STJ entries after a real receipt | **0** |
+
+**Outcome: WORKS.** The full chain holds, stock rises on the receipt rather than
+on the bill, the quantities match across all three documents, and the bill carries
+the correct Ethiopian withholding. **STOCK ODOO** for the procurement chain,
+**OUR CODE** for the WHT line.
+
+**Register item 13(3) — "invoice against purchase order against delivery note" —
+is answered here, positively:** Odoo already holds the three-way match as data
+(`qty_received` vs `qty_invoiced` vs `invoice_status`, plus the PO↔bill link). The
+manual check accountant 2 performs every month is a *report over data that already
+exists*, not a feature that must be built from nothing. That is a cheap
+differentiator and it is worth recording as such.
+
+**Finding b-1 reconfirmed:** draft 202,400.00 → posted 197,120.00. Same silent
+5,280 appearing only at post.
+
+**Finding b-2 resolved, and it is worse than it looked.** The purchase debits
+`230100 Goods in Transit`, an `asset_current` account, and that account now stands
+at **453,800.00** across all the tenant's bills, with nothing clearing it.
+Traced to source: the product has **no expense account and no income account of
+its own, and no product category** (`categ_id` is `False`), so Odoo falls back and
+resolves to 230100. This is the same root cause as finding f-2 and it should be
+fixed once, in one place.
+
+The consequence for the accountant, stated plainly: **every purchase this company
+makes is being capitalised into a transit asset account, so the P&L shows revenue
+with no cost of sales, and the balance sheet carries a "Goods in Transit" balance
+that only grows.** **Attribution: DEMO DATA produced by OUR CODE** (products
+created by `sapian_demo_trader` without a category), with **STOCK ODOO** supplying
+the fallback. **Severity: SERIOUS** — judged against the go-live scale it is not a
+BLOCKER, because the client can still operate, invoice, pay and file every
+statutory return; but it is the most consequential thing found in tier 1, and no
+demo should be given with it in place.
+
+**Related gap, recorded because it decides whether a real client reproduces this:**
+`data-templates/`, described in CLAUDE.md as *"spreadsheet import templates for
+onboarding"*, contains **only `README.md`**. No import template ships. So there is
+no product-import path that could carry a category column and no evidence about
+what a real client's product data would look like. **Attribution: OUR CODE
+(absent).** **Severity: SERIOUS for onboarding**, and it is what makes f-2/b-2 a
+product question rather than a demo-data question.
+
+**Could not test in this flow:** partial receipts, over-receipt and over-billing
+(the case a three-way-match report exists to catch), vendor price-list handling,
+purchase of a service against a PO, and the RFQ email to the supplier — flow (a)
+established that outbound mail leaves as `OdooBot`, so a supplier RFQ would carry
+the same `From:` and this was not separately measured.
