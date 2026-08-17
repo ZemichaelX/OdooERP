@@ -486,3 +486,170 @@ Transport is missing both, so row 4 cannot separate them); WHT on payment rather
 than on bill; the WHT certificate PDF; and the WHT summary report's figures
 (the `l10n.et.wht.summary` model exists and was not run — it belongs with flow (c)
 and was not reached).
+
+---
+
+### (e) Payroll — hire → wage → run → payslip → payment, with a transport allowance
+
+**Role:** HR/payroll clerk then accountant, as `admin`.
+
+**Steps taken.** Hired a new employee, set a wage, added him to a new August run,
+gave him a **transport allowance** — the case register item 10 records as never
+having been observed — then added a second employee chosen specifically so that
+the *other* limb of the exemption binds. Computed, checked every figure against
+hand arithmetic written down first, confirmed the run, read the posted journal
+entry, exported the bank file and rendered all three PDFs.
+
+**On "contract":** Odoo 19 Community has no `hr.contract`; the wage lives on
+`hr.version` (CLAUDE.md records this). Measured: `emp.version_id` → `hr.version`
+id 9, `wage` 9,000.00. So "hire → contract" is really "hire → version wage", and
+it worked.
+
+**The allowance rules as seeded** (`l10n.et.allowance.type`), all five, each
+carrying its legal source:
+
+| code | rule | cap ETB | cap % of basic |
+|---|---|---|---|
+| `transport` | **capped** | **2,200.00** | **0.25** |
+| `hardship` | exempt | — | — |
+| `medical` | exempt | — | — |
+| `housing` | taxable | — | — |
+| `position` | taxable | — | — |
+
+That is tax reference §4 and CLAUDE.md's allowance list, as configuration with
+effective sources rather than constants. **The `min(25% × salary, 2,200)` rule the
+register asked for is built.**
+
+**Measured — employee 1, basic 9,000 + transport 2,500** (the **2,200 cap** binds,
+since 25% × 9,000 = 2,250 > 2,200). Expected figures written before running:
+
+| Figure | Expected | Measured | |
+|---|---|---|---|
+| gross | 11,500.00 | 11,500.00 | OK |
+| taxable income | 9,300.00 | 9,300.00 | OK |
+| PAYE | 1,475.00 | 1,475.00 | OK |
+| pension employee (7% of **basic**) | 630.00 | 630.00 | OK |
+| pension employer (11%) | 990.00 | 990.00 | OK |
+| net pay | 9,395.00 | 9,395.00 | OK |
+
+Exemption 2,200 of the 2,500, taxable excess 300, so taxable income
+9,000 + 300 = 9,300; PAYE by the shortcut form 0.25 × 9,300 − 850 = **1,475.00**.
+
+**Measured — employee 2, basic 6,000 + transport 2,000** — chosen because here
+**the 25% limb binds** (25% × 6,000 = 1,500 < 2,200). This is the case accountant
+1's "flat 2,200" answer gets wrong, and per tax reference §4 getting it that way
+round *"under-taxes low earners and leaves the employer liable for the shortfall
+plus penalties"*:
+
+| Figure | Expected | Measured | |
+|---|---|---|---|
+| gross | 8,000.00 | 8,000.00 | OK |
+| taxable income | 6,500.00 | 6,500.00 | OK |
+| PAYE | 800.00 | 800.00 | OK |
+| pension employee | 420.00 | 420.00 | OK |
+| net pay | 6,780.00 | 6,780.00 | OK |
+
+**Both limbs of the transport exemption are implemented and both discriminate.**
+Register item 10 said the logic could not be observed because no payslip carried a
+non-taxable allowance; it can now, and it is correct on the harder of the two
+cases. **This is the first observation of that rule working. OUR CODE.**
+
+**Measured — run, journal and artefacts:**
+
+| | Value |
+|---|---|
+| Run | `Payroll 2026-08`, 2 payslips, gross 19,500.00, PAYE 2,275.00, pension ee 1,050.00, pension er 1,650.00, net 16,175.00 |
+| Confirm | state `done`, move `PAY/26-27/08/0001`, state `posted` |
+| Journal entry | 611100 Salaries to permanent staff **dr 19,500.00** · 613100 Contribution to permanent staff **dr 1,650.00** · 300900 PAYE Payable **cr 2,275.00** · 300300 Pension contribution payable **cr 2,700.00** · 300400 Salary payable **cr 16,175.00** |
+| Entry balances | Σdr − Σcr = **0.0** |
+| Pension cross-check | 1,050 employee + 1,650 employer = **2,700** = the single pension payable credit — 18% total, split 7/11, on basic only |
+| PAYE declaration PDF | **28,491 bytes**, `%PDF-`; carries employer TIN 0088776655, per-employee TIN, taxable income and PAYE |
+| Pension schedule PDF | **29,920 bytes**; carries POESSA ID per employee and the `Employee 7% / Employer 11% / Total 18%` columns |
+| Payslip PDF | **30,178 bytes** |
+| Bank file | `salary_transfer_2026_08.csv`, 171 bytes, header + 2 employees + TOTAL row reconciling to 16,175.00 |
+| Identifier warnings | `[]` — both employees had TIN and POESSA ID set, so the warning path stayed correctly quiet |
+
+**Outcome: WORKS** for calculation, posting and the statutory PDFs. The arithmetic
+is exact on both allowance limbs, the entry balances, the pension split
+reconciles, and all three PDFs are real files. Three findings follow.
+
+**Finding e-1 — the payslip PDF reports an exempt allowance as fully taxable.**
+The rendered payslip for the low earner shows:
+
+```
+Earnings   Description                    Amount        Taxable
+           Basic Salary                   6,000.00 Br   Yes
+           Transport allowance August     2,000.00 Br   Yes
+           Gross                          8,000.00 Br
+```
+
+Only **500.00** of that 2,000.00 was taxable — the engine knows it, and computed
+PAYE on 6,500 accordingly. The word **"exempt" does not appear anywhere in the
+payslip** (checked against the rendered text, not the template). So the document
+the employee receives contradicts the calculation behind it, and an employee or
+labour inspector reconciling the payslip by hand cannot arrive at the PAYE shown.
+Tax reference §4 asks explicitly to *"show on the payslip which limit bound"* —
+that is unbuilt, and the column that does exist actively states the wrong thing.
+**Attribution: OUR CODE.** **Severity: SERIOUS** — no figure in the ledger or the
+filing is wrong, but the employee-facing document is, and payslips are the
+document staff argue about.
+
+**Finding e-2 — the bank salary file exports with empty account numbers and does
+not warn.** Both employees I hired have no bank account, and the export produced:
+
+```
+Employee Name,Bank Name,Account Number,Net Pay
+Meseret Bekele — መሰረት በቀለ,,,6780.00
+Tesfaye Alemu — ተስፋዬ አለሙ,,,9395.00
+TOTAL,,,16175.00
+```
+
+`_l10n_et_identifier_warnings()` returned `[]`. Reading its source, it checks
+**employee TIN** and **POESSA pension ID** and nothing else — there is no bank
+check. The six demo employees *do* carry account numbers (`1000200030001`…`6`), so
+the field exists and is normally populated; the failure only appears for a
+newly-hired employee, which is precisely the routine event. A file that the bank
+will reject is produced, named, sized and reported as an export. **This is
+register rule 2 exactly** — the success signal survives the work not having
+happened. **Attribution: OUR CODE.** **Severity: SERIOUS**, and cheap to fix by
+extending the warning function that already exists for the other two identifiers.
+
+**Finding e-3 — WRONG FOR ETHIOPIA: the run has no idea which Ethiopian month it
+belongs to.** The run is named `Payroll 2026-08`; every PDF prints
+`Period: 08/01/2026 – 08/31/2026`. The complete field list of `l10n.et.payroll.run`
+contains **no field matching `ethio`, `ec_` or `filing`** — the search returned
+`[]`. `l10n_et_calendar` is uninstalled in the shipped set.
+
+Tax reference §2 is VERIFIED and unambiguous on this point: the declaration for one
+Ethiopian month is filed during the *following* Ethiopian month, and the mapping to
+the Ethiopian filing month and its window *"is what is mandatory, and it is the
+same for both"* payroll cycles. So the Gregorian **cycle** is legitimate —
+accountant 2 runs it that way deliberately — and the missing **mapping** is not.
+The accountant is left to work out, unaided, that the August 2026 run is filed
+during a particular Ethiopian month and that the window closes on a particular
+day. **Confirms register item 9 by measurement.** **Attribution: OUR CODE
+(absent feature).** **Severity: SERIOUS** — this is the one thing tax reference §2
+calls mandatory, and it is also, per register item 13(4), the thing a
+Gregorian-first competitor cannot do naturally.
+
+**Finding e-4 — what would actually be filed is not what the module produces.**
+Tax reference §2: the monthly filing is **two CSV uploads** — Schedule A
+employment income tax per employee, and a separate pension CSV for the 18%. This
+module produces **two PDFs and one bank CSV**. The only CSV field on the run is
+`bank_export_file`. So the accountant reads figures off a PDF and retypes them
+into the MoR upload. **Attribution: OUR CODE (absent feature) — but blocked on
+information, not on effort**: the register's "Still owed by Zemichael" list records
+that neither accountant has supplied an example of either file, and §2 says
+plainly *"everything about the export is guesswork until then."* **Severity:
+SERIOUS**, and it is the highest-value item in the product per the reference's own
+assessment. **Not a BLOCKER**: a client can file by retyping, as they do today.
+
+**Could not test in this flow:** actually paying the salary (the run posts to
+*300400 Salary payable*; settling that against the bank was not run — it is
+flow (a)'s mechanics applied to a different account, and the November payment of
+PAYE and pension liabilities to MoR/POESSA was likewise not exercised); a
+non-citizen or pension-opt-in employee (`l10n_et_pension_opt_in` exists, untested);
+overtime as a manual input line; a mid-month joiner or leaver and any proration;
+severance; and Amharic payslip rendering (see the font note in the environment
+table — the names above did render as Ethiopic text in the extracted PDF text
+layer, but glyph *appearance* in the PDF is not established here).
