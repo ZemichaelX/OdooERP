@@ -504,6 +504,328 @@ ledger cannot detect a classification error, which is why nothing complained.
 
 ---
 
+*Entries 27–38 were all raised by the 17 Aug readiness assessment
+(`docs/product-readiness.md`), which listed ten items as owed. It is twelve here,
+not ten: the reconciliation item split into a missing UI (28) and a missing
+importer (29), which are a build and a market question respectively, and the
+payments absence (30) was recorded in that assessment as NOT NEEDED YET rather
+than on the owed list. Both were called for explicitly. Padding a list is a fault;
+so is dropping a real item to hit a round number.*
+
+**27. There is no profit & loss, balance sheet, trial balance or general ledger**
+— **BLOCKER**. New 17 Aug, measured (`docs/product-readiness.md` flow (m)).
+
+The build ships **four** `account.report` records and all four are tax reports.
+A search across `ir.actions.act_window`, `ir.actions.client` and
+`ir.actions.report` for Profit / Loss / Balance Sheet / Income Statement / Trial
+Balance / General Ledger returns **NONE**, and no menu exists for any of them.
+`account_reports`, the Enterprise module that carries them, is **not in the addons
+path**.
+
+An Ethiopian PLC needs a P&L and a balance sheet for its annual business-profit
+return and for its bank. Correct VAT and correct payroll do not substitute. This
+was invisible from tier 1 because every tier 1 flow reads the ledger directly.
+
+Computed by hand from posted lines, the books **do** balance (assets − liabilities
+− equity − profit = 0.00 before and after the entry-26 experiment), so this is a
+missing *presentation* layer, not a broken ledger.
+
+CLAUDE.md's Epic B says of statements: *"Skip: … IFRS statement engine (use
+Odoo/OCA reports)."* **That assumption was never closed** — no OCA financial
+report module is vendored (`vendor/` holds only `oca_web`) and Community ships
+none.
+
+**Attribution: STOCK ODOO (Community/Enterprise split) + OUR CODE (an unclosed
+planning assumption).**
+
+**Decision pending, with the coverage facts measured 17 Aug from the OCA `19.0`
+branches (nothing vendored):**
+
+| | `account_financial_report` | `mis_builder` |
+|---|---|---|
+| General ledger | **YES** | via KPI expressions |
+| Trial balance | **YES** | via KPI expressions |
+| Profit & loss | **NO** | engine only, no template ships |
+| Balance sheet | **NO** | engine only, no template ships |
+
+`account_financial_report` provides Aged Partner Balance, General Ledger, Journal
+Ledger, Open Items, Open Items Partner, Trial Balance and VAT Report; a search of
+the module for profit/balance-sheet terms returns nothing. `mis_builder` ships
+**no report templates at all** — its only `mis.report` record is
+`mis_report_expenses` in `mis_builder_demo` — so it is a framework in which a P&L
+must be authored against the `et` chart, which is work we do either way.
+
+Both look maintained: 34 and 35 non-translation commits in 90 days, 17 and 6
+distinct non-bot authors, manifests at `19.0.0.0.19` and `19.0.1.2.0`, last
+substantive commits 29 Jul and 3 Aug 2026. Both are **AGPL-3**, where
+`web_responsive` is LGPL-3 — a different obligation for a sold product, to be
+checked by someone qualified before shipping.
+
+**Cost not previously counted: this is four repos, not two.** Both depend on
+`date_range` (OCA/server-ux) and `report_xlsx` (OCA/reporting-engine), neither of
+which is in Odoo core.
+
+**Recommendation, not a decision:** take GL and trial balance from OCA — pure
+plumbing with no Ethiopian character worth owning — and **build P&L and balance
+sheet ourselves in the shape of the VAT report's GL tie-out**, which prints the
+total, the ledger's total and `OK` beside them. Both accountants said they re-add
+computed numbers by hand; a statement that proves it reconciles is the thing
+neither Odoo nor OCA nor GraceERP does.
+
+**28. Bank reconciliation has no screen — but Community already finds the matches**
+New 17 Aug, measured (flow (i)). **Half defect, half product opportunity.**
+
+`account_accountant`, which carries Odoo's bank-reconciliation widget, is
+Enterprise and absent. Measured on this build: **no reconciliation menu**
+(`ir.ui.menu` search returns `[]`), and the only related action is
+*"Reconciliation Models"*, which configures rules rather than doing the work. A
+statement line posts `Bank` dr / `Bank Suspense` cr, and clearing it means opening
+the entry, repointing the suspense line's account and partner, saving, then
+selecting the pair in the ledger and reconciling.
+
+**Measured effort:** 2 operations per matchable line, 3 for a line needing an
+account decision — **7 operations for a 4-line statement**. Derived (not observed
+in a browser, and labelled as derived): ~10–12 clicks per line, so **600–2,400
+interactions a month** on a 60–200-line statement. This is accountant 2's stated
+**longest monthly job**.
+
+**The opportunity, and why this entry is not just a complaint:** the hard half is
+already solved in Community. Odoo's own `_get_default_amls_matching_domain`
+narrowed 23 candidates to **exactly one** on **3 of 4** lines with no help. What
+Enterprise sells is the *screen* that shows that suggestion and accepts it in one
+click. A one-click accept screen over machinery that already exists takes the job
+from ~10–12 interactions per line to ~1.
+
+Two cheap wins beside it: the seeded **`Bank Fees` reconcile model is
+`trigger=manual`** and could be `auto_reconcile` with Ethiopian bank-charge
+wording (CBE, Awash, Dashen); and see entry 29.
+
+Proof the manual path works: the whole statement cleared, suspense to **exactly
+0.00**, ledger balanced at 0.00 over 91 lines.
+
+**Attribution: STOCK ODOO (Community/Enterprise split).** Nothing of ours is
+broken; we inherit the gap silently. **Severity: SERIOUS**, and the strongest
+build-rather-than-fix candidate found.
+
+**29. No bank-statement importer exists in Community at all** — commercial
+New 17 Aug, measured (flow (i)). **An absence in the platform, not in us.**
+
+Odoo 19 Community's addons contain **no statement import module whatsoever** — no
+OFX, no QIF, no CAMT; `account_bank_statement_import` is not present under any
+name. The only route in is the generic `base_import` CSV/XLSX importer against
+`account.bank.statement.line`, or typing.
+
+**Why this is commercial rather than a defect:** the formats that would matter here
+are not OFX or CAMT anyway — they are **what Ethiopian banks actually issue**
+(CBE, Awash, Dashen, Abyssinia), which no upstream importer will ever cover
+because no upstream author has those files. An importer that reads Ethiopian bank
+exports with a saved column mapping is a differentiator no global vendor will
+build, it removes the typing that precedes entry 28's clicking, and together the
+two turn the longest monthly job into a short one.
+
+**Owed first, before any build: sample statement exports from the banks the client
+actually uses.** This sits with the two e-Tax CSVs on the "Still owed by
+Zemichael" list — the same shape of problem, and the same rule: we cannot build a
+parser from a description.
+
+**Severity: NOT NEEDED YET** to go live (statements can be typed), **but high
+commercial value.**
+
+**30. Zero payment providers are enabled, and no Ethiopian provider exists in
+Odoo** — commercial
+New 17 Aug, measured (flow (l)). **Also an absence in the platform, not in us.**
+
+The customer portal works: a portal user logs in, sees **only their own** invoices
+(another customer's invoice correctly redirects to `/my`), and downloads a real
+**217,264-byte** PDF. What they cannot do is pay.
+
+- **24** payment providers ship (Wire Transfer, Adyen, Stripe, …); **0** are
+  enabled — every one is `state=disabled`.
+- Searching every provider for `telebirr` / `CBE` / `Chapa` / `Amole` / `birr`
+  returns **nothing**. **No Ethiopian payment provider exists in Odoo at all.**
+- On an unpaid invoice the portal renders **no payment section whatsoever**, so
+  the customer is not even told that paying is unavailable.
+
+Telebirr is how a large share of Ethiopian consumers and small businesses actually
+move money, and no global ERP will add it. CLAUDE.md already defers payments until
+a client signs; this entry records the size and shape of the gap so that deferral
+stays a decision rather than an oversight.
+
+**Severity: NOT NEEDED YET** for a first client whose customers pay by transfer
+and cheque — the portal is a working sales asset today without it.
+
+**31. The VAT credit carried forward is never carried, and a declaration has no
+state**
+New 17 Aug, measured (flow (c)). Two defects in one model.
+
+August's declaration ends *"VAT credit carried forward 8,550.00"*. The September
+declaration, created immediately after, reports **output 0.00, input 0.00, net
+0.00**. The complete field list is `company_id, csv_export_file,
+csv_export_filename, currency_id, date_from, date_to, input_vat_total, name,
+net_vat, off_chart, output_vat_total` — **no field for a brought-forward credit**
+(a search for forward/carry/previous/opening returns `[]`). Each month is computed
+in isolation and the 8,550.00 the client is owed exists only as a sentence in last
+month's PDF, tracked in the accountant's own Excel — which is the thing the
+product's pitch says it removes.
+
+Second: there is **no `state`, `locked`, `filed` or `submitted` field**, and
+creating a second 1–31 August declaration succeeded — two records, same name. So
+there is no record of *what was filed*, and a figure can be regenerated after
+filing and silently disagree with the return the MoR holds.
+
+**Attribution: OUR CODE** (`l10n_et_reports`). **Severity: SERIOUS**, not a
+go-live blocker — a first month can be filed from a freshly generated report.
+
+**Worth preserving in whatever fix lands:** this report's **GL tie-out block**
+(`Output VAT vs GL,300700,4950.00,4950.00,OK`) is the best thing found in the
+whole assessment and the model for entry 27.
+
+**32. Withholding appears only at posting, so a draft bill's total is wrong**
+New 17 Aug, measured (flows (b) and (g)).
+
+A vendor bill for 90,000.00 of goods reads **103,500.00** in draft and posts at
+**100,800.00**; a 176,000.00 bill reads 202,400.00 and posts at 197,120.00.
+Nothing in the draft shows the withholding about to be deducted, because
+`_l10n_et_apply_wht` runs in `_post`.
+
+The posted figure is the correct one, so no ledger number is misstated. The cost
+is that the **pre-post check an accountant actually performs** — accountant 2's
+manual voucher check in item 13, matching the bill against the supplier's invoice
+before posting — is done against a total the system will not use.
+
+**Attribution: OUR CODE** (`l10n_et_base`). **Severity: SERIOUS.** Fix shape:
+evaluate on change of lines/partner/date as well as at post, or show the pending
+withholding on the draft as an informational line; the engine is already
+idempotent by design, which makes re-evaluation safe.
+
+**33. No Ethiopian filing month exists anywhere in the product**
+New 17 Aug, measured (flows (c) and (e)). **Extends item 9 rather than replacing
+it** — item 9 established that the payroll cycle is a business choice and the
+mapping to the Ethiopian filing month is mandatory; this entry measures that the
+mapping is absent from the VAT side too.
+
+- `l10n.et.payroll.run`: complete field list contains **no field** matching
+  `ethio`, `ec_` or `filing`. The run is named `Payroll 2026-08` and every PDF
+  prints `Period: 08/01/2026 – 08/31/2026`.
+- `l10n.et.vat.declaration`: same — bounded by Gregorian `date_from`/`date_to`,
+  named `2026-08`, PDF printing `08/01/2026 – 08/31/2026 (monthly, Proc
+  1341/2024)`.
+- `l10n_et_calendar` is **uninstalled** in the shipped set, so no Ethiopian date
+  exists in the database at all.
+
+For payroll the reference is VERIFIED and unambiguous: the declaration for one
+Ethiopian month is filed during the *following* Ethiopian month, and the mapping
+*"is what is mandatory, and it is the same for both"* cycles.
+
+**For VAT the reference is silent on the period basis, and the product has
+silently chosen the Gregorian reading.** If the MoR's VAT period is an Ethiopian
+month, every declaration is mis-sliced by about a week at both ends — and the
+error is undetectable from inside, because the figures tie out perfectly to a GL
+sliced the same wrong way. **A tie-out cannot catch a period boundary.** That is a
+question for the MoR call, not something to build on.
+
+**Attribution: OUR CODE (absent feature).** **Severity: SERIOUS**, and per item
+13(4) it is the one thing a Gregorian-first competitor cannot do naturally.
+
+**34. `data-templates/` ships only a README — no import templates exist**
+New 17 Aug, measured (flow (g)). CLAUDE.md describes `data-templates/` as
+*"spreadsheet import templates for onboarding"*. The directory contains **only
+`README.md`**.
+
+So there is no supported path for getting a client's products, partners or opening
+balances into a new tenant, and — relevant to entry 26 — no template that could
+carry product accounting fields. Onboarding currently collects a company profile
+and module picks (entry 25) and then stops.
+
+**Attribution: OUR CODE (absent).** **Severity: SERIOUS for onboarding**, and it
+is what turns entry 26 from a demo-data curiosity into something every client
+meets.
+
+**35. Every internal user can read product cost prices**
+New 17 Aug, measured (flow (h)) through an authenticated session, not a code read.
+
+A user holding **only** `base.group_user` — no accounting, sales, purchase or HR
+rights — successfully called `product.product search_read` with `standard_price`
+and got all 12 products with buying **and** selling prices (Binding Wire 200.00,
+Cement OPC Dangote 1,000.00, Cement PPC Derba 910.00).
+
+For a trading company **the buying price is the margin**, and it is readable by
+any employee with a login — a storekeeper, a driver, a new hire.
+
+**Attribution: STOCK ODOO default.** **Severity: SERIOUS for this business**, and
+it is a **go-live configuration decision** (restrict the cost field or the product
+form) rather than a code defect. Recorded because a first client will not think to
+ask, and because it is the kind of thing an owner discovers after it has gone
+round the yard.
+
+**Everything genuinely sensitive was correctly blocked**, and that deserves saying:
+payslips, wages via `hr.version`, journal entries, invoices, orders, journals, tax
+configuration, and — field by field — employee TIN, pension ID, private address,
+bank account, birthday and ID number. Our own `l10n_et_tin` and
+`l10n_et_pension_id` are group-restricted alongside Odoo's own, which is CLAUDE.md
+rule 8 honoured rather than asserted.
+
+**36. The customer-facing portal page's `<title>` is `Odoo`, and the bot is still
+`OdooBot`**
+New 17 Aug, measured (flow (l)) on the invoice page a client's customer sees.
+
+- `<title>` renders as **`Odoo`**. The footer is correct — `Copyright © Selam
+  General Trading PLC` and **`Powered by SapianERP`** — so the theme reaches the
+  body and not the title tag. This is a **new instance** of the branding rule on an
+  outward-facing surface, not covered by items 3, 4 or 5, which concern mail
+  templates and Discuss.
+- `res.users` uid 1 is `name='OdooBot'`, login `__system__`, and the string
+  **`SapianBot` appears nowhere in `addons/`**. The register's branding rule states
+  the bot *is* `SapianBot`; on current master that is a decision, **not built** —
+  consistent with item 5 recording #49 as red and unmerged. The portal invoice page
+  shows `-- OdooBot --` in the chatter signature, reaching the client's customer
+  exactly as the branding rule's "accepted consequence" paragraph anticipated,
+  except with Odoo's name instead of ours.
+
+**Attribution: OUR CODE.** **Severity: COSMETIC** — but on the client's customer's
+browser tab. This entry **confirms #49 is still outstanding by measurement**; it
+does not replace it.
+
+*Guard against a false reading:* the same page shows `Salesperson: OdooBot`. That
+is an **artefact of the assessment**, which created every document through a script
+running as `SUPERUSER_ID` (uid 1) — not a product defect.
+
+**37. A delivery drives stock negative with no warning and no block**
+New 17 Aug, measured (flow (f)). `Rebar 16 mm` had **0.0** on hand; a delivery of
+40 units validated cleanly to **−40.0**. Odoo permits negative stock by default.
+
+For a trader this is how *goods delivered but never received* enters the data —
+the twin of item 13(3)'s *goods invoiced but never delivered*, which was also
+confirmed by measurement in the same flow: **posting a customer invoice for 25
+units moved stock by exactly 0.00.**
+
+**Attribution: STOCK ODOO (default configuration).** **Severity: SERIOUS**, and it
+is a **go-live configuration and training decision** — someone must decide whether
+counter sales go through a delivery, and the client must be taught that an invoice
+is not a goods issue.
+
+**38. An employee cannot read their own payslip**
+New 17 Aug, measured (flow (k)). An employee record was linked to a real user
+account, the way an employer enabling self-service would; that user then got
+**AccessError** reading `l10n.et.payslip`.
+
+`l10n.et.payslip` inherits `['base']` — **no `portal.mixin`**, no mail thread — and
+a search of all of `addons/` for `/my/` portal controllers returns **nothing**.
+There is no owner-scoped record rule, only the HR-group ACL that correctly blocked
+the plain employee in flow (h). So there is nothing to switch on.
+
+Alongside it: `hr_holidays`, `hr_expense` and `hr_attendance` are **uninstalled**,
+so there is no time-off request and no expense claim either. Those are
+**CONFIGURATION** — the modules are present in the addons path, stock Odoo and
+free. The payslip half is **OUR CODE** and is a build.
+
+**Severity: NOT NEEDED YET** for a first client with seven employees who will be
+handed printed payslips. Recorded so the absence is a decision on the record: the
+moment a client with fifty staff asks for self-service, the payslip half is not a
+setting.
+
+---
+
 ## Closed
 
 *(Numbers are identities and do not renumber when an entry moves here. Item 10

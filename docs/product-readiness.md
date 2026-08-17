@@ -1597,7 +1597,10 @@ allowance as taxable), **24** (bank salary file exports empty account numbers
 without warning), **25** (onboarding collects no company email or mail server),
 and **26** (the Goods in Transit BLOCKER, root cause corrected in flow (m)).
 
-**Still owed, not yet written:**
+**All twelve now written**, as entries **27–38**, on 17 Aug. The list below said
+ten; it became twelve because the reconciliation item split into a missing UI (28)
+and a missing importer (29), and the payments absence (30) was added — both at the
+owner's direction, both commercial rather than defects. The original ten:
 
 1. **No profit & loss, balance sheet, trial balance or general ledger exists in
    the build.** BLOCKER. Flow (m). The plan's *"use Odoo/OCA reports"* was never
