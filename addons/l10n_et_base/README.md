@@ -18,6 +18,28 @@ Epic 3 of `docs/plan-2026/10-claude-code-roadmap.md`; functional spec
 - Core already provides 15% VAT (sale + purchase), 0% and exempt codes;
   this module adds the **Zero-Rated** and **VAT Exempt** fiscal positions and
   maps the core taxes onto them (Proc 1341/2024).
+- **Default expense account: `5111` Cost of Goods and Services, replacing core's
+  `2301` Goods in Transit.** Core `l10n_et` names a current *asset* as the
+  company's default expense account, and Odoo's chart loader copies that into the
+  product-category default. Since `_get_product_accounts` resolves
+  product → category → company, every product without an account of its own booked
+  its purchases into an asset: the P&L showed revenue with no cost of sales and the
+  balance sheet carried a transit balance that only grew. **The books still
+  balanced**, which is why nothing complained — a balanced ledger cannot tell a
+  misclassified debit from a correct one.
+
+  Fresh chart loads take the corrected value from the template merge; companies
+  that loaded the chart earlier are moved by
+  `_l10n_et_base_fix_default_expense_account`, called from the post-init hook and
+  from the `19.0.1.5.0` migration. That repair moves **only** a company still
+  sitting on the core default, so a client who chose their own expense account is
+  left alone.
+
+  **This is core Odoo's defect, not ours, and it affects every Odoo-based
+  Ethiopian deployment** — `odoo/addons/l10n_et/models/template_et.py`, the
+  `expense_account_id` key of `_get_et_res_company`. Reported upstream; the
+  override here is the interim measure, not the destination. See defect register
+  entry 26.
 
 ### Withholding tax automation (Aug 2025 rules)
 - New effective-dated config model `l10n.et.wht.config` (rates, thresholds,
@@ -89,7 +111,15 @@ tab.
 ## Tests
 - Fast (no Odoo): `pytest tests_fast/` — reference calculator golden values.
 - Integration: `--test-enable -i l10n_et_base` on a scratch DB — WHT postings,
-  cash cap, partner compliance, effective dating, trial balance.
+  cash cap, partner compliance, effective dating, trial balance, and the default
+  expense account (`test_expense_account_default.py`).
+- The expense-account guard was **proved red before the fix**: 4 of 4 failed on
+  the pre-fix tree, reporting *"a posted vendor bill for 54,000.00 of goods landed
+  in 230100 (Goods in Transit), typed 'asset_current'"* and *"posting a 54000.00
+  purchase moved the derived profit & loss by 0.00"*. After the fix, 71 tests pass
+  with 0 skipped on **both** paths that matter — a fresh `-i` install and a `-u`
+  upgrade — because a template change applies at install and is skipped at
+  upgrade.
 
 ## Follow-ups (out of this epic)
 Withholding on dividends, interest, royalties, management and technical fees —

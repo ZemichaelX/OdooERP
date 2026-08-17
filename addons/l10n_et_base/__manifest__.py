@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     "name": "Ethiopia Accounting Base (SapianERP)",
-    "version": "19.0.1.4.0",
+    "version": "19.0.1.5.0",
     "summary": "Ethiopian chart-of-accounts additions, VAT fiscal positions, "
     "threshold-driven withholding tax automation and the Proc 1395/2025 "
     "cash-payment cap. See README.md; re-verify all rates with the "

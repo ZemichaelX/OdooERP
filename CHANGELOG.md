@@ -4,6 +4,37 @@ All notable changes to SapianERP. Epics per `docs/plan-2026/10-claude-code-roadm
 
 ## [Unreleased]
 
+### Ethiopian companies booked every purchase into an asset (2026-08-17)
+Core `l10n_et` names **`2301` Goods in Transit**, an `asset_current` account, as
+the company's default expense account. Odoo's chart loader copies that into the
+product-category default, and `_get_product_accounts` resolves
+product → category → company — so every product without an account of its own
+booked its purchases into a current asset.
+
+The profit & loss account therefore showed revenue with **no cost of sales**, and
+inventory never reached the balance sheet. Nothing complained, because **the books
+still balanced**: a balanced ledger cannot tell a misclassified debit from a
+correct one. Measured on a demo tenant: `230100` at **453,800.00**, the
+inventory-valuation journal **empty**, and a single 54,000.00 purchase overstating
+reported profit by **54,000.00**.
+
+`l10n_et_base` now points the default at **`5111` Cost of Goods and Services**
+through the template merge, and moves existing companies with
+`_l10n_et_base_fix_default_expense_account` (post-init hook + `19.0.1.5.0`
+migration) — **only** those still on the core default, so a client's own choice
+survives.
+
+Proved red first: **4 of 4** guards failed on the pre-fix tree, including
+*"posting a 54000.00 purchase moved the derived profit & loss by 0.00"*. Green on
+**both** install paths afterwards — fresh `-i` and `-u` upgrade, 71 tests, 0
+failed, 0 skipped — because a template change applies at install and is skipped at
+upgrade, and CI installs while clients upgrade.
+
+**Core Odoo's defect, not ours: every Odoo-based Ethiopian deployment has it**,
+competitors included. Reported upstream; this override is the interim measure.
+Defect register entry 26.
+
+
 ### The labelled sidebar (2026-08-15)
 The app rail becomes a sidebar: icon **and label**, 200px expanded / 56px
 collapsed, 44px rows, 13px/600 labels, and a real collapse toggle. Built from
