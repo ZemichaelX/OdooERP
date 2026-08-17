@@ -916,3 +916,65 @@ rule 3 cares most about; the accountant and salesperson group combinations a rea
 client would actually use — only the plain-employee floor was tested, so nothing
 here says whether an *accountant* role is scoped correctly; and password policy,
 2FA and session expiry.
+
+---
+
+## Tier 1 — summary
+
+**All eight flows were run. None was skipped. No BLOCKER was found**, on the
+scale defined above — the client can operate every core flow and can file every
+statutory return, though on two of them by retyping figures a human read off a
+PDF.
+
+### What works, with the measurement that proves it
+
+| Flow | Proof |
+|---|---|
+| (a) Invoice → email → payment | Ledger balances to 0.00 over 30 lines; customer balance +37,950.00 then −37,950.00; 36,799-byte PDF attached to a message captured at the SMTP boundary |
+| (b) Vendor bill → pay | 90,000 + 13,500 VAT − 2,700 WHT = 100,800 paid; the tax reference §6 worked example exactly |
+| (c) VAT for a period | Output 4,950.00 / input 13,500.00 reconciled **twice** independently against the GL, and printed with an `OK` tie-out block on the report itself |
+| (d) Withholding, purchases | Four discriminating cases: under-threshold goods and services withheld nothing; over-threshold services withheld 450.00; a no-TIN supplier withheld 30% = 15,000.00 |
+| (e) Payroll | Both limbs of the transport exemption exact on 11 hand-computed figures; entry balances; pension 7% + 11% = 2,700 on basic only; three PDFs rendered |
+| (f) Sales chain | Quotation → delivery (stock 0 → −40) → invoice → paid, invoice total equal to order total |
+| (g) Purchase chain | RFQ → receipt (stock 0 → 200) → bill with WHT 5,280.00; three-way match data present and consistent |
+| (h) Access control | A real HTTP session as a plain employee is refused payslips, wages, journal entries, orders, tax config, and every sensitive HR field |
+
+### The three best things in the product, on this evidence
+
+1. **The VAT report's GL tie-out block.** It answers the exact distrust both
+   accountants described, and it already ships.
+2. **The withholding engine on purchases.** Effective-dated configuration,
+   per-supply-kind thresholds, a punitive path that discriminates, and the 3%
+   taken on the VAT-exclusive base. This is the part an Ethiopian accountant
+   would recognise as written by someone who knows the rule.
+3. **The transport-allowance exemption**, correct on the limb that is easy to get
+   wrong, and observed working for the first time here.
+
+### Findings, ordered by severity
+
+| # | Finding | Attribution | Severity |
+|---|---|---|---|
+| **f-2 / b-2 / g** | **12 of 12 products have no product category**, so purchases capitalise into `230100 Goods in Transit` (now 453,800.00), there is no COGS, and inventory is off the balance sheet | DEMO DATA via OUR CODE + STOCK ODOO fallback | **SERIOUS** (worst found) |
+| **c-4 / e-4** | What the client actually files is still unknown — no MoR form or upload example exists, so the VAT CSV layout and the two payroll CSVs are guesswork | Blocked on INFORMATION, already on the register's owed list | **SERIOUS**, highest value |
+| **e-3 / c-3** | No Ethiopian filing month anywhere; payroll and VAT periods are Gregorian and the mandatory mapping is absent | OUR CODE (absent) | **SERIOUS** |
+| **e-1** | The payslip PDF prints an exempt allowance as `Taxable: Yes`; the word "exempt" never appears | OUR CODE | **SERIOUS** |
+| **e-2** | Bank salary file exports with empty account numbers and **does not warn** — a success signal that survives the work not happening (register rule 2) | OUR CODE | **SERIOUS** |
+| **d** | Sale-side withholding is entirely manual: no withholding-agent flag, no company setting, PLC and walk-in invoices identical | OUR CODE (absent) | **SERIOUS** |
+| **c-1** | The VAT credit carried forward is stated but never carried; September ignored August's 8,550.00 | OUR CODE | **SERIOUS** |
+| **c-2** | Two declarations can exist for one month; no `state`, so there is no record of what was filed | OUR CODE | **SERIOUS** |
+| **a-1** | Invoice email to the client's customer leaves as `OdooBot <odoobot@example.com>`; onboarding collects no email and no mail server | OUR CODE (onboarding gap) + CONFIGURATION | **SERIOUS** |
+| **b-1** | Withholding appears only at posting, so the draft total (103,500) differs from the posted total (100,800) with nothing shown | OUR CODE | **SERIOUS** |
+| **g** | `data-templates/` ships only a `README.md` — no import templates exist | OUR CODE (absent) | **SERIOUS** for onboarding |
+| **h-2** | Every internal user can read product cost prices, i.e. the margin | STOCK ODOO default | **SERIOUS** for this business; a CONFIGURATION decision |
+| **f-1** | Delivery drove on-hand to −40 with no warning or block | STOCK ODOO default | **SERIOUS**; a CONFIGURATION decision |
+| **f (control)** | Posting an invoice moves stock by 0.00 — confirmed by measurement | STOCK ODOO by design | Training/process, not code |
+| **h-1** | Every internal user can list all 693 modules | STOCK ODOO | **COSMETIC** |
+| **h-3** | The SapianERP app opens the Module Catalog for plain employees too | OUR CODE | **COSMETIC** |
+| — | Every module README renders as reStructuredText errors during install (register item 6 seen again here) | OUR CODE | **COSMETIC** |
+
+### The one thing to fix first
+
+**Product categories.** One configuration decision — categories with income,
+expense and (if perpetual) valuation accounts — closes b-2, f-2 and the
+Goods-in-Transit balance at once, and it is what stands between this tenant and a
+P&L that shows a gross margin. It is also the cheapest item on the list.
