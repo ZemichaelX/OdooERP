@@ -1001,3 +1001,130 @@ stands between this tenant and a P&L that shows a gross margin.
 
 It is both **the cheapest item on this list and the only BLOCKER on it.** Those
 two facts are independent, and the second is the one that decides the queue.
+
+---
+
+## Tier 2 — needed soon
+
+Run after tier 1 was complete. Same rules: measured outcomes, attribution,
+severity for a first client, and a named list of what could not be reached.
+
+**One environment event, recorded because register rule 3 exists.** Between
+tier 1 and tier 2 the container's Postgres stopped and had to be restarted; it
+recovered through WAL redo. Nothing was measured while it was down — the runner
+aborted with `connection refused` rather than reporting a failure, which is the
+distinction rule 3 is about. The database was then checked before any tier 2
+measurement was trusted: **24 posted moves, 2 payroll runs, 8 payslips, ledger
+Σdr − Σcr = 0.00 across 83 lines, `INV/26-27/0003` present, Goods in Transit
+still 453,800.00.** Intact.
+
+---
+
+### (i) Bank statement import and reconciliation
+
+Accountant 2's **longest monthly job** (register item 13, tax reference §5). The
+brief asks for more than pass/fail: how much work is a month, and could the
+product make it shorter.
+
+**Role:** accountant, as `admin`.
+
+**Steps taken.** Built a month of bank activity as a real statement — *CBE August
+2026*, four lines chosen to be the mix an Addis trader actually gets: two customer
+receipts that should match posted payments exactly, one supplier payment, and one
+bank service charge that matches nothing. Measured what the system proposes on its
+own, then reconciled all four and read the suspense account back.
+
+**Measured — what exists to do the job with:**
+
+| | Value |
+|---|---|
+| Statement import modules (OFX / QIF / CAMT) | **none exist** — no such module in Odoo 19 Community's addons at all |
+| Reconciliation **widget** | **none** — `account_accountant` (Enterprise) is not in the addons path |
+| Reconciliation **menu** | **none** — search of `ir.ui.menu` for "reconcil" returns `[]` |
+| Only reconciliation action | *"Reconciliation Models"* → `account.reconcile.model`, i.e. configuring rules, not doing the work |
+| Reconcile models seeded | 2: *Internal Transfers* and *Bank Fees* (`match_label=contains`, param `'Bank Fees'`), **both `trigger=manual`** |
+| What a statement line posts | `211001 Bank` **dr** / `211002 Bank Suspense` **cr** — the suspense line is what a human must repoint |
+
+**Measured — what the system can already work out for itself.** Odoo's own
+candidate domain (`_get_default_amls_matching_domain`, which *is* in Community)
+was run against each line:
+
+| Statement line | Amount | Candidates | Exact-amount matches | Match found |
+|---|---|---|---|---|
+| MEBRAT CONSTRUCTION PLC TRF | 37,950.00 | 23 | **1** | `PBNK1/26-27/0001` |
+| ABYSSINIA HARDWARE RTGS | 8,878.00 | 23 | **1** | `PBNK1/26-27/0003` |
+| DERBA MIDROC PAYMENT | −100,800.00 | 23 | **1** | `PBNK1/26-27/0002` |
+| SERVICE CHARGE AUG | −350.00 | 23 | 0 | — needs a human |
+
+**3 of 4 lines have exactly one unambiguous counterpart, and Community already
+finds it.** No partner was guessed on any line (`partner_id` empty on all four).
+
+**Measured — the reconciliation itself, done the only way Community allows:**
+
+| | Value |
+|---|---|
+| Path per matchable line | repoint the suspense line's `account_id` (and partner) to the counterpart account → save → select the pair in the ledger → reconcile |
+| Result, line 1 | statement line `is_reconciled=True`, payment line `reconciled=True` |
+| `211003 Outstanding Receipts` | 46,828.00 → **8,878.00** (−37,950.00, exactly the matched payment) |
+| All four lines | **0 of 4 unreconciled** |
+| `211002 Bank Suspense` at the end | **0.00** |
+| Whole ledger | Σdr − Σcr = **0.00** across 91 lines |
+
+**Outcome: WORKS, but by hand.** The suspense account reaching **exactly 0.00** is
+the discriminating measure here — a partly-done reconciliation leaves a residue,
+so this is a result that cannot be produced by doing nothing.
+
+#### How much work is a month?
+
+**Measured operations**, not guessed: **2 distinct edit operations** for each of
+the three matchable lines (repoint the account and partner; reconcile the pair)
+and **3** for the bank charge (choose an expense account, which is a decision, not
+a lookup). **7 operations for a 4-line statement.**
+
+Translating to the UI — **this part is a derived estimate, not a measurement**,
+and is labelled as such because I drove the ORM rather than a browser. Each
+operation costs several interactions in the Community list/form UI: open the
+entry (1), click into the account cell and pick an account (2–3), set the partner
+(2), save (1), then navigate to the ledger, filter, select both lines and
+reconcile (4–5). That is **roughly 10–12 clicks per statement line**.
+
+A small Addis trader's bank statement runs to perhaps 60–200 lines a month. At
+that rate the job is **on the order of 600–2,400 interactions per month**, and it
+is done by the person who told us it is already her longest job.
+
+#### Could the product make that job shorter? Yes, and cheaply — this is a reason to buy
+
+This is the strongest product opportunity found in the whole assessment, and the
+reason is the gap between two measured facts:
+
+1. **The hard part is already solved in Community.** Finding the counterpart is
+   the difficult, error-prone half, and `_get_default_amls_matching_domain`
+   narrowed 23 candidates to exactly 1 on 3 of 4 lines with no help.
+2. **The easy part is missing.** What Enterprise sells in `account_accountant` is
+   the *screen* that shows that suggestion and lets you accept it with one click.
+   That screen is absent, so a Community client does by hand a job the engine
+   underneath has already done.
+
+A one-click accept-the-suggestion screen over machinery that already exists would
+take this from ~10–12 interactions per line to ~1, which on a 200-line month is
+the difference between a day's work and twenty minutes. Two further cheap wins
+sit beside it: the seeded **`Bank Fees` reconcile model is set to `trigger=manual`
+and could be `auto_reconcile`** with Ethiopian bank-charge labels (CBE, Awash,
+Dashen wording) so recurring charges never reach a human; and **no statement
+importer exists at all**, so an Ethiopian-bank CSV/XLSX importer with a saved
+column mapping removes the typing that precedes all of the above.
+
+**Attribution: STOCK ODOO (Community/Enterprise split), not a defect in our
+code.** Nothing here is broken; the capability is simply on the other side of
+Odoo's paywall, and our product currently inherits the gap silently.
+**Severity: SERIOUS** for a first client — the work is real and monthly — and it
+is the item on this list most likely to be worth building rather than fixing.
+
+**Could not test in this flow:** an actual CSV/XLSX import through `base_import`
+into `account.bank.statement.line` (the generic importer exists and was not
+exercised — so "import works" is **untested**, only "no bank-format importer
+exists" is measured); partial and multi-invoice matches, which are where a widget
+earns most of its keep; foreign-currency statement lines; the statement's
+`balance_end_real` check against a real closing balance, since this scratch
+statement opened and closed at 0.00; and the click counts themselves, which are
+derived from measured operations rather than observed in a browser.
