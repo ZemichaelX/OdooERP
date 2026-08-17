@@ -316,6 +316,90 @@ launcher-defaults provisioning call — installing the module is not enough.
 
 ---
 
+**23. A partial GitHub outage is a total CI outage for us, because five jobs
+have no git** — hardening item, its own PR
+
+**Not a defect in this repository, and nothing here is broken by it.** On
+17 Aug 2026 a GitHub incident opened at **13:40 UTC**: *"Archive downloads and
+raw repository content downloads are experiencing an approximate 50% error
+rate."* Archive download is exactly the call `actions/checkout` makes when git
+is absent, so five of our six CI jobs lost their checkout while the sixth
+carried on.
+
+The clock is what identifies the cause, and it rules out every candidate that
+lives in a branch:
+
+| Run | Started (UTC) | Result |
+|---|---|---|
+| master CI #131 | 12:33 | green, 11m19s |
+| #49's run 132 | 12:51 | container jobs checked out and ran; 11m41s |
+| **incident opens** | **13:40** | |
+| #51's run 133 | 14:11 | five jobs dead at checkout; **2m02s** |
+
+Same branch content, same `pull_request` event, same repo settings on either
+side of 13:40. **Zemichael did not change the Workflow permissions setting**, and
+the `Resource not accessible by integration` string in the annotations is the
+incident, not a token — do not record a permissions lesson from this. `ci.yml`
+is byte-identical between master and #51, and its checkout steps are identical
+to #49's, so the branch was never a candidate either.
+
+**The real exposure, argued on resilience and not on today's red:** five jobs
+(`integration-tests`, `calendar-standalone`, `theme-with-website`, `rail-render`,
+`launcher-defaults`) declare `container: odoo:19.0`, and that image ships no git.
+`actions/checkout` therefore falls back to the REST archive endpoint on every
+one of them, every run. The sixth, `lint-and-fast-tests`, runs on the runner,
+which has git, and it was untouched all afternoon. So a 50%-error partial outage
+of one GitHub endpoint takes 5/6 of our suite to zero, and our only surviving
+signal is the job that cannot run an Odoo test.
+
+Two ways to remove the dependency, costed but **not** to be built as a reaction
+to this incident:
+
+1. Install git in the container before checkout — small, but keeps CI on an
+   invocation path no human runs, and puts Debian's mirrors in the critical path.
+2. Check out on the runner and invoke Odoo through
+   `docker compose -f docker/docker-compose.yml run --rm odoo …` — removes the
+   fallback entirely and makes CI exercise the operator's real command (rule 5
+   working for us). Costs, from reading the compose file: `odoo` is `build: .`,
+   so CI builds the Dockerfile rather than pulling the pinned image; compose
+   hard-fails without `docker/.env` (`DB_PASSWORD` is `:?`-required) and needs
+   `config/odoo.runtime.conf` to exist as a file, both gitignored, and neither
+   may be created by `preflight.sh::ensure_runtime_conf`, which prints the
+   password it generates; every stdout-reading floor must be re-proved to still
+   **discriminate** through `compose run`; and the two Chrome jobs install Chrome
+   inside the container today, so they are a redesign, not a port.
+
+**While the incident is open, a CI result means nothing in either direction** —
+at a 50% error rate a green run is luck and a red run is weather. Wait for
+githubstatus.com to report resolved, then re-run **once**.
+
+**What this does not excuse.** #50 is genuinely red on its own account: its run
+started 09:59 UTC, nearly four hours before the incident. #49's bot-job failure
+on run 130 also predates 13:40, so the OdooBot revert remains a real,
+order-dependent defect and the traceback is still the next thing there.
+
+> **Rule 3, with today as the example.** Five jobs that fail at checkout run no
+> test body. Those were runs that *could not start*, not runs that failed — and
+> **the duration said so before anything else did**: 2m02s against a consistent
+> 11m30s across six prior runs, pass and fail alike. When a red arrives far
+> faster than a green ever does, read the clock before reading the diff.
+
+**24. Every CI job warns that Node.js 20 is deprecated**
+Observed 17 Aug in the annotations of every job. `actions/checkout@v4` and
+`actions/setup-python@v5` are being forced onto Node 24. Nothing is failing
+today; it is a countdown. The fix is a version bump of both actions, in its own
+PR, so that a change in checkout behaviour arrives on a run where it is the only
+variable — which is precisely the property this afternoon lacked.
+
+**25. Every branch push runs the whole suite twice**
+`ci.yml` triggers on both `push` and `pull_request`, so a push to a branch with
+an open PR fires two full runs of six jobs. Double runner time and **no extra
+information**: same tree, same jobs, same result. The usual shape is to keep
+`pull_request` for branches and restrict `push` to `master`, so master's own
+history stays covered without paying twice for every branch commit.
+
+---
+
 ## Claude Code's own open state, 17 Aug
 
 Left here deliberately so a fresh session picks it up from the repository rather
@@ -333,6 +417,17 @@ environment that runs — and a transcript is neither).
   responsible: its data block names only `odoobot_state`, so the write would
   have to reach `name` and `email` through `res.users` rather than from that
   block's fields.
+  **A Claude Code Remote session cannot fetch that log — do not spend a session
+  finding out again.** The jobs and check-runs APIs answer `403 Resource not
+  accessible by integration` for the GitHub App token (while `list_workflows`
+  and `list_workflow_runs` succeed, so it is a job-level scope gap), and the
+  signed run-log ZIP lives on `results-receiver.actions.githubusercontent.com`,
+  which the session egress proxy refuses at CONNECT. There is no third copy: the
+  run has no artefacts. **The traceback has to come from the operator:**
+  `gh run view 32031930149 --log | grep -n -A 30 'SAPIAN-TRACE write on partner 2'`,
+  plus `grep -c` on the same string — two blocks are expected, and a count of 1
+  means the probe never saw the write, which is a different problem from the one
+  being chased.
 - **The palette guard has ESTABLISHED NOTHING.** `TestEveryControlIsInThePalette`
   is written and committed, and its first run ended in a CDP `TimeoutError` —
   rule 3, a run that could not start. It is not known to pass, and it is not
