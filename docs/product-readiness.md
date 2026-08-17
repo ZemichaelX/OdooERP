@@ -924,10 +924,14 @@ here says whether an *accountant* role is scoped correctly; and password policy,
 
 ## Tier 1 — summary
 
-**All eight flows were run. None was skipped. One BLOCKER was found** — the
-missing product category (finding f-2/b-2/g, register entry 26). Every other core
-flow operates and every statutory return can be filed, though two of them by
+**All eight flows were run. None was skipped. One BLOCKER was found in tier 1** —
+the Goods in Transit defect (finding f-2/b-2/g, register entry 26). Every other
+core flow operates and every statutory return can be filed, though two of them by
 retyping figures a human read off a PDF.
+
+**A second BLOCKER was found later, in tier 2 flow (m):** the build has no profit
+& loss, balance sheet, trial balance or general ledger at all. It was invisible
+from tier 1 because every tier 1 flow reads the ledger directly.
 
 **This grading was corrected after review, and the correction is the more useful
 half of this summary.** The first draft of this document graded the product-category
@@ -1428,3 +1432,122 @@ chart, which is the obvious remedy and was not attempted; the year-end closing
 entry that periodic valuation requires; and how much of the 453,800.00 is closing
 stock versus cost of goods sold — that needs a physical count valued at cost,
 which flow (j) showed the product cannot currently produce.
+
+---
+
+## Tier 2 — summary
+
+All five flows were run. **A second BLOCKER was found in (m)**, and it was not
+visible from tier 1.
+
+| Flow | Outcome | Attribution | Severity |
+|---|---|---|---|
+| **(m)** P&L / balance sheet | **ABSENT** — no P&L, balance sheet, trial balance or general ledger exists in the build; `account_reports` is Enterprise | STOCK ODOO split + OUR CODE (planning assumption never closed) | **BLOCKER** |
+| (i) Bank reconciliation | **WORKS, entirely by hand** — no widget, no menu, no bank-format importer; suspense cleared to exactly 0.00 | STOCK ODOO (Community/Enterprise split) | **SERIOUS** — and the biggest build opportunity found |
+| (j) Inventory adjustment | **WORKS**; valuation report **unreachable**, 452,000.00 of stock shows as 0.00 in the accounts | consequence of entry 26 | consequence of the BLOCKER |
+| (l) Customer portal — view | **WORKS**: own invoices only, 217,264-byte PDF, correct access scoping | STOCK ODOO | — |
+| (l) Customer portal — pay | **ABSENT**: 0 of 24 providers enabled, no Ethiopian provider exists in Odoo at all | STOCK ODOO + market gap | **NOT NEEDED YET** |
+| (k) Employee self-service | **ABSENT**: `hr_holidays`/`hr_expense` uninstalled; an employee cannot read their own payslip | CONFIGURATION (time off, expenses) + OUR CODE (payslip has no portal route) | **NOT NEEDED YET** |
+
+**Two Community/Enterprise gaps, one conclusion.** Flows (i) and (m) are the same
+shape: the capability sits in `account_accountant` and `account_reports`, both
+Enterprise, and the product inherits the gap silently. Bank reconciliation is the
+opportunity — the matching engine is already in Community and only the screen is
+missing. Financial statements are the obligation — a client cannot file an annual
+return without them, and the plan's *"use Odoo/OCA reports"* was never closed.
+
+---
+
+## Tier 3 — the honest boundary: installed but untested, and absent
+
+**Nothing in this section was tested.** It is here so that a flow that was skipped
+and a flow that passed cannot be confused.
+
+### Installed in the shipped set, not covered by tiers 1 or 2
+
+| Module | Untested — would a first Ethiopian trading client need it? |
+|---|---|
+| `spreadsheet`, `spreadsheet_dashboard*` (5 modules) | The "Dashboards" app a plain employee sees in flow (h). **Possibly** — it is the nearest thing the build has to register item 13's compliance dashboard, and it was never opened |
+| `sale_pdf_quote_builder` | Quotation PDF composition. Marginal |
+| `sale_edi_ubl`, `purchase_edi_ubl_bis3`, `account_edi_ubl_cii`, `account_add_gln` | European e-invoicing formats. **No** — Ethiopia's EFD/QR regime (Reg 570/2025) is unrelated, and these are dead weight a prospect may notice |
+| `sms`, `sale_sms`, `stock_sms` | SMS notifications. **Yes eventually** — CLAUDE.md defers payments/SMS until a client signs; no gateway is configured |
+| `snailmail`, `snailmail_account` | Postal letter service. **No** — not available in Ethiopia |
+| `auth_totp`, `auth_totp_mail`, `auth_totp_portal`, `auth_passkey`, `auth_passkey_portal` | 2FA and passkeys. **Yes before an internet-facing client**, and untested here |
+| `partner_autocomplete`, `iap`, `iap_mail` | Odoo online services requiring IAP credits. **No** — and they may attempt outbound calls |
+| `google_gmail`, `microsoft_outlook` | OAuth mail transports. **Relevant to register entry 25** — one of these may be the practical fix for outbound mail, untested |
+| `digest` | Periodic KPI emails to users. Would currently send as `OdooBot` (entry 25) |
+| `hr_skills`, `hr_org_chart`, `hr_homeworking` | HR extras pulled in by `hr`. **No** for seven employees |
+| `privacy_lookup` | GDPR data lookup. **No** |
+| `barcodes`, `barcodes_gs1_nomenclature` | Barcode nomenclature only; `stock_barcode` (the scanning app) is `uninstallable` here. **Yes eventually** for a yard |
+| `web_responsive` (vendored), `sapian_theme`, `sapian_theme_mail`, `sapian_theme_auth_signup` | Navigation and branding. Exercised incidentally, never tested as a flow |
+| `base_import`, `base_import_module`, `base_install_request`, `rpc`, `api_doc`, `web_tour`, `web_unsplash`, `onboarding`, `mail_bot`, `mail_bot_hr`, `utm`, `phone_validation`, `analytic`, `resource*`, `uom`, `product`, `sales_team`, `http_routing`, `bus`, `web`, `web_hierarchy`, `html_editor`, `base`, `base_setup`, `portal`, `payment`, `account_payment` | Infrastructure and dependencies, not user-facing apps in their own right |
+
+### Named in the brief, and NOT installed in this build
+
+All are present in the addons path and merely uninstalled unless marked
+otherwise, so "not installed" is a packaging choice, not a missing capability.
+
+| App | Untested — would a first Ethiopian trading client need it? |
+|---|---|
+| **Point of Sale** (`point_of_sale`) | **Probably yes, and sooner than the plan assumes** — flow (f) showed an invoice never moves stock, and a counter-selling yard is exactly the POS case. The strongest candidate on this list |
+| **Website / eCommerce** (`website`, `website_sale`) | **No** for a first client; and register item 11 records that `website_sale` breaks customer self-registration |
+| **Manufacturing** (`mrp`) | **No** — a trader buys and resells |
+| **Projects** (`project`), `hr_timesheet` | **No** for a trader; relevant only if they do contracting work |
+| **Recruitment** (`hr_recruitment`) | **No** at seven employees |
+| **Marketing** (`mass_mailing`), **Events**, **Surveys**, **eLearning** (`website_slides`) | **No** |
+| **Maintenance**, **Repairs** (`repair`) | **No** |
+| **Fleet** (`fleet`) | **Maybe** — a building-materials trader with delivery trucks has a real fleet, but it is not a go-live need |
+| **CRM** (`crm`) | **Maybe** — the sales pipeline is a plausible second-phase sell |
+| `hr_holidays`, `hr_expense`, `hr_attendance` | See flow (k). Leave tracking is the likeliest early request |
+| `purchase_requisition`, `lunch` | **No** |
+| `helpdesk`, `hr_appraisal`, `sign`, `planning`, `timesheet_grid`, `sale_subscription`, `stock_barcode` | **`uninstallable`** in this build — Enterprise modules whose dependencies are absent |
+| `documents`, `quality`, `account_asset`, `account_budget` | **NOT PRESENT** in the addons path at all — Enterprise. `account_asset` matters eventually: a trader with vehicles and a warehouse needs depreciation, and there is none |
+
+### Our own modules not installed in the shipped set
+
+| Module | Note |
+|---|---|
+| `l10n_et_calendar`, `l10n_et_calendar_account`, `l10n_et_calendar_purchase` | Ethiopian calendar. **Directly relevant to findings c-3 and e-3** — the Ethiopian filing month has no representation anywhere partly because this is deferred. Untested |
+| `vertical_pharma`, `sapian_demo_pharma` | The pharma vertical and its pitch tenant. Out of scope for a trading client |
+| `sapian_dress_rehearsal` | Untested; not part of the shipped default set |
+| `sapian_sentry` | Error reporting. Untested; worth enabling before a client goes live |
+| `sapian_theme_website` | Bridge for `website`, which is not installed |
+
+---
+
+## New register entries this assessment owes
+
+Written at the owner's direction so far: **23** (payslip prints an exempt
+allowance as taxable), **24** (bank salary file exports empty account numbers
+without warning), **25** (onboarding collects no company email or mail server),
+and **26** (the Goods in Transit BLOCKER, root cause corrected in flow (m)).
+
+**Still owed, not yet written:**
+
+1. **No profit & loss, balance sheet, trial balance or general ledger exists in
+   the build.** BLOCKER. Flow (m). The plan's *"use Odoo/OCA reports"* was never
+   closed and nothing supplies them.
+2. **Bank reconciliation has no widget, no menu and no importer** — and
+   Community already finds the matching candidates, so the missing piece is a
+   screen. Flow (i). This is a build opportunity as much as a defect.
+3. **The VAT credit carried forward is stated but never carried**, and a VAT
+   declaration has no state, so two can exist for one month and there is no record
+   of what was filed. Flow (c), findings c-1 and c-2.
+4. **Withholding appears only at posting**, so a draft bill's total differs from
+   what posts, with nothing shown. Flow (b), finding b-1.
+5. **No Ethiopian filing month exists anywhere** in payroll or VAT. Flow (e)
+   finding e-3 and flow (c) finding c-3. Partly overlaps register item 9, which
+   should be updated rather than duplicated — item 9 says the mapping is missing;
+   this assessment measured that it is missing in the VAT report too.
+6. **`data-templates/` ships only a `README.md`** — no onboarding import
+   templates exist. Flow (g).
+7. **Every internal user can read product cost prices**, i.e. the margin. Flow
+   (h) finding h-2. A go-live configuration decision more than a defect.
+8. **The customer-facing portal page's `<title>` is `Odoo`**, and the bot is still
+   `OdooBot` on a page the client's customer sees. Flow (l), findings l-1 and l-2.
+   l-2 confirms #49 is still outstanding rather than being new.
+9. **Delivery drives stock negative with no warning or block.** Flow (f) finding
+   f-1. Configuration decision for go-live.
+10. **An employee cannot read their own payslip** — `l10n.et.payslip` has no
+    portal route and no owner-scoped rule. Flow (k). NOT NEEDED YET, recorded so
+    the absence is a decision rather than a surprise.
