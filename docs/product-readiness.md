@@ -1128,3 +1128,58 @@ earns most of its keep; foreign-currency statement lines; the statement's
 `balance_end_real` check against a real closing balance, since this scratch
 statement opened and closed at 0.00; and the click counts themselves, which are
 derived from measured operations rather than observed in a browser.
+
+---
+
+### (j) Inventory adjustment and a valuation report
+
+**Role:** storekeeper then accountant, as `admin`.
+
+**Steps taken.** Took the product flow (f) had driven negative and counted it, the
+way a yard does a physical count: set a counted quantity, applied the adjustment,
+then looked for the valuation report and for the inventory figure in the accounts.
+
+**Measured.**
+
+| | Value |
+|---|---|
+| `Rebar 16 mm` on-hand before | **−40.0** (from flow (f)) |
+| Adjustment line | counted **100.0**, current −40.0, **difference 140.0** — computed correctly off a negative base |
+| After applying | on-hand **100.0** |
+| Stock move created | 1 inventory move, 140.0, state `done` |
+| `STJ` (Inventory Valuation) journal entries afterwards | **0** |
+| Inventory value by hand (Σ qty × `standard_price`) | **452,000.00 ETB** |
+| Inventory value **in the accounts** (`235100 Stock`) | **0.00** |
+| Valuation report | exists as client action `stock_valuation_report` ("Inventory Valuation"), and **no menu points to it** (`ir.ui.menu` search → NONE) |
+
+**Outcome: the adjustment WORKS; the valuation report is ABSENT in the shipped
+configuration.**
+
+The adjustment half is clean — the difference is right, it handles a negative
+starting quantity, and it posts a real `done` move. **STOCK ODOO.**
+
+**Finding j-1 — the company holds 452,000.00 of stock and the balance sheet says
+0.00.** This is finding f-2 / register entry 26 measured on the asset side rather
+than argued, and it is the number to put in front of an accountant: after a
+physical count, `235100 Stock` still reads **0.00** and the `STJ` journal is still
+empty. Nothing about the count reaches the ledger.
+
+**Finding j-2 — the valuation report cannot be opened.** Odoo's Inventory
+Valuation report is a client action that exists in this database, but no menu
+references it, because that menu is conditional on automated (perpetual)
+valuation. With every category on `periodic` and no product carrying a category at
+all, the report is unreachable through the UI. So the answer to *"can she produce
+a valuation report?"* is **no — not because it is broken, but because the
+configuration hides it.**
+
+**Attribution for both: OUR CODE**, by the same root cause as entry 26 — no
+default product category ships wired to the `et` chart — with **STOCK ODOO**
+supplying the periodic default and the conditional menu. **Severity: consequences
+of the BLOCKER**, not separate items; both disappear when entry 26 is fixed, which
+is itself useful evidence that entry 26 is correctly identified as the root.
+
+**Could not test in this flow:** the valuation report's contents (unreachable, and
+forcing it open would measure a configuration this product does not ship); FIFO or
+average costing, since `cost_method` is `standard` everywhere; landed costs; a
+count sheet PDF (`stock.report_inventory` exists and was not rendered); and
+inventory at a second location or warehouse.
