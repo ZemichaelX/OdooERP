@@ -924,7 +924,11 @@ here says whether an *accountant* role is scoped correctly; and password policy,
 
 ## Tier 1 — summary
 
-**All eight flows were run. None was skipped. One BLOCKER was found in tier 1** —
+**All eight flows were run. None was skipped. A ninth, (n) Point of Sale, was
+added to tier 1 afterwards** — it belongs there because flow (f) proved an invoice
+never moves stock, and a counter-selling yard is exactly that case.
+
+**One BLOCKER was found in tier 1** —
 the Goods in Transit defect (finding f-2/b-2/g, register entry 26). Every other
 core flow operates and every statutory return can be filed, though two of them by
 retyping figures a human read off a PDF.
@@ -961,6 +965,7 @@ that arrives with the product is ours.
 | (f) Sales chain | Quotation → delivery (stock 0 → −40) → invoice → paid, invoice total equal to order total |
 | (g) Purchase chain | RFQ → receipt (stock 0 → 200) → bill with WHT 5,280.00; three-way match data present and consistent |
 | (h) Access control | A real HTTP session as a plain employee is refused payslips, wages, journal entries, orders, tax config, and every sensitive HR field |
+| **(n) Point of Sale** | Added to tier 1 later: a POS sale moved stock **60.0 → 55.0**, its invoice produced the same ledger entry as a back-office invoice, and the session closed with a cash difference of **0.00** |
 
 ### The three best things in the product, on this evidence
 
