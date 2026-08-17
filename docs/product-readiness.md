@@ -1313,3 +1313,118 @@ client ships); portal signup and the invitation email (which would leave as
 `OdooBot <odoobot@example.com>` per register entry 25); `/my/quotes` and sales
 order acceptance; and whether the portal PDF is the same document as the emailed
 one — both rendered, neither was compared byte-for-byte.
+
+---
+
+### (m) P&L and balance sheet — do they render, and do they balance
+
+**Role:** accountant, as `admin`. Run before and after categorising one product,
+as asked, so the BLOCKER's blast radius is measured rather than asserted.
+
+#### First result: the reports do not exist
+
+| | Result |
+|---|---|
+| `account.report` records in the database | **4, all tax reports** — *Tax Report*, *Generic Tax report*, and two groupings |
+| Actions named Profit / Loss / Balance Sheet / Income Statement / Trial Balance / General Ledger | **NONE** |
+| Menus for any of the above | **NONE** |
+| `account_reports` (the Enterprise module carrying them) | **NOT FOUND** in the addons path |
+
+**Outcome: ABSENT.** A client on this build **cannot produce a profit & loss
+account, a balance sheet, a trial balance or a general ledger** from any menu.
+This is the same Community/Enterprise split as flow (i)'s missing reconciliation
+widget. CLAUDE.md's Epic B says of statements: *"Skip: … IFRS statement engine
+(use Odoo/OCA reports)"* — the plan assumed something would supply them. Nothing
+does: no OCA financial-report module is vendored (`vendor/` holds only
+`oca_web`), and Odoo Community ships none.
+
+**Attribution: STOCK ODOO (Community/Enterprise split) + OUR CODE (a planning
+assumption that was never closed).** **Severity: BLOCKER for a first client** —
+an Ethiopian PLC needs a P&L and balance sheet for its annual profit-tax return
+and for its bank, and no amount of correct VAT and payroll substitutes. It is the
+second BLOCKER in this assessment and it was not visible from tier 1.
+
+#### Second result: computed from the ledger, they do balance
+
+Because the product ships no statements, the following are **my arithmetic over
+posted `account.move.line` grouped by `account_type`** — clearly not the
+product's output:
+
+| | BEFORE | AFTER |
+|---|---|---|
+| Revenue | 380,845.00 | 380,845.00 |
+| Expenses | 85,993.00 | **139,993.00** |
+| **Net profit** | **294,852.00** | **240,852.00** |
+| Assets | 858,691.75 | 866,791.75 |
+| Liabilities | 563,839.75 | 625,939.75 |
+| Equity | 0.00 | 0.00 |
+| `assets − (liabilities + equity + profit)` | **0.00 OK** | **0.00 OK** |
+| `230100 Goods in Transit` | 453,800.00 | 453,800.00 |
+| `511100 Cost of Goods and Services` | 350.00 | **54,350.00** |
+| `235100 Stock` | 0.00 | 0.00 |
+| Cost of sales as % of revenue | **22.6%** | **36.8%** |
+
+**The books balance in both states**, which is worth saying plainly: the ledger is
+internally consistent. What is wrong is *classification*, and a balanced ledger
+cannot detect that — the same blind spot as flow (c)'s tie-out, which reconciles a
+correct total against a wrongly-sliced period.
+
+**Before the change the P&L reported 380,845.00 of revenue against 350.00 of cost
+of goods** — the 85,993.00 of "expenses" is payroll and a bank charge, not the
+cement and rebar sold. The company's purchases sat in an asset account.
+
+#### The blast radius, from changing exactly one product
+
+Categorising **one** product and posting **one** 54,000.00 bill for it moved that
+purchase from `230100` to `511100`, and:
+
+- **reported profit fell by exactly 54,000.00** (294,852.00 → 240,852.00);
+- cost of sales as a share of revenue went from **22.6% to 36.8%**;
+- `230100` **still holds 453,800.00**, because the correction is not retroactive.
+
+So the exposure is not theoretical and it is not small: one product, one invoice,
+54,000 birr of overstated profit. The 453,800.00 still in `230100` is the
+untouched remainder — part of it is genuinely unsold stock and part is cost of
+goods sold, and **the product currently offers no way to tell those apart**, since
+`235100 Stock` is 0.00 and the valuation report is unreachable (flow (j)).
+
+#### Root cause, and it revises my own earlier attribution
+
+Chasing this to the bottom produced a different answer from the one I gave when
+tier 1 was reported, and the earlier one was wrong in a way worth stating.
+
+I said *"no default product category ships wired to the `et` chart"*. **Measured,
+that is false.** A default IS wired — to the wrong account:
+
+- `odoo/addons/l10n_et/models/template_et.py`, lines 32–33:
+  `'expense_account_id': 'l10n_et2301'` and `'income_account_id': 'l10n_et1100'`.
+- `l10n_et2301` resolves to **`230100 Goods in Transit`, `account_type =
+  asset_current`.**
+- Odoo's generic `chart_template.py` then propagates `company.expense_account_id`
+  into `ir.default` for `product.category.property_account_expense_categ_id` —
+  measured on this tenant as **id 18 = 230100**.
+- Proof that the missing category was not the operative cause: the existing
+  *Goods* category, before I touched it, already read
+  `property_account_expense_categ_id = 230100`. Categorising a product without
+  fixing the account would have changed nothing.
+
+**So the defect is in Odoo's own Ethiopian localisation: core `l10n_et`
+designates a current-asset transit account as the default expense account for
+every Ethiopian company.** Products having no category made it *look* like our
+demo data's fault; it is not, and a client who categorised everything correctly
+would still land in `230100`.
+
+**Revised attribution: STOCK ODOO (core `l10n_et`) as the source, OUR CODE for
+not overriding it** — `l10n_et_base` exists precisely to extend that chart, and
+this is the kind of thing it is for. **Severity unchanged: BLOCKER.** The fix
+shape changes completely, though: it is not "assign categories", it is **override
+`expense_account_id` in our chart extension** so every Ethiopian company gets a
+real expense account, with category assignment as a secondary tidy-up. Register
+entry 26 is corrected accordingly.
+
+**Could not test in this flow:** the reports themselves (they do not exist);
+whether an OCA financial-report module would install cleanly against the `et`
+chart, which is the obvious remedy and was not attempted; the year-end closing
+entry that periodic valuation requires; and how much of the 453,800.00 is closing
+stock versus cost of goods sold — that needs a physical count valued at cost,
+which flow (j) showed the product cannot currently produce.

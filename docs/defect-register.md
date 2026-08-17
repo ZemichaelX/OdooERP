@@ -439,13 +439,41 @@ an `asset_current` account**. Measured consequences:
   gross margin cannot be read from the accounts, and inventory — a trader's
   largest asset — never reaches the balance sheet.
 
-**Why this is OUR CODE and not CONFIGURATION**, which is the whole point of the
-entry: the product ships **no default product category wired to the `et` chart**.
-There is nothing for a client to misconfigure. Every client reaches this on their
-first purchase, by default, having done nothing wrong. `data-templates/`, which
-CLAUDE.md describes as spreadsheet import templates for onboarding, contains
-**only `README.md`** — so there is not even an import path that could carry a
-category column.
+**ROOT CAUSE, corrected 17 Aug after chasing it to the bottom. The first version
+of this entry blamed the missing product categories. That was wrong, and it would
+have produced a fix that changed nothing.**
+
+A default IS wired. It is wired to the wrong account, by **Odoo's own Ethiopian
+localisation**:
+
+- `odoo/addons/l10n_et/models/template_et.py` lines 32–33 set
+  `'expense_account_id': 'l10n_et2301'` and `'income_account_id': 'l10n_et1100'`.
+- `l10n_et2301` is **`230100 Goods in Transit`, `account_type = asset_current`**.
+- Odoo's generic `chart_template.py` propagates `company.expense_account_id` into
+  `ir.default` for `product.category.property_account_expense_categ_id` — measured
+  on the tenant as **id 18 = 230100**.
+- **The discriminating measurement:** the existing *Goods* category, before being
+  touched, already read `property_account_expense_categ_id = 230100`. So assigning
+  every product to a category would have moved nothing. The missing categories
+  made this *look* like our demo data's fault; it is not.
+
+**So: core `l10n_et` designates a current-asset transit account as the default
+expense account for every Ethiopian company on the chart.** A client who
+categorised their whole catalogue correctly would still land in `230100`.
+
+**Attribution: STOCK ODOO (core `l10n_et`) as the source, OUR CODE for not
+overriding it.** `l10n_et_base` exists to extend that chart and this is exactly
+what it is for. The severity does not move: whoever's mistake it is upstream, it
+ships to our clients under our name.
+
+**Fix shape, therefore, is not what the first version of this entry implied:**
+override `expense_account_id` in our chart extension so every Ethiopian company
+gets a real expense account. Assigning products to categories is a secondary
+tidy-up, not the fix. Worth raising upstream with Odoo as well.
+
+Separately, `data-templates/`, which CLAUDE.md describes as spreadsheet import
+templates for onboarding, contains **only `README.md`** — so there is no import
+path that could carry product accounting fields either.
 
 **Why BLOCKER and not SERIOUS.** *Cheap to fix* and *blocking* are different axes,
 and an earlier draft of the readiness report conflated them: it reasoned that the
@@ -454,8 +482,15 @@ is an **accounting system sold to a trading company**, and a P&L that shows reve
 with no cost is not a product that company can use to run itself, whatever it can
 still file. The fix being an afternoon's work does not change what it blocks.
 
-The periodic-valuation default is stock Odoo's and is a legitimate choice; the
-absence of any category at all is ours.
+The periodic-valuation default is stock Odoo's and is a legitimate choice.
+
+**Blast radius, measured rather than asserted** (`docs/product-readiness.md` flow
+(m)): correcting the account for **one** product and posting **one** 54,000.00
+bill moved that purchase out of the asset account and **reduced reported profit by
+exactly 54,000.00** (294,852.00 → 240,852.00), taking cost of sales from 22.6% to
+36.8% of revenue. `230100` still holds **453,800.00** of earlier purchases, since
+the correction is not retroactive. The books balance in both states — a balanced
+ledger cannot detect a classification error, which is why nothing complained.
 
 ---
 
