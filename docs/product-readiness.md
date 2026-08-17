@@ -653,3 +653,84 @@ overtime as a manual input line; a mid-month joiner or leaver and any proration;
 severance; and Amharic payslip rendering (see the font note in the environment
 table — the names above did render as Ethiopic text in the extracted PDF text
 layer, but glyph *appearance* in the PDF is not established here).
+
+---
+
+### (f) Sales — quotation → confirm → deliver → invoice → paid
+
+**Role:** salesperson then accountant, as `admin`.
+
+**Steps taken.** Quotation to Abyssinia Hardware for 40 × *Rebar 16 mm*; confirmed
+it; validated the delivery Odoo created; invoiced from the order; paid the
+invoice. Then ran a **control test** the register's item 13(3) asks for: post a
+customer invoice for the same product with **no delivery at all** and see whether
+stock moves.
+
+**Measured.**
+
+| Step | Value |
+|---|---|
+| Product | `Rebar 16 mm`, `type=consu`, **`is_storable=True`**, `tracking=none` |
+| On-hand before | **0.0** |
+| Quotation | `S00008`, draft, untaxed 7,720.00 · tax 1,158.00 · total 8,878.00 |
+| Confirm | state `sale`; picking **`WH/OUT/00004`** created automatically, 40 units WH/Stock → Customers |
+| Delivery validated | `WH/OUT/00004` state **`done`**, `date_done` set |
+| On-hand after delivery | **−40.0** |
+| SO status | delivery `full`, invoice `to invoice`, `qty_delivered=40.0`, `qty_invoiced=0.0` |
+| Invoice from order | `INV/26-27/0007`, posted, untaxed 7,720.00 · tax 1,158.00 · total 8,878.00 — **matches the order exactly** |
+| Payment | `payment_state` **paid**, residual **0.0** |
+| On-hand after invoicing | **−40.0** — unchanged, as it should be |
+| **Control: invoice 25 units with no delivery** | `INV/26-27/0008` posted; on-hand **−40.0 → −40.0, moved 0.0** |
+
+**Outcome: WORKS** as a sales flow — the chain is intact from quotation to cash,
+the picking is created and validated, and the invoice total equals the order total.
+**STOCK ODOO** throughout; nothing of ours is involved in this flow.
+
+**The control test confirms register item 13(3) by measurement**, and it is worth
+stating plainly because it is the defect the accountants described from two
+directions: **posting a customer invoice for 25 units moved stock by exactly
+0.00.** A trader who bills over the counter — which is how a building-materials
+yard in Addis actually sells — will have inventory that is permanently wrong and
+nothing will complain. That is **STOCK ODOO working as designed**, not a bug, and
+it is a **BLOCKER for a first client's training and process design, not for the
+code**: someone must decide whether counter sales go through a delivery, and the
+client must be taught that an invoice is not a goods issue.
+
+**Finding f-1 — the delivery drove on-hand to −40 with nothing to stop it.**
+Rebar 16 had **0.0** on hand and 40 were delivered. Odoo permits negative stock by
+default; no warning, no block. For a trader this is how the register's *"goods
+invoiced but never delivered"* twin — *goods delivered but never received* —
+enters the data. **STOCK ODOO (default configuration).** **Severity: SERIOUS**,
+and it is a **CONFIGURATION decision for go-live**, not a code fix.
+
+**Finding f-2 — every product in the demo tenant has no product category, so
+inventory is unvalued and there is no COGS.** Measured: `categ_id` is `False` on
+**12 of 12** products, while three categories (*Goods*, *Expenses*, *Services*)
+exist unused. All three are set to `valuation=periodic`, `cost_method=standard`,
+and **no stock valuation account**. The `STJ` (Inventory Valuation) journal holds
+**0 entries** after a completed receipt and a completed delivery.
+
+Consequences, for a trading company whose largest asset is stock:
+
+- Inventory never reaches the balance sheet automatically.
+- No cost of goods sold is posted, so **gross margin cannot be read from the
+  accounts** — the P&L shows revenue with no matching cost.
+- This is why flow (b)'s bill debited `230100 Goods in Transit` and nothing ever
+  cleared it: **finding b-2 is resolved here.** With periodic valuation and no
+  category, the purchase lands in whatever account the product resolves to and
+  stays there.
+
+**Attribution: two parts, and they should not be merged.** The periodic-valuation
+default is **STOCK ODOO** and is a legitimate choice for a small trader who counts
+stock physically. The **12 of 12 products with no category at all** is
+**DEMO DATA produced by OUR CODE** (`sapian_demo_trader` creates them). **Severity:
+SERIOUS.** For the demo it is embarrassing — a prospect asking "what's my gross
+margin?" gets nothing. For a first client it is a go-live configuration decision
+that must be made deliberately: periodic with a physical count, or perpetual with
+categories, accounts and a costing method configured.
+
+**Could not test in this flow:** partial deliveries and backorders; a return;
+delivery of a lot/serial-tracked product (`tracking=none` on all demo products);
+the delivery-note PDF; multi-warehouse; and — because valuation is periodic — any
+COGS or margin figure at all, which is not a gap in the testing but a consequence
+of the configuration described above.
