@@ -51,9 +51,17 @@ the account names next to the codes. Buried in a report it would have shipped, a
 `632100 Construction of buildings` would have been depreciation in every statement
 we ever printed, invisibly.
 
-**592100 "Other" also deserves a second look** before it is called cost of sales —
-the name says nothing and the code range says direct cost. Worth an accountant's
-glance rather than a prefix rule's confidence.
+**592100 "Other" is DELIBERATELY LEFT UNCLASSIFIED** until Zemichael's accountants
+answer. Its name says nothing and only the code range argues for cost of sales —
+and an account whose name says nothing, typed by code range alone, is exactly
+where a silent misclassification lives.
+
+**The tie-out must count it as unclassified, not quietly absorb it.** That is the
+point of the `112 of 112 accounts classified, unclassified: none` line: while
+`592100` is unmapped the statement reports `111 of 112, unclassified: 592100
+Other` **by name**, every time it is printed, until somebody answers. An
+unclassified account must be visible on the face of the report — never defaulted
+into "other expenses" where it would stop being a question.
 
 ## What it breaks on an existing tenant with posted entries
 

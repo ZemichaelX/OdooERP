@@ -39,7 +39,7 @@ the environment that verified and the environment that runs:
 | Odoo | image `odoo:19.0@sha256:e415f99…` | source clone `odoo/odoo` branch `19.0`, commit `ccce9fcc` (2026-06-29) |
 | Postgres | image `postgres:16@sha256:33f923b…` | Ubuntu `postgresql-16` 16.13, local cluster |
 | Python deps | image's own | `requirements.txt` into a venv, **two substitutions**: `psycopg2` → `psycopg2-binary`, and `python-ldap` omitted (build deps absent; no LDAP module is installed) |
-| PDF engine | image's patched wkhtmltopdf | Ubuntu `wkhtmltopdf 0.12.6`, **unpatched Qt** — PDFs render, headers/footers are not the patched-build layout |
+| PDF engine | image's patched wkhtmltopdf | **Two phases, and it matters —** tiers 1–3 ran on Ubuntu `wkhtmltopdf 0.12.6`, **unpatched Qt**, which silently DROPS all header/footer content from the PDF. Corrected 18 Aug by installing `wkhtmltox 0.12.6.1-3` — `0.12.6.1 (with patched qt)`, the same build the `odoo:19.0` image ships. See *"The renderer that could not render what the guard asserted on"* in the defect register, and the re-check below |
 | Ethiopic font | `fonts-sil-abyssinica` in the image | **not installed** — so Amharic glyph rendering in PDFs is UNTESTED here and no claim is made about it either way |
 
 The build followed `scripts/build_demo.sh`'s phase order, which is load-bearing
@@ -62,6 +62,49 @@ Scripts were run through a purpose-built runner (`/workspace/rt/run.py`) rather
 than `odoo shell < file`, because `odoo shell` reading a pipe behaves like an
 interactive console: a traceback on one line does not stop the next, so a phase
 can half-execute in silence. The runner raises, rolls back and exits non-zero.
+
+### Re-check after the unpatched-renderer finding (18 Aug)
+
+Tiers 1–3 were measured on a build that **dropped every report header from the
+PDF**. Any finding resting on header content would have been asserted against
+bytes that could not contain it, so every PDF claim in this document was re-run on
+the patched build.
+
+**Result: no finding needs withdrawing, and none is marked UNVERIFIED.** Our own
+reports put their identifiers in the report **body**, not the letterhead —
+measured on the patched renderer, the TIN `0088776655` appears in the extracted
+**PDF text** of all five:
+
+| Report | TIN in PDF text |
+|---|---|
+| `l10n_et_reports.report_vat_declaration` | **yes** |
+| `l10n_et_payroll.report_paye_declaration` | **yes** |
+| `l10n_et_payroll.report_pension_schedule` | **yes** |
+| `l10n_et_payroll.report_payslip` | **yes** |
+| `l10n_et_base.report_et_invoice` | **yes** (both seller and buyer) |
+
+**Two corrections, both narrow:**
+
+1. **Flow (c) quoted an excerpt labelled *"PDF text"* that was taken from
+   `_render_qweb_html`.** The substantive claims — taxpayer name, TIN, period,
+   every figure, the GL reconciliation block — are all true of the PDF and were
+   re-confirmed on the patched build. But the excerpt also contained
+   `Africa Avenue (Bole Road)` and the `Odoo Report` page title, and **neither is
+   in the PDF** (measured: `Africa Avenue` PDF `False` / HTML `True`). The
+   cosmetic note about the `Odoo Report` title already said it does not appear in
+   the PDF, so it stands as written.
+2. **The core customer-invoice finding was re-proved properly**, and the earlier
+   evidence for the *seller* half is superseded rather than merely restored. On
+   the patched renderer, same invoice, same tenant:
+
+   | State | PDF size | Seller TIN in PDF | Buyer TIN in PDF |
+   |---|---|---|---|
+   | `vat` empty (as shipped) | 75,016 B | **no** | **no** |
+   | `vat` populated from `l10n_et_tin` | 75,063 B | **yes** | **yes** |
+
+   The company block is present in both, so this is not a rendering gap: with
+   `vat` empty the identifier genuinely does not print. **The BLOCKER stands, now
+   on evidence that could have failed.**
 
 ### The tenant as provisioned, before any flow ran
 

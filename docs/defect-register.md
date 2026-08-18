@@ -38,6 +38,66 @@ measurement of it.**
 
 ---
 
+### Rule 2, worked example: the renderer that could not render what the guard asserted on
+
+**This is not a sixth rule. It is rule 2 in a costume nobody recognised**, and it
+is recorded here because the costume is good enough to fool a careful reader.
+
+*A success signal that can be produced by doing nothing is not a success signal* —
+and a PDF guard running on a renderer that cannot draw the thing it asserts on is
+exactly that. It cannot fail. It is not a guard; it is a decoration that returns
+green.
+
+**What happened, 17–18 Aug.** The readiness assessment measured customer invoices
+by extracting text from the rendered PDF — deliberately, because reading the
+template proves nothing about the bytes a customer receives. It reported that the
+invoice carried no supplier TIN.
+
+Half of that was true and half was unprovable, for a reason invisible from the
+result. Odoo splits a report into `bodies, res_ids, header, footer, …`
+(`ir_actions_report._prepare_html`) and hands the header to wkhtmltopdf as
+`--header-html`. **An unpatched-Qt wkhtmltopdf ignores it.** The container was
+running Ubuntu's `wkhtmltopdf 0.12.6` — no `(with patched qt)` — so
+`is_patched_qt` was `False` and **every report header was silently absent from
+every PDF measured.**
+
+- The **buyer** TIN lives in the body → genuinely absent, genuinely proved.
+- The **seller** TIN lives in the header → **would have been absent whatever the
+  field contained.** The assertion could not have failed differently.
+
+Proved by fixing the renderer rather than by argument: installing
+`wkhtmltox 0.12.6.1-3` — `0.12.6.1 (with patched qt)`, the build the `odoo:19.0`
+image ships — the same invoice rendered **75,016 bytes instead of 30,259**, and
+the before/after became discriminating:
+
+| State | Seller TIN in PDF | Buyer TIN in PDF |
+|---|---|---|
+| `vat` empty | **no** | **no** |
+| `vat` populated | **yes** | **yes** |
+
+**The general form, which is what to carry forward:**
+
+> **A PDF guard must assert that the renderer can render what it is asserting on,
+> or it is not a guard.**
+
+Concretely, for anything that reads rendered output:
+
+- **Assert the renderer's capability first**, and **fail** on a renderer that
+  cannot draw the asserted region. Do not skip — a skip is silent, and silence is
+  what this rule is about. `is_patched_qt` is one line to check.
+- **Know which stream your assertion lives in.** Header, body and footer are three
+  different pipelines in wkhtmltopdf, and only one of them survives on an
+  unpatched build.
+- **Prefer the body.** Our own reports print the TIN in the body and were correct
+  on the broken renderer; core's letterhead was not. A legal identifier in a page
+  header is one paper-format change away from vanishing — which is precisely how
+  this was discovered.
+- The same shape applies beyond PDFs: a screenshot guard on a headless browser
+  that never painted, an asset guard on a bundle that was not built, a mail guard
+  on a transport that discarded the body.
+
+---
+
 ## The branding rule
 
 **Inward-facing surfaces are Sapian's. Outward-facing surfaces are the
