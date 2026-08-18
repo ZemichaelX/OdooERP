@@ -217,15 +217,16 @@ without recording WHICH JOB was red. A PR-level "red" is an aggregate over nine
 jobs; the aggregate is never a diagnosis. Name the job and the assertion, or the
 note is a rumour with a timestamp attached.
 
-### 46. Stacking CI runs exhausts the runner allowance, and the failures look like code failures
+### 46. GitHub Actions stopped placing jobs at 10:52, and the failures look like code failures
 
-Observed 18 Aug, and **caused by this session**, which is why it is written down.
+Observed 18 Aug. **The first version of this entry blamed the wrong thing** — see
+"what the evidence actually supports" below; the correction is part of the
+lesson.
 
-Between 10:52 and 10:59 five CI runs were created for one branch — a push, two
-re-runs, a cancel and a PR reopen. From 10:52 onward **every job of every new
-run failed in 3–4 seconds** with `runner_id: 0`, no downloadable log (HTTP 404
-on the log endpoint) and a completely empty check-run `output`. Runs created
-BEFORE that point kept running to completion normally:
+From 10:52 onward **every job of every new run failed in 3–4 seconds** with
+`runner_id: 0`, no downloadable log (HTTP 404 on the log endpoint) and a
+completely empty check-run `output`. Runs created BEFORE that point kept running
+to completion normally:
 
 | Run | Created | Result |
 |---|---|---|
@@ -234,6 +235,7 @@ BEFORE that point kept running to completion normally:
 | 145, attempts 1–3 | 10:52–10:58 | every job failed in 3–4s |
 | reopen-triggered run | 10:59:24 | same |
 | gitleaks — a DIFFERENT workflow file | 10:52 | same |
+| PR #56's run, created with **nothing else running** | 11:03:27 | same |
 
 **Two tells that this is not our code**, and both are cheap to check:
 
@@ -242,18 +244,40 @@ BEFORE that point kept running to completion normally:
 - **The absence of a log.** A job that failed has a log. A job with `runner_id:
   0` and a 404 on its log never started.
 
+**What the evidence actually supports.** The first version of this entry said
+the cause was *this session stacking five runs in seven minutes* and exhausting
+a concurrency allowance. **That is refuted.** The run created for PR #56 at
+**11:03:27 — with every other run finished and the account completely idle for
+three minutes — failed exactly the same way.** Contention cannot explain a
+failure that reproduces at zero load.
+
+What the evidence does support is a **hard cutover at ~10:52**: everything
+created before it runs, everything created after it is rejected instantly,
+across multiple workflow files, persisting while idle. That is the shape of an
+**account-level Actions quota or spending limit**, and it needs the operator, not
+code. Heavy use earlier in the day may have brought the limit forward; it is not
+the mechanism.
+
+**The correction is the lesson.** "I did five runs, then runs broke" is a
+sequence, not a cause, and it was written into this register as fact after one
+supporting observation and before the one test that could refute it — creating a
+run while idle. **A causal claim needs the control case**, especially a
+self-blaming one, which feels rigorous and so gets less scrutiny than it
+deserves.
+
 **Do not re-run.** Re-running a run whose jobs never placed reproduces it
 exactly — three attempts proved that — and reopening the PR to force a fresh run
-reproduced it too. The only correct response is to STOP creating runs, let
-in-flight work drain, and treat CI as having given no verdict in either
-direction.
+reproduced it too. Treat CI as having given **no verdict in either direction**
+(rule 3), and wait for the operator.
 
 **Three mistakes made here, recorded because each is repeatable:**
 
 1. **The clock was read wrong.** A job six minutes into a ten-minute step was
    called "21 minutes, hung" and **cancelled** — throwing away a run that was
-   5 of 6 green. Print the current time next to the job's `started_at`; do not
-   estimate elapsed time from memory of how long a conversation felt.
+   5 of 6 green, and the only run that had exercised the new code. Print the
+   current time next to the job's `started_at`; do not estimate elapsed time
+   from memory of how long a conversation felt. This one stands regardless of
+   what caused the outage.
 2. **A correct diagnosis was abandoned on the strength of that same bad
    arithmetic.** Concurrency was identified first, then rejected because "at
    10:58 nothing else was running" — which was false.

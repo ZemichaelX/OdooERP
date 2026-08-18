@@ -223,6 +223,11 @@ before 10:52 ran to completion normally (master's run 143: **6 of 6 green**).
 Zemichael: Actions minutes / spending limit, or waiting for the allowance to
 reset.
 
+**Confirmed idle, 11:03.** PR #56's run was created with every other run
+finished and the account idle — and failed identically. So this is NOT
+contention and NOT caused by run-stacking (the register's first reading, since
+corrected). It is a hard cutover at ~10:52 that persists at zero load.
+
 **Do not re-run and do not reopen PRs to force a run** — three re-run attempts
 and one reopen all reproduced it exactly. Stop creating runs; treat CI as having
 given **no verdict in either direction** (rule 3).
