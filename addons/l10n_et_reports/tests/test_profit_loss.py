@@ -174,10 +174,10 @@ class TestProfitLoss(L10nEtReportsCommon):
         """
         broken = [
             spec
-            for spec in self.env["l10n.et.profit.loss"]._pl_sections()
+            for spec in self.env["l10n.et.profit.loss"]._statement_sections()
             if spec["key"] != "revenue"
         ]
-        with patch.object(type(self.statement), "_pl_sections", lambda self: broken):
+        with patch.object(type(self.statement), "_statement_sections", lambda self: broken):
             data = self.statement._get_report_data()
             tie = data["tie_out"][0]
         self.assertFalse(tie["ok"], "Losing every revenue account still tied out.")
@@ -268,10 +268,10 @@ class TestProfitLoss(L10nEtReportsCommon):
         """
         broken = [
             spec
-            for spec in self.env["l10n.et.profit.loss"]._pl_sections()
+            for spec in self.env["l10n.et.profit.loss"]._statement_sections()
             if spec["key"] != "depreciation"
         ]
-        with patch.object(type(self.statement), "_pl_sections", lambda self: broken):
+        with patch.object(type(self.statement), "_statement_sections", lambda self: broken):
             classification = self.statement._get_report_data()["classification"]
         self.assertFalse(classification["ok"])
         codes = [row["code"] for row in classification["unclassified"]]
