@@ -168,6 +168,104 @@ select module, name, noupdate from ir_model_data where module='base' and name='e
 
 ---
 
+### 45. #50 is not red on its own account — it is carrying #49's defect
+
+Diagnosed 18 Aug, work-queue item 6, which said *"#50 is genuinely red on its
+own account"*. **That was wrong**, and this entry corrects both the queue and
+the note under the CI-incident entry above.
+
+#50 has **one** red job of nine, and it is not a job that touches #50's code:
+
+| Job | Result |
+|---|---|
+| **SapianBot survives an upgrade** | **FAILURE** |
+| Odoo integration tests | success |
+| App rail rendered in a browser | success |
+| Launcher defaults reach the page | success |
+| Calendar installs, and uninstalls, alone | success |
+| Theme login vs website | success |
+| Lint + reference golden tests | success |
+| gitleaks (×2) | success |
+
+Phase 1 of that job passed — `0 failed, 0 error(s) of 10 tests`. Phase 2, the
+**upgrade**, failed **4 of 10**:
+
+```
+FAIL: TestTheSystemPartnerIsOurs.test_the_bot_address_is_ours
+  AssertionError: 'odoobot@example.com' != 'sapianbot@example.com'
+FAIL: TestTheSystemPartnerIsOurs.test_the_bot_carries_our_name
+  AssertionError: 'OdooBot' != 'SapianBot'
+FAIL: TestTheSystemPartnerIsOurs.test_the_bot_is_not_named_after_odoo
+FAIL: TestTheBotSignsTheChatter.test_a_system_authored_message_is_signed_by_us
+```
+
+That is **entry 44 / work-queue item 7 verbatim** — the OdooBot revert on
+upgrade, the order-dependent `mail_bot` load. #50 changes
+`scripts/update_local.sh` and nothing else; it has no causal connection to the
+system partner.
+
+**Consequences for the order of work:** item 6 has nothing to fix. Fixing item 7
+is what turns #50 green. Two further facts mean #50 cannot close on code alone:
+
+1. Its base is five merges behind master, so it needs a rebase and a fresh run
+   whatever happens to the bot job.
+2. **Its Windows verification is owed by the operator** (rule 4) and no work
+   here can supply it.
+
+**How the wrong reading survived:** the queue recorded a red and a timestamp
+without recording WHICH JOB was red. A PR-level "red" is an aggregate over nine
+jobs; the aggregate is never a diagnosis. Name the job and the assertion, or the
+note is a rumour with a timestamp attached.
+
+### 46. Stacking CI runs exhausts the runner allowance, and the failures look like code failures
+
+Observed 18 Aug, and **caused by this session**, which is why it is written down.
+
+Between 10:52 and 10:59 five CI runs were created for one branch — a push, two
+re-runs, a cancel and a PR reopen. From 10:52 onward **every job of every new
+run failed in 3–4 seconds** with `runner_id: 0`, no downloadable log (HTTP 404
+on the log endpoint) and a completely empty check-run `output`. Runs created
+BEFORE that point kept running to completion normally:
+
+| Run | Created | Result |
+|---|---|---|
+| 143 (master) | 10:45:44 | 6 of 6 green |
+| 144 (branch) | 10:50:30 | 5 of 6 green when cancelled |
+| 145, attempts 1–3 | 10:52–10:58 | every job failed in 3–4s |
+| reopen-triggered run | 10:59:24 | same |
+| gitleaks — a DIFFERENT workflow file | 10:52 | same |
+
+**Two tells that this is not our code**, and both are cheap to check:
+
+- **The clock.** A red in 3 seconds against a green that never takes less than
+  ~2 minutes is not a red. Rule 3 already says this.
+- **The absence of a log.** A job that failed has a log. A job with `runner_id:
+  0` and a 404 on its log never started.
+
+**Do not re-run.** Re-running a run whose jobs never placed reproduces it
+exactly — three attempts proved that — and reopening the PR to force a fresh run
+reproduced it too. The only correct response is to STOP creating runs, let
+in-flight work drain, and treat CI as having given no verdict in either
+direction.
+
+**Three mistakes made here, recorded because each is repeatable:**
+
+1. **The clock was read wrong.** A job six minutes into a ten-minute step was
+   called "21 minutes, hung" and **cancelled** — throwing away a run that was
+   5 of 6 green. Print the current time next to the job's `started_at`; do not
+   estimate elapsed time from memory of how long a conversation felt.
+2. **A correct diagnosis was abandoned on the strength of that same bad
+   arithmetic.** Concurrency was identified first, then rejected because "at
+   10:58 nothing else was running" — which was false.
+3. **A watchdog was built that could not fire.** A polling loop authenticated
+   with `$GITHUB_TOKEN` against `api.github.com` directly; that token is not
+   valid for direct calls (the proxy answers *"GitHub access is not enabled for
+   this session"*), so the loop would have spun silently to its timeout. It
+   printed nothing on the failure path because the JSON parsed fine and simply
+   never matched `completed`. **A poller must assert that its poll SUCCEEDED,
+   not merely that the terminal state has not appeared yet** — otherwise "not
+   finished" and "cannot see" are the same output. Same family as rule 2.
+
 ## The branding rule
 
 **Inward-facing surfaces are Sapian's. Outward-facing surfaces are the
