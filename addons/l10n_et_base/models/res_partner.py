@@ -123,14 +123,59 @@ class ResPartner(models.Model):
             if result.valid:
                 vals["l10n_et_tin"] = result.normalized
 
+    def _l10n_et_sync_vat_from_tin(self):
+        """Copy the TIN into core ``vat`` wherever ``vat`` is still empty.
+
+        ``vat`` is the field the FRAMEWORK reads. Every core template guards its
+        tax-ID line on it — the shared external layout in 17 places, plus the
+        invoice, the quotation and the POS receipt — so a tenant with a TIN but no
+        ``vat`` prints no identifier on any document it sends. Measured before this
+        existed: a customer invoice PDF carried neither the seller's TIN nor the
+        buyer's, on a renderer that could draw both.
+
+        ``l10n_et_tin`` stays the system of record: it is validated, indexed and
+        propagated to contacts, and Ethiopia's separate VAT registration number
+        lives in ``l10n_et_vat_reg_no``, which one core ``vat`` field could never
+        also hold. This is a one-way mirror, not a merge.
+
+        NEVER overwrites a non-empty ``vat``. A value somebody typed is a decision;
+        this only fills a blank.
+
+        Cannot recurse: the write below carries only ``vat``, and ``write`` re-syncs
+        only when ``l10n_et_tin`` is in the values it was given.
+        """
+        for partner in self:
+            if partner.l10n_et_tin and not partner.vat:
+                partner.write({"vat": partner.l10n_et_tin})
+
+    @api.model
+    def _l10n_et_backfill_vat_from_tin(self):
+        """Fill ``vat`` on partners that already exist. Returns those moved.
+
+        A template or module change never reaches a database that already has its
+        data — the same trap as the expense-account default. Called from the
+        post-init hook and the 19.0.1.6.0 migration. Idempotent: a second run
+        reports nothing, because the first left no empty ``vat`` behind a TIN.
+        """
+        partners = self.search(
+            [("l10n_et_tin", "!=", False), "|", ("vat", "=", False), ("vat", "=", "")]
+        )
+        partners._l10n_et_sync_vat_from_tin()
+        return partners
+
     @api.model_create_multi
     def create(self, vals_list):
         """Store TINs normalized regardless of how they were typed/imported."""
         for vals in vals_list:
             self._l10n_et_normalize_tin_vals(vals)
-        return super().create(vals_list)
+        partners = super().create(vals_list)
+        partners._l10n_et_sync_vat_from_tin()
+        return partners
 
     def write(self, vals):
         """Store TINs normalized regardless of how they were typed/imported."""
         self._l10n_et_normalize_tin_vals(vals)
-        return super().write(vals)
+        result = super().write(vals)
+        if vals.get("l10n_et_tin"):
+            self._l10n_et_sync_vat_from_tin()
+        return result
