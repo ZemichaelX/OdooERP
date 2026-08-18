@@ -727,6 +727,38 @@ total, the ledger's total and `OK` beside them. Both accountants said they re-ad
 computed numbers by hand; a statement that proves it reconciles is the thing
 neither Odoo nor OCA nor GraceERP does.
 
+**HALF CLOSED, 18 Aug — the profit & loss exists** (`l10n.et.profit.loss` in
+`l10n_et_reports`, work-queue item 4). Rendered on the readiness tenant for
+calendar 2026: revenue **397,345.00**, cost of sales **54,350.00**, gross profit
+**342,995.00**, operating expenses **85,643.00**, net profit **257,352.00**, in a
+**70,225-byte PDF** whose extracted text carries every one of those figures. Both
+checks printed on it: net profit **257,352.00 against a ledger total of
+257,352.00, difference 0.00**, and `61 of 62 accounts classified` naming
+`592100 Other`.
+
+The chart half of this entry closed first (PR #53): core `l10n_et` types all 58
+of its expense accounts `expense`, so before that no P&L of any origin — ours,
+OCA's, Enterprise's — could have shown the 342,995.00 gross profit line at all.
+
+**Both checks were proved red, with the failure counts stated before running:**
+
+| Break | Predicted | Observed | Skips |
+|---|---|---|---|
+| A — coverage check forced to always report `ok` | 4 failures, named | **4 failed of 33**, the four named | 0 |
+| B — cost-of-sales section removed from the shipped table | 7 failures, named | **7 failed of 33**, the seven named | 0 |
+
+**Still open on this entry: the balance sheet** (work-queue item 5), and the
+deliberate decision that trial balance and general ledger are **not** being built
+— OCA's `account_financial_report` has both.
+
+**One wording defect the rendered PDF caught, and no test would have.** The first
+real statement reconciled exactly and still printed *"This statement does not
+reconcile"*, because the banner fired on `tie_out_ok`, which is the AND of the
+amount check and the coverage check. An accountant who reads that once, finds the
+amounts perfect, and learns to skip the banner is how the real mismatch gets
+missed three months later. The banner now distinguishes the two, and a test
+asserts both wordings in the rendered document.
+
 **28. Bank reconciliation has no screen — but Community already finds the matches**
 New 17 Aug, measured (flow (i)). **Half defect, half product opportunity.**
 

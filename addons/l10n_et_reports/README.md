@@ -19,6 +19,43 @@ markers — nothing re-declared here.
   total. Missing supplier TINs get the MISSING marker + fix-before-filing
   warning (MoR rejects filings without identifiers). Remit within 30 days of
   month end.
+- **Profit and Loss** (`l10n.et.profit.loss`): revenue, cost of sales, gross
+  profit, other income, operating expenses, depreciation, net profit — for a
+  date range, live from posted journal items, with PDF and CSV output.
+
+  Odoo Community ships **no** profit & loss statement, and neither does any OCA
+  repository we surveyed (`account_financial_report` has a general ledger and a
+  trial balance but no P&L or balance sheet; `mis_builder` is an engine with
+  zero templates). Until this existed a client could not see whether the
+  business made money — defect register entry 27.
+
+  **The section grouping is not in this module.** Which account belongs on which
+  line is decided by the account's `account_type`, set once in the chart by
+  `l10n_et_base`. Core `l10n_et` types all 58 of its expense accounts `expense`
+  and none `expense_direct_cost`, so on the stock chart no P&L of any origin can
+  show a gross profit line; `l10n_et_base` retypes nine of them (see its
+  `CORE_ACCOUNT_FIXES`). A prefix table inside this report would have fixed one
+  report and hidden the chart defect from every other.
+
+  **Two checks print on the face of the statement**, and each is written so it
+  cannot pass by the work not happening (CLAUDE.md rule 2):
+
+  1. *Net profit vs the general ledger* — the statement's total, built from the
+     section totals, against an independent search over the full period movement
+     of every account whose `internal_group` is income or expense. The two sides
+     are read by different queries from different definitions on purpose.
+  2. *Accounts classified* — `61 of 62 accounts classified`, naming any
+     shortfall. An account the statement cannot place is **left out of the
+     totals**, so check 1 goes red as well, rather than being swept into "other
+     expenses" where it would stop being a question.
+
+  `592100 Other` is deliberately held back from a section
+  (`ACCOUNTS_AWAITING_CLASSIFICATION` in `l10n_et_base`): its name gives no
+  corroboration for the 59x cost-of-sales range, and an account typed by code
+  range alone is where a silent misclassification lives. It is printed in its own
+  visible section and counted as unclassified **on every printing** until the
+  accountants answer. That is why a clean tenant reads `61 of 62`, not `62 of
+  62` — the shortfall is the open question, not a bug.
 
 ## Design
 - Reports read LIVE from posted journal items — a record is a period window
@@ -51,3 +88,17 @@ layout and map these sections onto it.
 Golden values hand-computed from the Epic 3 demo document set (README of
 `tests/common.py`): output 1,500 / input 10,950 / net −9,450 credit; WHT
 {3%: 1,500, 30%: 4,500, 15%: 1,200} = 7,200 tied to GL.
+
+Profit & loss goldens over the same July-2026 fixture: revenue 10,000.00, cost
+of sales 73,000.00, gross profit −63,000.00, net profit −63,000.00. Neither the
+cost-of-sales figure nor the gross-profit line existed before register entries
+26 and 27 were fixed — every bill posted to a current asset, and every expense
+account carried the same type.
+
+**Half of the P&L tests prove the checks GO RED**, because a statement whose
+self-check cannot fail invites trust it has not earned:
+dropping a section's account type makes the ledger check differ by exactly the
+amount that fell out; flipping a section's sign makes it differ while coverage
+stays clean (so the two checks are not the same check twice); an account whose
+type no section claims is named; and a company with no income or expense
+accounts is refused rather than reported as reconciling perfectly.

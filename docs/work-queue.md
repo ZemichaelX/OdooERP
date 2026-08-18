@@ -29,10 +29,10 @@ block on it, and never guess it into code.
 
 | # | Item | State |
 |---|---|---|
-| 1 | **TIN on documents** | **IN PROGRESS** — code complete, PR open, done when green **and merged** |
-| 2 | #51 — re-run, merge if green | todo (ten minutes) |
-| 3 | **Account types** — nine accounts, three-digit rules | todo |
-| 4 | **Profit and loss** | todo |
+| 1 | **TIN on documents** | **DONE** — PR #52 merged |
+| 2 | #51 — re-run, merge if green | **DONE** — merged as `20cbe4a` |
+| 3 | **Account types** — nine accounts, three-digit rules | **DONE** — PR #53 merged |
+| 4 | **Profit and loss** | **DONE** — merged, both checks proved red |
 | 5 | **Balance sheet** | todo |
 | 6 | #50 — diagnose before fixing | todo |
 | 7 | #49 — write-tripwire out, fix order-independent | todo |
@@ -121,6 +121,34 @@ model, and two templates.
 
 **The tie-out must be proved RED before it is trusted.** Break the classification
 on purpose and watch it fail.
+
+**DONE, 18 Aug — merged.** `l10n.et.profit.loss`, 15 tests, `l10n_et_reports`
+27 -> 42, CI floor 385 -> 400.
+
+Rendered on the readiness tenant for calendar 2026: revenue 397,345.00, cost of
+sales 54,350.00, **gross profit 342,995.00**, operating expenses 85,643.00, net
+profit 257,352.00 — in a 70,225-byte PDF whose extracted text carries all of
+them. Check 1: 257,352.00 against a ledger total of 257,352.00, difference 0.00.
+Check 2: `61 of 62 accounts classified`, naming `592100 Other`.
+
+**Both checks proved red, counts predicted before running and matched exactly:**
+forcing the coverage check to always report `ok` gave **4 failed of 33**, the
+four predicted by name; removing the cost-of-sales section gave **7 failed of
+33**, the seven predicted by name. 0 skips in both.
+
+**Two corrections reality made to the design, neither material:**
+
+1. **`61 of 62`, not `111 of 112`.** 112 is the whole chart; only **62** of those
+   accounts are income or expense, which is what a P&L is responsible for. The
+   mechanism is exactly as designed — the denominator was mis-stated in the
+   design note.
+2. **A section sign flip is not a break this check can see.** It was going to be
+   the proof that the two checks differ. Flipping `credit_positive` negates twice
+   — once making the row report-positive, once adding the section to net profit —
+   and cancels: the face of the statement misprints (revenue shown negative)
+   while the total does not move. Replaced with a break the check genuinely
+   catches (a row filter eating an account) and the limit is written into the
+   test rather than papered over.
 
 ### 5. BALANCE SHEET
 
