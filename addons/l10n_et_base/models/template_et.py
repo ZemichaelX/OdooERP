@@ -58,6 +58,41 @@ _logger = logging.getLogger(__name__)
 CORE_EXPENSE_ACCOUNT_XMLID = "l10n_et2301"  # 230100 Goods in Transit, asset_current
 DEFAULT_EXPENSE_ACCOUNT_XMLID = "l10n_et5111"  # 511100 Cost of Goods and Services, expense
 
+# Accounts deliberately NOT typed, because nobody has answered what they are.
+#
+# 592100 "Other" sits in the 59x range, which argues for cost of sales, and
+# carries a name that argues for nothing at all. An account typed by its code
+# range alone, with no corroboration from its name, is exactly where a silent
+# misclassification lives — and unlike a wrong figure, a wrong classification
+# never fails a tie-out, because the ledger still balances either way.
+#
+# So it stays unclassified until Zemichael's accountants answer, and the profit
+# & loss NAMES it rather than absorbing it: the statement reports
+# "111 of 112 accounts classified, unclassified: 592100 Other" on every run,
+# every month, until somebody decides. A question that is printed stays a
+# question; one that is defaulted into "other expenses" quietly becomes an
+# answer nobody gave.
+#
+# Emptying this dict is the whole fix, once the answer arrives.
+ACCOUNTS_AWAITING_CLASSIFICATION = {
+    "592100": "Name gives no corroboration for the 59x cost-of-sales range; "
+    "awaiting the accountants' classification.",
+}
+
+# The second half of this table types the profit & loss so a statement can group
+# WITHOUT hand-mapping every account. Core `l10n_et` types all 58 of its expense
+# accounts `expense` and none `expense_direct_cost` — measured — so on this chart
+# no P&L can show a gross profit line. Not ours, not OCA's, not Odoo Enterprise's.
+# Fixing it here rather than inside one report means every report that reads
+# account types inherits it, including ones nobody has written yet.
+#
+# THE RULES ARE THREE DIGITS, NOT TWO, and that is not fussiness. A `63` rule
+# also catches 632100/632200/632400 — pre-construction, buildings,
+# infrastructure — which are CAPITAL WORK. Typed `expense_depreciation` they
+# would sit in the depreciation line of every statement forever, and nothing
+# would ever fail. `test_construction_is_not_depreciation` holds that line.
+#
+# Note what is NOT here: 592100. See ACCOUNTS_AWAITING_CLASSIFICATION above.
 CORE_ACCOUNT_FIXES = {
     "221200": {"account_type": "asset_current"},
     "221300": {"account_type": "asset_current"},
@@ -65,6 +100,16 @@ CORE_ACCOUNT_FIXES = {
     "300600": {"account_type": "liability_current", "name": "Withholding Tax Payable"},
     "300700": {"account_type": "liability_current"},
     "300800": {"account_type": "liability_current"},
+    # Cost of sales — the accounts that make a gross profit line possible.
+    "511100": {"account_type": "expense_direct_cost"},  # Cost of Goods and Services
+    "590100": {"account_type": "expense_direct_cost"},  # Inventory Adjustments
+    "591100": {"account_type": "expense_direct_cost"},  # Purchase Returns and Allowances
+    "593100": {"account_type": "expense_direct_cost"},  # Social Welfare Levy on Imports
+    # Depreciation — 631x ONLY. 632x is construction, i.e. capital work.
+    "631100": {"account_type": "expense_depreciation"},  # Vehicles
+    "631300": {"account_type": "expense_depreciation"},  # Plant, machinery, equipment
+    "631400": {"account_type": "expense_depreciation"},  # Buildings, furnishings
+    "631500": {"account_type": "expense_depreciation"},  # Livestock, transport animals
 }
 
 # Core l10n_et ships withholding taxes at rates Ethiopian law does not support.
@@ -201,7 +246,39 @@ class AccountChartTemplate(models.AbstractModel):
             self.env["l10n.et.cash.cap.config"]._l10n_et_ensure_default(company)
             self.env["l10n.et.social.welfare.levy.config"]._l10n_et_ensure_default(company)
             self._l10n_et_base_deactivate_unsupported_core_taxes(company)
+            self._l10n_et_base_apply_core_account_fixes(company)
         return result
+
+    @api.model
+    def _l10n_et_base_apply_core_account_fixes(self, company):
+        """Correct the core accounts core `l10n_et` types wrongly.
+
+        Called from BOTH chart load and the reload path, and the difference
+        matters more than it looks. The post-init hook only sees companies that
+        exist AT INSTALL — so a chart loaded later (a second company, or a test
+        fixture building its own) got none of these fixes, and nothing said so.
+        Found by a test asserting the resulting account types rather than
+        asserting that the module installed.
+
+        Writes only the fields that differ, so it is idempotent and leaves a
+        client's own edits to other fields alone.
+        """
+        account_model = self.env["account.account"].with_company(company)
+        for code, values in CORE_ACCOUNT_FIXES.items():
+            account = account_model.search(
+                [
+                    *account_model._check_company_domain(company),
+                    ("code", "=", code),
+                ],
+                limit=1,
+            )
+            if not account:
+                continue
+            needed = {
+                field: value for field, value in values.items() if account[field] != value
+            }
+            if needed:
+                account.write(needed)
 
     @api.model
     def _l10n_et_base_deactivate_unsupported_core_taxes(self, company):
@@ -266,21 +343,7 @@ class AccountChartTemplate(models.AbstractModel):
         chart_template._deref_account_tags("et", data["account.tax"])
         chart_template._pre_reload_data(company, {}, data)
         chart_template._load_data(data)
-        account_model = self.env["account.account"].with_company(company)
-        for code, values in CORE_ACCOUNT_FIXES.items():
-            account = account_model.search(
-                [
-                    *account_model._check_company_domain(company),
-                    ("code", "=", code),
-                ],
-                limit=1,
-            )
-            if account:
-                needed = {
-                    field: value for field, value in values.items() if account[field] != value
-                }
-                if needed:
-                    account.write(needed)
+        self._l10n_et_base_apply_core_account_fixes(company)
         # Re-assert the WHT kind markers: after an uninstall/reinstall cycle the
         # tax records survive (they belong to the 'account' xmlid namespace) but
         # the module's columns were dropped, and the reload path above does not
