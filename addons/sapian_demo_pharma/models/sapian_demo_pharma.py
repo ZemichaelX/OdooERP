@@ -76,7 +76,7 @@ class SapianDemoPharma(models.AbstractModel):
                 "country_id": self.env.ref("base.et").id,
                 "city": "Addis Ababa",
                 "street": "Haile Gebrselassie Avenue",
-                "phone": "+251 11 662 0000",
+                "phone": "+251 11 555 0100",
                 # This pitch tenant demonstrates stock/expiry/recall discipline
                 # and is provisioned WITHOUT a chart of accounts, so the WHT
                 # engine has no Ethiopian taxes to resolve and would raise on

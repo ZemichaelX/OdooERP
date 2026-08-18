@@ -43,8 +43,8 @@ in a future multi-tenant SaaS (no hard-coded company assumptions; respect `compa
 
 ## Commits are the owner's, not the agent's
 
-Every commit on this repository is authored by **ZemichaelX
-&lt;zemichaelmuluken@gmail.com&gt;**. An agent working here commits AS the owner; it
+Every commit on this repository is authored by **the owner**, under the name
+and address already on master's history. An agent working here commits AS the owner; it
 does not sign its own name to the history, and it adds **no** `Co-Authored-By:
 Claude` trailer and no session-link trailer.
 
@@ -59,10 +59,20 @@ purpose) and the benefit is cosmetic. If verified branch commits are wanted
 later, the answer is commit signing with the owner's key, not handing the
 authorship to the agent.
 
-Run this at the START of any session that will commit, before the first commit:
+Run this at the START of any session that will commit, before the first commit —
+read the address out of the history rather than pasting it into this file, which
+is public:
 
-    git config user.name  "ZemichaelX"
-    git config user.email "zemichaelmuluken@gmail.com"
+    git config user.name  "$(git log -1 --format='%an' origin/master)"
+    git config user.email "$(git log -1 --format='%ae' origin/master)"
+
+**This resolves to the owner's GitHub `noreply` address, not the personal one it
+used to name.** That is deliberate and it is a change: the personal address was
+removed from this file when the repository was opened, and a public file is the
+wrong place to publish it. The decision below — commits are the owner's, not the
+agent's — is unchanged; only the address it uses is. Note that the personal
+address remains in the author field of every commit made before this change, so
+this removal protects future commits and nothing already written.
 
 It is a per-clone setting and this project runs in a fresh container each
 session, so a new container starts with the harness default and will silently
@@ -72,7 +82,7 @@ it after the fact does not move commits that already exist — `git commit
 
 Check it, do not assume it:
 
-    git log -1 --format='%an <%ae>'    # must be ZemichaelX <zemichael…>
+    git log -1 --format='%an <%ae>'    # must match origin/master's author
 
 ## Stage by path. Never `git add -A`
 
@@ -275,9 +285,12 @@ So, concretely:
 - A test that cannot construct its own fixture will skip on some database
   somewhere. Prefer creating the fixture in the test over searching for one.
 
-## Platform-specific fixes must be verified on that platform
-A fix for a platform-specific failure is NOT verified until it is verified on
-that platform. Linux evidence is not proof for a Windows bug.
+## The environment that verifies is not always the environment that runs
+A fix is NOT verified until it is verified in the environment that will run it,
+and **a substitute for the thing asked about is not a measurement of it.** This
+one has fired five times on this project. Its commonest form is platform:
+a fix for a platform-specific failure needs evidence from that platform, and
+Linux evidence is not proof for a Windows bug.
 
 This rule was written after a Windows-only backup failure was "fixed" with
 Linux-only verification: every check passed, and the delivered script could not

@@ -2,7 +2,7 @@
 
 **What this document is:** coverage, not defects. It asks what a small Ethiopian
 trading company actually does, walks those flows end to end on a live database,
-and records what happened. `docs/defect-register.md` remains the register of
+and records what happened. The internal defect register remains the register of
 defects; this file cross-references it by entry number and, at the end, lists the
 new register entries this assessment owes.
 
@@ -1549,7 +1549,7 @@ the VAT report printing its total, the ledger's total and `OK` beside them, aime
 squarely at two accountants who told us they re-add computed numbers by hand. A
 P&L and balance sheet in that shape would be the same idea applied to the
 statements a bank and the MoR actually ask for, and neither Odoo, nor OCA, nor
-GraceERP prints a statement that proves it reconciles. Set against that: OCA gives
+any competitor surveyed prints a statement that proves it reconciles. Set against that: OCA gives
 GL and trial balance today for the cost of pinning repos, and those two are pure
 plumbing with no Ethiopian character worth owning. **The split those facts suggest
 — take GL and trial balance from OCA, build P&L and balance sheet ourselves in the
@@ -1604,9 +1604,9 @@ are not the risky part.**
 
 ### The competitive fact this sits against
 
-Measured from **GraceERP's own Reporting menu**: they run **`base_accounting_kit`
-(Cybrosys)** — *Day Book*, *Cash Book*, *Bank Book* and *Assets* together are that
-module's signature, and their presence identifies it.
+A competitor surveyed for this assessment runs **`base_accounting_kit`
+(Cybrosys)** — a free Odoo Apps Store module. The survey itself is recorded in
+the internal notes, not here.
 
 The honest position, without flattering ourselves:
 

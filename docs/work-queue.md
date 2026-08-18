@@ -6,8 +6,9 @@ next one in the same turn.
 **This file is the handover.** A fresh session reads, in this order:
 
 1. `CLAUDE.md` — the rules, and they override everything.
-2. `docs/defect-register.md` — what is broken, what is decided, and the five rules
-   with their worked examples.
+2. `docs/defect-register.md` — a pointer. The register itself moved to the private
+   `sapianerp-internal` repository when this one was opened; the five rules it
+   carries are restated in `CLAUDE.md`.
 3. `docs/product-readiness.md` — what was measured, how, and on what.
 4. **this file** — what to do next.
 
