@@ -35,7 +35,7 @@ block on it, and never guess it into code.
 | 2 | #51 — re-run, merge if green | **DONE** — merged as `20cbe4a` |
 | 3 | **Account types** — nine accounts, three-digit rules | **DONE** — PR #53 merged |
 | 4 | **Profit and loss** | **DONE** — merged, both checks proved red |
-| 5 | **Balance sheet** | todo |
+| 5 | **Balance sheet** | **DONE** — both new checks proved red |
 | 6 | #50 — diagnose before fixing | todo |
 | 7 | #49 — write-tripwire out, fix order-independent | todo |
 | 8 | Palette additions | todo |
@@ -223,6 +223,37 @@ which also ties the two statements to each other.
 
 After 4 and 5 the reporting blocker is cleared.
 **Trial balance and general ledger are deliberately NOT in this queue.**
+
+**DONE, 18 Aug.** `l10n.et.balance.sheet`, `l10n_et_reports` 42 -> 60 tests,
+CI floor 400 -> 418.
+
+**Bigger than its queue line, on purpose.** Written naively it would have copied
+~150 lines of section and coverage machinery out of the P&L, and two copies of
+one check drift apart quietly — one gets a fix, the other keeps the bug, both
+green. So the PR is two commits: extract `l10n.et.statement.mixin` and prove the
+P&L suite runs UNCHANGED (42 tests, 0 failed, 0 skipped, not one assertion or
+golden moved), then add the balance sheet on top. Two commits so a red CI has
+one suspect.
+
+**Three checks, not two.** The identity; the **cross-statement** check (result
+for the period vs what the P&L reports for the same dates); and coverage.
+
+Rendered on the readiness tenant as at 2026-12-31: **assets 885,766.75 = total
+liabilities and equity 885,766.75**, difference 0.00, result agreeing with the
+P&L's 257,352.00.
+
+**Red proofs, predicted then observed:** removing current liabilities gave
+**9 failed of 50** — an EXACT set match against the nine named in advance;
+making the cross-statement check consult itself instead of the P&L gave
+**1 failed of 50**, the one named. 0 skips in both.
+
+**One aborted run, discarded rather than reported.** The first attempt at proof
+D restored the previous break with `assert 'current_liabilities' not in src` —
+which is **always false, because `non_current_liabilities` contains that
+string**. The restore silently did nothing and the run measured C+D together,
+returning the same 9 failures. It was thrown away and D was re-run in isolation.
+A substring guard on a name that is a suffix of another name is a guard that
+cannot fire.
 
 ### 6. #50 — genuinely red from 09:59 UTC, four hours before the incident
 

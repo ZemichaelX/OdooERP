@@ -236,10 +236,11 @@ jobs:
           # 365 -> 371 when its Settings-UI tests took it to 21, and
           # 371 -> 385 when sapian_theme_auth_signup landed with 14, and
           # 385 -> 400 when the profit & loss statement landed with 15 in
-          # l10n_et_reports (27 -> 42). The floor
+          # l10n_et_reports (27 -> 42), and 400 -> 418 when the balance sheet
+          # took it to 60. The floor
           # is what stops a module's suite going missing quietly, so it has to
           # move with the suite.
-          MIN_EXPECTED_TESTS=400
+          MIN_EXPECTED_TESTS=418
           EXECUTED=$(grep -oE "odoo\.tests\.stats: [A-Za-z0-9_]+: [0-9]+ tests" /tmp/odoo-test.log \
                      | awk '$4 == "tests" { total += $3 } END { print total + 0 }')
           echo "Executed ${EXECUTED} tests (floor ${MIN_EXPECTED_TESTS}):"

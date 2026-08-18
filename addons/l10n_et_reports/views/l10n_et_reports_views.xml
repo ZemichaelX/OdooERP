@@ -162,6 +162,67 @@
         </field>
     </record>
 
+    <record id="view_l10n_et_balance_sheet_list" model="ir.ui.view">
+        <field name="name">l10n.et.balance.sheet.list</field>
+        <field name="model">l10n.et.balance.sheet</field>
+        <field name="arch" type="xml">
+            <list decoration-danger="not tie_out_ok">
+                <field name="name"/>
+                <field name="date_from"/>
+                <field name="date_to"/>
+                <field name="total_assets" sum="Total"/>
+                <field name="total_liabilities_and_equity" sum="Total"/>
+                <field name="result_for_period" sum="Total"/>
+                <field name="tie_out_ok" string="Balances"/>
+                <field name="company_id" groups="base.group_multi_company"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_l10n_et_balance_sheet_form" model="ir.ui.view">
+        <field name="name">l10n.et.balance.sheet.form</field>
+        <field name="model">l10n.et.balance.sheet</field>
+        <field name="arch" type="xml">
+            <form>
+                <header>
+                    <button name="action_print_pdf" type="object"
+                            string="Print PDF" class="btn-primary"/>
+                    <button name="action_export_csv" type="object"
+                            string="Export CSV"/>
+                </header>
+                <sheet>
+                    <div class="oe_title"><h1><field name="name"/></h1></div>
+                    <field name="tie_out_ok" invisible="1"/>
+                    <div class="alert alert-warning" role="alert"
+                         invisible="tie_out_ok">
+                        Either this statement does not balance, or it disagrees
+                        with the profit and loss statement, or an account in the
+                        chart of accounts is not yet classified. Print the PDF or
+                        export the CSV to see which — the reconciliation block
+                        says so in words.
+                    </div>
+                    <group>
+                        <group string="Dates">
+                            <field name="date_from" string="Result measured from"/>
+                            <field name="date_to" string="As at"/>
+                            <field name="company_id"
+                                   groups="base.group_multi_company"/>
+                        </group>
+                        <group string="Totals (live from posted moves)">
+                            <field name="total_assets"/>
+                            <field name="total_liabilities_and_equity"/>
+                            <field name="result_for_period"/>
+                            <field name="csv_export_file"
+                                   filename="csv_export_filename"
+                                   invisible="not csv_export_file"/>
+                            <field name="csv_export_filename" invisible="1"/>
+                        </group>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
     <record id="action_l10n_et_vat_declaration" model="ir.actions.act_window">
         <field name="name">VAT Declarations</field>
         <field name="res_model">l10n.et.vat.declaration</field>
@@ -206,6 +267,22 @@
         </field>
     </record>
 
+    <record id="action_l10n_et_balance_sheet" model="ir.actions.act_window">
+        <field name="name">Balance Sheet</field>
+        <field name="res_model">l10n.et.balance.sheet</field>
+        <field name="view_mode">list,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Create a balance sheet as at a closing date.
+            </p><p>
+                Assets against liabilities and equity, live from posted journal
+                items, checked against the general ledger AND against the profit
+                and loss statement for the same period — so the two statements
+                are one set of books rather than two opinions.
+            </p>
+        </field>
+    </record>
+
     <!-- TOP-LEVEL APP, renamed from "Ethiopian Statutory Reports".
          "Compliance" is what the buyer is actually buying — VAT declarations,
          WHT summaries and filings are the obligation, the reports are just how
@@ -230,4 +307,8 @@
               action="action_l10n_et_profit_loss"
               parent="menu_l10n_et_reports"
               sequence="30"/>
+    <menuitem id="menu_l10n_et_balance_sheet"
+              action="action_l10n_et_balance_sheet"
+              parent="menu_l10n_et_reports"
+              sequence="40"/>
 </odoo>
