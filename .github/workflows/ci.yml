@@ -44,7 +44,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # LEFTOVER-STATE FIX 1 of 2 (see the PR body for the full audit).
+  # LEFTOVER-STATE FIX (see the PR body for the full audit).
   #
   # A self-hosted runner does NOT get a fresh filesystem per job. Five jobs here
   # run their container as `--user root` with Odoo's addons-path pointed at
@@ -63,58 +63,47 @@ jobs:
     name: Lint + reference golden tests
     runs-on: [self-hosted, linux-x64-docker]
     steps:
-      - name: Reclaim the workspace from earlier container jobs
-        # LEFTOVER-STATE FIX 2 of 2, and the one that would otherwise wedge the
-        # machine permanently.
+      - name: Report the workspace filesystem and ownership
+        # LEFTOVER-STATE PROBE (see the PR body for the audit).
         #
-        # One runner means all six jobs share ONE workspace directory
-        # (_work/<repo>/<repo>) and run one after another. The other five jobs
-        # run `actions/checkout` INSIDE a container as `--user root`, so after
-        # any of them the checkout — .git included — is owned by root on the
-        # host. This job is the only one with no `container:`, so its checkout
-        # runs as the runner user, and `actions/checkout` begins with
-        # `git clean -ffdx` + `git reset --hard`. A non-root user cannot clean
-        # root-owned files, so from the first time a container job runs before
-        # this one, this job fails at checkout — on this run and on every run
-        # afterwards, until somebody logs into the machine and deletes them by
-        # hand.
+        # A self-hosted runner does NOT get a fresh filesystem per job, and all
+        # six jobs here share ONE workspace directory. Five of them check out
+        # INSIDE a container as `--user root`; this job is the only one without
+        # a container, so its checkout runs as the runner user and begins with
+        # `git clean -ffdx` + `git reset --hard`. On an ordinary Linux
+        # filesystem a non-root user cannot clean root-owned files, which would
+        # wedge this job permanently once a container job had run before it.
         #
-        # Job order is not fixed, so "it worked once" proves nothing; it is a
-        # coin toss that lands badly sooner or later.
+        # THAT PREDICTION WAS WRONG ON THIS RUNNER, and the first attempt at a
+        # fix is why we know. A step that reclaimed ownership through a
+        # throwaway root container failed with `chown: Operation not permitted`
+        # on every path — including plain tracked files. That is the signature
+        # of a filesystem with FIXED ownership semantics (WSL2 drvfs/9p), where
+        # every file reports the same owner whatever wrote it and chown is
+        # refused outright. On such a filesystem the root-ownership problem
+        # cannot arise, and "fixing" it broke the job that was working.
         #
-        # The fix uses only what the runner is guaranteed to have: the Docker
-        # socket and the runner user's membership of the docker group. A
-        # throwaway container is root, so it can hand ownership back. The image
-        # is the odoo digest already pinned by every other job in this file, so
-        # this introduces no new dependency and no unpinned tag (R7).
-        #
-        # It reports which branch it took. "No output" must never be the same
-        # thing as "nothing needed doing".
+        # So this step MEASURES instead of acting, and can never fail the job:
+        # the real test is the checkout immediately below, which is the thing
+        # that would break if ownership were ever a problem here. Rule 4 —
+        # platform-specific behaviour gets verified on that platform, not
+        # reasoned about from another one.
+        continue-on-error: true
         run: |
-          set -euo pipefail
           ws="${{ runner.workspace }}"
-          mkdir -p "${ws}"
-          me="$(id -u):$(id -g)"
-          # UNBOUNDED on purpose: a bounded search would miss root-owned
-          # objects under .git/objects/xx/, which sit five levels down and are
-          # exactly what `git clean` chokes on. `-print -quit` stops at the
-          # first hit, so the dirty case is fast; the clean case walks the tree
-          # once, which costs about a second.
+          mkdir -p "${ws}" || true
+          echo "runner user : $(id -un) ($(id -u):$(id -g))"
+          echo "workspace   : ${ws}"
+          echo "fs type     : $(stat -f -c %T "${ws}" 2>/dev/null || echo unknown)"
+          echo "mount       : $(findmnt -no SOURCE,FSTYPE,OPTIONS --target "${ws}" 2>/dev/null || echo unknown)"
+          echo "owner/mode  : $(stat -c '%U:%G %a' "${ws}" 2>/dev/null || echo unknown)"
           foreign="$(find "${ws}" ! -user "$(id -u)" -print -quit 2>/dev/null || true)"
           if [ -n "${foreign}" ]; then
-            echo "Found paths not owned by $(id -un) (e.g. ${foreign}); reclaiming as ${me}."
-            docker run --rm \
-              -v "${ws}:/reclaim" \
-              odoo:19.0@sha256:e415f9924395e7521245813135112f264b9222bcde3b1d3c2ee9ff073081540a \
-              chown -R "${me}" /reclaim
-            still="$(find "${ws}" ! -user "$(id -u)" -print -quit 2>/dev/null || true)"
-            if [ -n "${still}" ]; then
-              echo "::error::Reclaim did not work — ${still} is still not owned by $(id -un). Checkout would fail below."
-              exit 1
-            fi
-            echo "Reclaimed. Workspace is owned by $(id -un) again."
+            echo "NOTE: at least one path is not owned by $(id -u): ${foreign}"
+            echo "      If the checkout below succeeds anyway, ownership is cosmetic on this"
+            echo "      filesystem and no reclaim is needed."
           else
-            echo "Workspace already owned by $(id -un); nothing to reclaim."
+            echo "All paths under the workspace are owned by $(id -un)."
           fi
 
       - uses: actions/checkout@v4
