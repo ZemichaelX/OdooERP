@@ -1,12 +1,11 @@
 # Road to a public demo
 
-What has to be true before SapianERP can be shown to a client the way GraceERP
-shows theirs at `system.grace-erp-consultancy.com`.
+What has to be true before SapianERP can be shown to a client, hosted and running,
+the way an established competitor already shows theirs.
 
 Written 17 August 2026. Plain language on purpose — this one is for reading, not
 for implementing. The implementable version is `docs/work-queue.md`; the evidence
-behind every claim is in `docs/defect-register.md` and
-`docs/product-readiness.md`.
+behind every claim is in `docs/product-readiness.md` and the internal register.
 
 **Owner column:** *Code* means Claude Code can do it. *Zemichael* means it needs a
 person — money, a domain, a phone call, or an accountant's answer.
@@ -15,8 +14,9 @@ person — money, a domain, a phone call, or an accountant's answer.
 
 ## Stage 1 — Make the numbers legal and complete
 
-These are the things that would embarrass us in front of an accountant. **GraceERP
-already has all four.** This is the floor, not the differentiator.
+These are the things that would embarrass us in front of an accountant. **An
+established competitor already has all four.** This is the floor, not the
+differentiator.
 
 | # | What | Owner | State |
 |---|---|---|---|
@@ -66,7 +66,7 @@ Mostly not code. This is the stage that turns a laptop into a demo.
 | # | What | Owner |
 |---|---|---|
 | 11 | **Renew sapiantech.com.** It expired. `support@sapiantech.com` is dead mail on every page of the product, and every "Powered by SapianERP" link points at nothing | Zemichael |
-| 12 | **Host it publicly** — a server, a domain, HTTPS. GraceERP's equivalent is `system.grace-erp-consultancy.com` | Zemichael |
+| 12 | **Host it publicly** — a server, a domain, HTTPS | Zemichael |
 | 13 | **Working email from that domain**, so invoices stop leaving as `odoobot@example.com` | Both |
 
 **Stages 1 to 4 and the demo exists.**
@@ -75,31 +75,15 @@ Mostly not code. This is the stage that turns a laptop into a demo.
 
 ## Stage 5 — The reasons to buy, not just to look
 
-Stages 1–4 get us level with GraceERP. This stage is what beats them.
+Stages 1–4 get us level with what is already on the market. This stage is what
+beats it.
 
 | # | What | Why it wins | Owner |
 |---|---|---|---|
-| 14 | **Every report proves its own numbers.** Already true of the VAT report — extend it to the P&L and balance sheet | Both accountants said, unprompted, that they do not trust computed figures. One re-adds in Excel; the other checks vouchers by hand. Odoo does not do this. OCA does not. Enterprise does not. GraceERP cannot | Code |
+| 14 | **Every report proves its own numbers.** Already true of the VAT report — extend it to the P&L and balance sheet | Both accountants said, unprompted, that they do not trust computed figures. One re-adds in Excel; the other checks vouchers by hand. Odoo does not do this. OCA does not. Enterprise does not. Nor does the competition | Code |
 | 15 | **The compliance dashboard** — what is due, what does not reconcile, what looks wrong | The front door of the product. Needs the two e-Tax CSVs first | Both |
 | 16 | **A bank reconciliation screen** | Both accountants' longest monthly job. Odoo's matching engine is already in Community and narrowed 23 candidates to 1 on 3 of 4 lines unaided — only the screen is missing. Measured at 600–2,400 interactions a month that a one-click screen would remove | Code |
 | 17 | **Withholding done properly** — is the buyer an agent, contract totals, invoice-splitting detection | The rate and thresholds already work. What is missing is the part an Ethiopian accountant would immediately recognise as written by someone who knows the rule | Code |
-
----
-
-## What GraceERP has, and what it cost them
-
-Measured from their own Reporting menu on 17 August: they run
-**`base_accounting_kit`** by Cybrosys — the free Odoo Apps Store module. Day Book,
-Cash Book, Bank Book and Assets together are its signature.
-
-So they have a P&L and a balance sheet, and it cost them a free install. **Parity is
-an afternoon for anyone**, and that same module is our escape hatch if a sale ever
-needs parity tomorrow.
-
-What they do not have: anything Ethiopian in those reports, and no proof that any
-number ties to the ledger.
-
-**We are not building to catch up. We are building to pass them.**
 
 ---
 

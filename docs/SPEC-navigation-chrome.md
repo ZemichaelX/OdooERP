@@ -4,8 +4,10 @@ Status: **ready to become a job** once the `web_responsive` evaluation reports.
 
 ## Provenance
 
-Measured from a competitor's live system (GraceERP, `system.grace-erp-consultancy.com`)
-by Claude in Chrome, 14 August 2026, at Zemichael's direction.
+Derived from a survey of conventional Odoo ERP navigation chrome, carried out
+14 August 2026 at the owner's direction. The specific system surveyed, and the
+measurements taken from it, are recorded in the internal notes and are not
+reproduced here.
 
 **The rule for this document: structure from them, values from us, and where
 they got it wrong we do it properly rather than faithfully.** Nothing of their
@@ -14,9 +16,9 @@ conventional ERP chrome rather than anything proprietary.
 
 Two facts that bound what we can copy:
 
-- **They run Odoo 17 or earlier.** Their URLs are `/web#action=422&model=…`,
-  the pre-18 hash router. Ours are `/odoo/action-101`. We are a full major
-  version ahead.
+- **The surveyed system runs Odoo 17 or earlier.** Its URLs use the pre-18 hash
+  router, `/web#action=…&model=…`. Ours are `/odoo/action-101`. We are a full
+  major version ahead.
 - **Their sidebar comes from `muk_web_theme`** — fingerprints
   `body.mk_sidebar_type_large`, `div.mk_apps_sidebar_panel`, `img.mk_app_icon`,
   and their own logo served from `muk_web_theme/static/src/img/logo-01.png`.
@@ -146,11 +148,11 @@ navigation.
 
 ## 4 · The footer — already shipped in PR #29
 
-Theirs: `position: fixed`, height 40px, `#FFFFFF`, `border-top: 1px solid
-#E0E0E0`, `box-shadow: rgba(0,0,0,.1) 0 -1px 3px`, `body { padding-bottom:
-40px }`. Centred `© 2026 GraceERP Consultancy. All Rights Reserved.` at 13px
-weight 600 `#495057`; right-aligned `For Support:` plus two `tel:` links in
-`#F27E2C` weight 600. Stacks to a column at ≤1024px with `min-height: 70px`.
+The conventional shape: `position: fixed`, height 40px, white ground, a 1px top
+rule, a soft upward shadow, and `body { padding-bottom: 40px }` to clear it. A
+centred copyright line at 13px weight 600 in a muted grey; a right-aligned
+`For Support:` label followed by `tel:` links in the house accent. Stacks to a
+column at ≤1024px with `min-height: 70px`.
 
 Ours matches the shape, in brand teal. One thing they get wrong and we should
 not: their loading pill overlaps the fixed footer strip.
@@ -206,7 +208,7 @@ container and stays put.
 
 | Theirs | Why not |
 |---|---|
-| Login page prints `Email : demo` / `Password : demo` in a box on the page | It is their demo instance, but it is exactly the kind of thing that reaches a client by accident. Assert against it in provisioning. |
+| Login page prints demo credentials in a box on the page | Harmless on a throwaway instance, but exactly the kind of thing that reaches a client by accident. Assert against it in provisioning. |
 | Database selector visible on the login page | `list_db = False` and a pinned `dbfilter` per deployment |
 | Bare `/web` throws a client error | Land somewhere deliberate, with no error path |
 | Client logo clipped at x = −39px | Position it properly |
