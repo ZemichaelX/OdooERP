@@ -1,11 +1,23 @@
-# Upstream issue, ready to file — NOT YET FILED
+# Upstream issue — FILED
 
-**Target:** https://github.com/odoo/odoo/issues/new
-**Status: UNFILED.** This session could not post it. GitHub write access here is
-scoped to `zemichaelx/odooerp`, and attaching `odoo/odoo` was refused
-(*"cross-tier adds are not supported"*). Read access worked — the search below was
-run — so only the posting step is blocked. **Zemichael (or any session started
-against `odoo/odoo`) needs to paste this in.**
+**Filed as [odoo/odoo#282865](https://github.com/odoo/odoo/issues/282865)** —
+*"[l10n_et] Default expense account is a current asset (230100 Goods in Transit),
+so purchases never reach the P&L"*, opened by **ZemichaelX** against **19.0**,
+17 Aug 2026.
+
+**Our override stays the interim measure regardless of what upstream does.** Even
+a merged upstream fix reaches a client only when they move to a release carrying
+it, and it would still not touch a database that has already loaded the chart,
+because the template is not re-read on upgrade — that is
+`_l10n_et_base_fix_default_expense_account`'s job and it stays needed either way.
+
+*(Historical note, kept because it explains why this file exists: the session that
+drafted this could not post it. GitHub write access there was scoped to
+`zemichaelx/odooerp`, and attaching `odoo/odoo` was refused —
+"cross-tier adds are not supported". Read access worked, so the duplicate search
+below was genuinely run.)*
+
+The text below is what was filed.
 
 **Duplicate check, run 17 Aug 2026:** searched `odoo/odoo` issues for the
 Ethiopian chart's default expense account; 25 loosely-matching results, **none of
@@ -25,9 +37,16 @@ See defect register entry 26.
 
 ## Title
 
+**As filed:**
+
 ```
-[19.0] l10n_et: company default expense account is 2301 Goods in Transit (asset_current), so purchases never reach the P&L
+[l10n_et] Default expense account is a current asset (230100 Goods in Transit), so purchases never reach the P&L
 ```
+
+*(The draft below the title was filed as written. The title itself was shortened
+on filing from the drafted version — `[19.0] l10n_et: company default expense
+account is 2301 Goods in Transit (asset_current), so purchases never reach the
+P&L` — noted so this file does not misreport what is on the issue.)*
 
 ## Body
 

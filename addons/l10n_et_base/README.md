@@ -37,9 +37,11 @@ Epic 3 of `docs/plan-2026/10-claude-code-roadmap.md`; functional spec
 
   **This is core Odoo's defect, not ours, and it affects every Odoo-based
   Ethiopian deployment** — `odoo/addons/l10n_et/models/template_et.py`, the
-  `expense_account_id` key of `_get_et_res_company`. Reported upstream; the
-  override here is the interim measure, not the destination. See defect register
-  entry 26.
+  `expense_account_id` key of `_get_et_res_company`. Filed upstream as
+  **[odoo/odoo#282865](https://github.com/odoo/odoo/issues/282865)**; the override
+  here stays the interim measure regardless of what upstream does, because a
+  merged fix would not touch a database that has already loaded the chart. See
+  defect register entry 26.
 
 ### Withholding tax automation (Aug 2025 rules)
 - New effective-dated config model `l10n.et.wht.config` (rates, thresholds,

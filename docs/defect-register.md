@@ -476,10 +476,21 @@ The mapping lives in Odoo's own `l10n_et` chart template, so any company anywher
 running Odoo on the Ethiopian chart books its purchases into a current-asset
 transit account by default, sees no cost of sales in its P&L, and overstates
 profit until someone notices. That includes every competitor building on the same
-localisation. **Raise it upstream with Odoo** — a one-line change to
-`expense_account_id` in `template_et.py` fixes it for everyone, and our own
-override should be treated as the interim measure rather than the destination.
-Doing both is right: upstream fixes are slow, and our clients ship now.
+localisation.
+
+**FILED UPSTREAM: [odoo/odoo#282865](https://github.com/odoo/odoo/issues/282865)**
+— *"[l10n_et] Default expense account is a current asset (230100 Goods in
+Transit), so purchases never reach the P&L"*, opened by ZemichaelX against 19.0,
+17 Aug 2026. A one-line change to `expense_account_id` in `template_et.py` fixes
+it for every Ethiopian deployment, competitors included.
+
+**Our override stays the interim measure regardless of what upstream does**, and
+that is not a hedge — it is the only safe reading. Even a merged upstream fix
+reaches a client only when they move to a release carrying it, and it would not
+touch a database that has already loaded the chart, because the template is not
+re-read on upgrade. `_l10n_et_base_fix_default_expense_account` is what actually
+moves an existing tenant, and it stays needed either way. Doing both is right:
+upstream fixes are slow, and our clients ship now.
 
 Separately, `data-templates/`, which CLAUDE.md describes as spreadsheet import
 templates for onboarding, contains **only `README.md`** — so there is no import

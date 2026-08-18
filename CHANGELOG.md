@@ -31,8 +31,10 @@ failed, 0 skipped — because a template change applies at install and is skippe
 upgrade, and CI installs while clients upgrade.
 
 **Core Odoo's defect, not ours: every Odoo-based Ethiopian deployment has it**,
-competitors included. Reported upstream; this override is the interim measure.
-Defect register entry 26.
+competitors included. Filed upstream as
+[odoo/odoo#282865](https://github.com/odoo/odoo/issues/282865); this override
+stays the interim measure regardless, since a merged upstream fix would not reach
+a database that has already loaded the chart. Defect register entry 26.
 
 
 ### The labelled sidebar (2026-08-15)
