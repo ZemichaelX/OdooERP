@@ -63,6 +63,22 @@ Check it, do not assume it:
 
     git log -1 --format='%an <%ae>'    # must be ZemichaelX <zemichael…>
 
+## Pull requests: ours are authorised, third parties' are not
+
+**Opening a pull request against THIS repository is authorised by default.** It is
+how every change ships, and **CI cannot run without one** — `.github/workflows/ci.yml`
+triggers on `push: [master]` and `pull_request`, so a feature branch with no PR has
+zero checks. Never sit on finished work waiting to be told to open one.
+
+**Merging requires every check completed green.** Not green-except-one, not green
+after a re-run that was never diagnosed. CI's own `MIN_EXPECTED_TESTS` floor is part
+of that: a suite that did not run is not a pass.
+
+**Any action against a THIRD-PARTY repository needs explicit approval, every time** —
+an issue, a pull request, a comment, a review. `odoo/odoo#282865` was drafted, held,
+and filed only once it was asked for. That asymmetry is the whole rule: our own
+repository is our workshop, and everyone else's is someone else's house.
+
 ## How to run locally
     ./scripts/install_hooks.sh    # once per clone: gitleaks pre-commit secret scan
     cp .env.example docker/.env   # set DB_PASSWORD etc. (compose's project dir

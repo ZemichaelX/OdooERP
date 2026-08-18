@@ -25,6 +25,39 @@ _logger = logging.getLogger(__name__)
 # that loaded the chart earlier, `_pre_reload_data` deliberately skips field updates
 # on existing accounts, so `_l10n_et_base_reload_for_company` applies them directly.
 # Codes as padded by code_digits=6.
+# Core l10n_et maps the company's DEFAULT EXPENSE ACCOUNT to 2301 "Goods in
+# Transit" — an `asset_current` account — in the `expense_account_id` key of
+# `_get_et_res_company` (odoo/addons/l10n_et/models/template_et.py). That default
+# is the last link of the chain `_get_product_accounts` walks:
+#
+#     product.property_account_expense_id
+#       -> category property_account_expense_categ_id   (seeded from the company
+#                                                        default via ir.default at
+#                                                        chart load)
+#       -> company.expense_account_id                   <- the transit account
+#
+# so EVERY product that carries no account of its own — which is every product a
+# client imports — books its purchases into a current asset. Odoo's generic chart
+# loader also copies `company.expense_account_id` into `ir.default` for
+# `product.category.property_account_expense_categ_id`, so both surviving links of
+# the chain point at the same wrong account.
+#
+# WHY THIS MATTERS MORE THAN IT LOOKS: the books still balance. A balanced ledger
+# cannot tell a misclassified debit from a correct one, so nothing complains. What
+# breaks is the profit & loss account, which shows revenue with no cost of sales,
+# and the balance sheet, which carries a transit balance that only grows. Measured
+# on a demo tenant: 230100 at 453,800.00 with the inventory-valuation journal
+# empty, and a single 54,000.00 purchase overstating reported profit by 54,000.00.
+#
+# NOT OUR BUG, AND NOT ONLY OUR PROBLEM: it ships in Odoo's own Ethiopian
+# localisation, so every Odoo-based Ethiopian deployment has it, competitors
+# included. Reported upstream (see README). We never modify l10n_et, so we correct
+# it the same way we correct the mis-typed core accounts below — through the
+# template merge for fresh chart loads, and directly for companies that loaded the
+# chart before this module.
+CORE_EXPENSE_ACCOUNT_XMLID = "l10n_et2301"  # 230100 Goods in Transit, asset_current
+DEFAULT_EXPENSE_ACCOUNT_XMLID = "l10n_et5111"  # 511100 Cost of Goods and Services, expense
+
 CORE_ACCOUNT_FIXES = {
     "221200": {"account_type": "asset_current"},
     "221300": {"account_type": "asset_current"},
@@ -86,6 +119,78 @@ class AccountChartTemplate(models.AbstractModel):
     def _get_l10n_et_base_account_fiscal_position(self):
         """Zero-rated and VAT-exempt fiscal positions (Proc 1341/2024)."""
         return self._parse_csv("et", "account.fiscal.position", module="l10n_et_base")
+
+    @template("et", "res.company")
+    def _get_l10n_et_base_res_company(self):
+        """Point the company's default expense account at cost of sales.
+
+        Overrides core l10n_et's `expense_account_id` (see the module-level note
+        on CORE_EXPENSE_ACCOUNT_XMLID). The loader merges per xml id with
+        ``dict.update``, and ``getmembers`` orders the registered template
+        functions by attribute name, so ``_get_l10n_et_base_res_company`` runs
+        after core's ``_get_et_res_company`` and this single key wins while every
+        other company value core sets is left untouched.
+        """
+        return {
+            self.env.company.id: {
+                "expense_account_id": DEFAULT_EXPENSE_ACCOUNT_XMLID,
+            },
+        }
+
+    @api.model
+    def _l10n_et_base_fix_default_expense_account(self, company):
+        """Repoint an existing company's default expense account, and its default.
+
+        Fresh chart loads are covered by the template merge above; a company that
+        loaded chart 'et' before this version keeps the transit account both on
+        ``res.company.expense_account_id`` and in the ``ir.default`` row the chart
+        loader copied it into. Both are moved here.
+
+        Deliberately conservative: only a company still sitting on the CORE
+        default is moved. A client who has chosen their own expense account —
+        including one who has already corrected this by hand — is left alone,
+        because this is a defaulting fix and not an opinion about their chart.
+        Idempotent, so the post_init hook and the migration can both call it.
+
+        Returns the companies actually moved, so a caller can assert the work
+        happened rather than assume it.
+        """
+        chart_template = self.with_company(company)
+        transit = chart_template.ref(CORE_EXPENSE_ACCOUNT_XMLID, raise_if_not_found=False)
+        cost_of_sales = chart_template.ref(
+            DEFAULT_EXPENSE_ACCOUNT_XMLID, raise_if_not_found=False
+        )
+        if not cost_of_sales:
+            # No target account: leave the company as it is rather than guess.
+            _logger.warning(
+                "l10n_et_base: %s not found for %s; the default expense account "
+                "was left unchanged.",
+                DEFAULT_EXPENSE_ACCOUNT_XMLID,
+                company.display_name,
+            )
+            return self.env["res.company"]
+
+        moved = self.env["res.company"]
+        current = company.expense_account_id
+        if not current or (transit and current == transit):
+            company.expense_account_id = cost_of_sales
+            moved |= company
+
+        # The chart loader copies the company default into ir.default for product
+        # categories; that copy does not follow the company field afterwards.
+        ir_default = self.env["ir.default"].sudo()
+        category_default = ir_default._get(
+            "product.category", "property_account_expense_categ_id", company_id=company.id
+        )
+        if not category_default or (transit and category_default == transit.id):
+            ir_default.set(
+                "product.category",
+                "property_account_expense_categ_id",
+                cost_of_sales.id,
+                company_id=company.id,
+            )
+            moved |= company
+        return moved
 
     def _post_load_data(self, template_code, company, template_data):
         """Seed the effective-dated Ethiopian tax configuration on chart load."""
@@ -218,3 +323,6 @@ class AccountChartTemplate(models.AbstractModel):
         self.env["l10n.et.social.welfare.levy.config"]._l10n_et_ensure_default(company)
         # Same call as the fresh-load path. A client site reaches the fix here.
         self._l10n_et_base_deactivate_unsupported_core_taxes(company)
+        # The transit-account default: fresh loads get it from the template merge,
+        # existing companies only from here.
+        self._l10n_et_base_fix_default_expense_account(company)
