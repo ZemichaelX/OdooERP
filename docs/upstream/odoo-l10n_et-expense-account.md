@@ -5,11 +5,13 @@
 so purchases never reach the P&L"*, opened by **ZemichaelX** against **19.0**,
 17 Aug 2026.
 
-**Our override stays the interim measure regardless of what upstream does.** Even
-a merged upstream fix reaches a client only when they move to a release carrying
-it, and it would still not touch a database that has already loaded the chart,
-because the template is not re-read on upgrade — that is
-`_l10n_et_base_fix_default_expense_account`'s job and it stays needed either way.
+**Our override is not a stopgap — it is the only mechanism that ever moves an
+existing database.** A chart template is read once, at chart load, and is not
+re-read on upgrade. A merged upstream fix therefore corrects the *next* Ethiopian
+deployment and touches **no existing tenant at all**;
+`_l10n_et_base_fix_default_expense_account` is the only thing that rewrites
+`company.expense_account_id` and the `ir.default` behind it on a database already
+in production.
 
 *(Historical note, kept because it explains why this file exists: the session that
 drafted this could not post it. GitHub write access there was scoped to

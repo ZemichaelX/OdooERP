@@ -484,13 +484,19 @@ Transit), so purchases never reach the P&L"*, opened by ZemichaelX against 19.0,
 17 Aug 2026. A one-line change to `expense_account_id` in `template_et.py` fixes
 it for every Ethiopian deployment, competitors included.
 
-**Our override stays the interim measure regardless of what upstream does**, and
-that is not a hedge — it is the only safe reading. Even a merged upstream fix
-reaches a client only when they move to a release carrying it, and it would not
-touch a database that has already loaded the chart, because the template is not
-re-read on upgrade. `_l10n_et_base_fix_default_expense_account` is what actually
-moves an existing tenant, and it stays needed either way. Doing both is right:
-upstream fixes are slow, and our clients ship now.
+**Our override is not a stopgap. It is the only mechanism that ever moves an
+existing database**, and that is worth stating precisely rather than as a hedge.
+
+A chart template is read **once**, when the chart is loaded. It is not re-read on
+upgrade. So a merged upstream fix corrects `template_et.py` for databases created
+*afterwards* and touches **no existing tenant at all** — not on upgrade, not on
+restart, never. Every Ethiopian database already in production keeps `230100`
+until something rewrites `company.expense_account_id` and the `ir.default` row
+behind it, and the only thing that does that is
+`_l10n_et_base_fix_default_expense_account`.
+
+Upstream therefore fixes the *next* deployment; we fix *this* one. Both are worth
+doing, and neither substitutes for the other.
 
 Separately, `data-templates/`, which CLAUDE.md describes as spreadsheet import
 templates for onboarding, contains **only `README.md`** — so there is no import
