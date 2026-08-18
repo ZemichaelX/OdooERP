@@ -1,9 +1,41 @@
 name: CI
 
 on:
+  # `push` stays master-only: every other branch is covered by `pull_request`,
+  # so running both would execute the whole suite twice for one change.
   push:
     branches: [master]
+    paths-ignore: &paths_ignore
+      # A docs-only change cannot alter any test outcome. Six jobs, five of them
+      # booting Odoo against Postgres, is a lot of machine time to spend proving
+      # that editing a paragraph did not break the payroll engine.
+      - 'docs/**'
+      - '*.md'
+      # ...but never skip these two. CLAUDE.md is matched by `*.md` and is the
+      # rulebook, not prose; and a change to the workflows is the thing most in
+      # need of running. (`.github/workflows/**` is matched by neither pattern
+      # above, so that line is belt-and-braces rather than load-bearing.)
+      - '!CLAUDE.md'
+      - '!.github/workflows/**'
   pull_request:
+    # Branches deliberately unrestricted — every branch's PR must run.
+    paths-ignore: *paths_ignore
+
+# A superseded run is queue time in front of the run somebody is actually
+# waiting on. Keyed on the ref, so a push to master never cancels a PR's run
+# and vice versa.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Inert on a GitHub-hosted runner, which gets a fresh filesystem per job.
+  # Load-bearing on the self-hosted fallback, which does not: five jobs here run
+  # their container as `--user root` with Odoo's addons-path pointed at
+  # ${GITHUB_WORKSPACE}, and CPython writes __pycache__/*.pyc next to the source
+  # as root into the bind-mounted host workspace. Kept so that switching back to
+  # the self-hosted runner is one edit, not two.
+  PYTHONDONTWRITEBYTECODE: "1"
 
 jobs:
   lint-and-fast-tests:
