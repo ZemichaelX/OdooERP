@@ -43,6 +43,30 @@ Epic 3 of `docs/plan-2026/10-claude-code-roadmap.md`; functional spec
   merged fix would not touch a database that has already loaded the chart. See
   defect register entry 26.
 
+### Account types, so a statement can show gross profit
+Core `l10n_et` types **all 58** of its expense accounts `expense` and **none**
+`expense_direct_cost` — so on this chart no profit & loss can separate cost of
+sales from operating expenses. Ours, OCA's, `base_accounting_kit`'s or Odoo
+Enterprise's alike: it is a defect in the chart, not in any report.
+
+Eight accounts are retyped — `5111`, `5901`, `5911`, `5931` to
+**`expense_direct_cost`**, and `6311`/`6313`/`6314`/`6315` to
+**`expense_depreciation`** — through the template merge (every chart load) and
+`CORE_ACCOUNT_FIXES` (companies that loaded the chart earlier, via the post-init
+hook and the `19.0.1.7.0` migration).
+
+**The rules are three digits, not two.** A `63` rule also sweeps up `632100`,
+`632200` and `632400` — pre-construction, buildings, infrastructure — which are
+**capital work**. Typed as depreciation they would sit in the depreciation line of
+every statement forever and nothing would fail. `test_construction_is_not_depreciation`
+holds that line.
+
+**`592100 "Other"` is deliberately NOT typed.** Its name corroborates nothing and
+only its code range argues for cost of sales. It is registered in
+`ACCOUNTS_AWAITING_CLASSIFICATION`, and the profit & loss names it —
+*"111 of 112 classified, unclassified: 592100 Other"* — on every run until the
+accountants answer. Emptying that dict is the whole fix when they do.
+
 ### Withholding tax automation (Aug 2025 rules)
 - New effective-dated config model `l10n.et.wht.config` (rates, thresholds,
   `punitive_respects_thresholds` flag, mandatory `source_note`), seeded at chart

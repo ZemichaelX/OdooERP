@@ -8,3 +8,4 @@ from . import test_supported_wht_rates
 from . import test_social_welfare_levy
 from . import test_expense_account_default
 from . import test_tin_on_documents
+from . import test_account_types

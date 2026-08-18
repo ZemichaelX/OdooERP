@@ -4,6 +4,39 @@ All notable changes to SapianERP. Epics per `docs/plan-2026/10-claude-code-roadm
 
 ## [Unreleased]
 
+### The chart could not express a gross profit (2026-08-18)
+Core `l10n_et` types **all 58** of its expense accounts `expense` and **none**
+`expense_direct_cost`. That is a defect in the chart, not in any report: on it,
+**no** profit & loss — ours, OCA's, Cybrosys's or Odoo Enterprise's — can separate
+cost of sales from operating expenses.
+
+Fixed in the chart, once, so every report that reads account types inherits it,
+including reports nobody has written yet. Eight accounts retyped: `5111`, `5901`,
+`5911`, `5931` → `expense_direct_cost`; `6311`, `6313`, `6314`, `6315` →
+`expense_depreciation`.
+
+**Three-digit rules, not two.** A `63` rule also catches `632100`, `632200` and
+`632400` — construction, i.e. capital work — which would then sit in the
+depreciation line of every statement forever, failing nothing. A regression test
+holds that line.
+
+**`592100 "Other"` is deliberately left unclassified** and will be named as such
+on the face of the P&L until the accountants answer.
+
+Red proof: **3 of 5**, as predicted — the two that passed are the regression
+guards, named in advance. Discriminating upgrade proof on a live Ethiopian tenant
+with posted entries: **0 direct-cost accounts before, 4 after**, with `592100` and
+`632100` correctly untouched.
+
+Two mechanism defects surfaced while building it. The core fixes were reaching
+**only companies that existed at install** — a chart loaded later, including a
+client's second company, got none of them; they are now applied on every chart
+load. And three social-welfare-levy tests pinned the literal `"expense"` where
+their own names said *"a cost account and not a receivable"*; they now assert the
+expense family, so a classification decision no longer fails a test that was never
+about classification.
+
+
 ### Invoices went out with no tax identifier on them (2026-08-18)
 Ethiopia identifies a taxpayer by TIN. This module stores it in `l10n_et_tin`,
 because Ethiopia also has a separate VAT registration number and one core `vat`

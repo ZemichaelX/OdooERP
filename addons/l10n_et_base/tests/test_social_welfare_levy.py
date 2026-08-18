@@ -117,9 +117,14 @@ class TestSocialWelfareLevy(L10nEtBaseCommon):
         accounts = self.levy_tax.invoice_repartition_line_ids.account_id
         self.assertTrue(accounts, "the levy tax posts nowhere at all")
         for account in accounts:
-            self.assertEqual(
-                account.account_type,
-                "expense",
+            # The EXPENSE FAMILY, not one exact subtype. What matters — and what
+            # this test's name says — is cost versus receivable. The levy is a
+            # duty on imported goods, so it is landed cost and its account is
+            # typed `expense_direct_cost` since 19.0.1.7.0; pinning the literal
+            # "expense" made a P&L classification decision fail a test that was
+            # never about classification.
+            self.assertTrue(
+                account.account_type.startswith("expense"),
                 "the levy must be a COST of the import; %s is a %s account"
                 % (account.display_name, account.account_type),
             )
@@ -238,7 +243,7 @@ class TestSocialWelfareLevy(L10nEtBaseCommon):
         levy_lines = move.line_ids.filtered(lambda line: line.tax_line_id == self.levy_tax)
         self.assertTrue(levy_lines)
         for line in levy_lines:
-            self.assertEqual(line.account_id.account_type, "expense")
+            self.assertTrue(line.account_id.account_type.startswith("expense"))
             self.assertEqual(line.balance, LEVY, "debit — a cost, not a credit")
         receivables = move.line_ids.filtered(
             lambda line: line.account_id.account_type == "asset_receivable"
@@ -364,7 +369,7 @@ class TestSocialWelfareLevy(L10nEtBaseCommon):
 
         levy_lines = move.line_ids.filtered(lambda line: line.tax_line_id == self.levy_tax)
         self.assertEqual(sum(levy_lines.mapped("balance")), LEVY)
-        self.assertEqual(levy_lines.account_id.account_type, "expense")
+        self.assertTrue(levy_lines.account_id.account_type.startswith("expense"))
 
         wht_lines = move.line_ids.filtered(lambda line: line.tax_line_id.l10n_et_wht_kind)
         self.assertTrue(wht_lines, "the punitive WHT did not apply")
