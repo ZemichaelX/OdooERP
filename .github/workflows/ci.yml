@@ -294,7 +294,32 @@ jobs:
             echo "::error::git is still absent, so actions/checkout would silently fall back to the REST archive and re-download the whole repository."
             exit 1
           }
-          echo "git ready: $(git --version)"
+
+          # MAKE THE FETCH SURVIVE THIS LINK.
+          #
+          # The first git-based checkout on this runner failed three times in a
+          # row (run 32173511912, Odoo integration tests):
+          #
+          #   error: RPC failed; curl 56 GnuTLS recv error (-9): Error decoding
+          #          the received TLS packet.
+          #   fetch-pack: unexpected disconnect while reading sideband packet
+          #   fatal: early EOF
+          #
+          # That is HTTP/2 multiplexing over an unstable connection, not
+          # slowness — the same link that gave `curl: (18) Transferred a partial
+          # file` on the Chrome download. Forcing HTTP/1.1, giving curl a large
+          # buffer, and being patient about a slow-but-alive transfer is the
+          # standard remedy.
+          #
+          # SYSTEM scope, not --global, and that distinction is load-bearing:
+          # actions/checkout logs "Temporarily overriding HOME=..." before it
+          # runs git, so anything in the user's global config is NOT in effect
+          # during the fetch. /etc/gitconfig is.
+          git config --system http.version HTTP/1.1
+          git config --system http.postBuffer 524288000
+          git config --system http.lowSpeedLimit 1000
+          git config --system http.lowSpeedTime 600
+          echo "git ready: $(git --version); http.version=$(git config --system --get http.version)"
 
       - uses: actions/checkout@v4
 
