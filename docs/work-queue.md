@@ -29,7 +29,7 @@ block on it, and never guess it into code.
 
 | # | Item | State |
 |---|---|---|
-| 1 | **TIN on documents** | **IN PROGRESS** |
+| 1 | **TIN on documents** | **DONE** — merged when CI is green |
 | 2 | #51 — re-run, merge if green | todo |
 | 3 | #50 — diagnose before fixing | todo |
 | 4 | Profit and loss | todo |
@@ -42,7 +42,7 @@ block on it, and never guess it into code.
 
 ---
 
-### 1. TIN ON DOCUMENTS — design approved, build it
+### 1. TIN ON DOCUMENTS — DONE (pending CI)
 
 Design: `docs/design-tin-identifier.md`. Blocker; ahead of the P&L because a
 client is sending non-compliant invoices *today*.

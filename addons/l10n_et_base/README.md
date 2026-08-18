@@ -89,6 +89,29 @@ Finance directive.
 > as a receivable that is never recovered. It is refused by a constraint, and
 > the attempt is exercised by a test.
 
+### The tax identifier on documents
+`l10n_et_tin` is the **system of record** — validated, indexed, propagated to
+contacts — and core `vat` is **populated from it** so the framework has something
+to print. Every core template guards its tax-ID line on `vat`: the shared external
+layout in **17 places**, plus the invoice, the quotation and the POS receipt. With
+`vat` empty a tenant sent invoices carrying **no tax identifier at all** — measured
+on the bytes of the PDF a customer received.
+
+One-way mirror, never a merge: `l10n_et_vat_reg_no` stays separate (Ethiopia has a
+TIN *and* a VAT registration number, which one core field cannot hold), and a `vat`
+somebody typed is **never** overwritten. Existing databases are filled by
+`_l10n_et_backfill_vat_from_tin` (post-init hook + `19.0.1.6.0` migration).
+
+`res.country` ET gets `vat_label = TIN`, so documents say **TIN** and not "Tax ID".
+Applied in **code**, not XML: `ir_model_data` for `base.et` is `noupdate = true`,
+so a data record targeting it is skipped **in silence** — the file loads, nothing
+is written, nothing is logged.
+
+`base_vat` is deliberately **NOT** installed: `stdnum` has no Ethiopian module and
+`base_vat` has no `check_vat_et`, so it accepts anything for ET (measured: it
+accepted `nonsense-xyz`) while switching on strict validation for every other
+country. See `docs/design-tin-identifier.md`.
+
 ### Partner compliance fields
 TIN (10-digit format-validated + normalized via the reference calculator), VAT
 registration no., business licence no. + expiry (expired ⇒ punitive WHT),
