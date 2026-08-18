@@ -1,15 +1,122 @@
 name: CI
 
+# RUNS ON THE OPERATOR'S SELF-HOSTED RUNNER (item 12).
+#
+# GitHub-hosted minutes hit 2,000/2,000 on 18 Aug and reset on 1 September;
+# self-hosted minutes are not metered. The label is the CUSTOM one,
+# `linux-x64-docker`, never bare `self-hosted` — bare would also match any
+# runner registered later, including one with no Docker, and every job here
+# needs a Docker daemon for its `container:` and `services:` blocks.
+#
+# NOTE: .github/workflows/secret-scan.yml still targets GitHub-hosted runners
+# and is therefore still blocked until the reset. It is deliberately out of
+# scope here — it uses `sudo`, which the runner user may not have without a
+# password, and moving an advisory secret scanner onto the operator's own
+# machine is a decision, not a mechanical edit.
+
 on:
+  # `push` is already master-only and stays that way: every other branch is
+  # covered by `pull_request`, so running both would execute the whole suite
+  # twice on one runner that can only do one job at a time.
   push:
     branches: [master]
+    paths-ignore: &paths_ignore
+      # A single runner executes jobs SEQUENTIALLY, so wall-clock is now the
+      # scarce resource rather than money. A docs-only change cannot alter any
+      # test outcome, so it must not occupy the runner for ~12 minutes.
+      - 'docs/**'
+      - '*.md'
+      # ...but never skip these two. CLAUDE.md is matched by `*.md` and is the
+      # rulebook, not prose; the workflows are the thing being changed.
+      # (`.github/workflows/**` is matched by neither pattern above, so that
+      # line is belt-and-braces rather than load-bearing.)
+      - '!CLAUDE.md'
+      - '!.github/workflows/**'
   pull_request:
+    # Branches deliberately unrestricted — every branch's PR must run.
+    paths-ignore: *paths_ignore
+
+# One runner, one job at a time: a superseded run is pure queue time in front of
+# the run somebody is actually waiting on. Keyed on the ref, so a push to master
+# never cancels a PR's run and vice versa.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # LEFTOVER-STATE FIX 1 of 2 (see the PR body for the full audit).
+  #
+  # A self-hosted runner does NOT get a fresh filesystem per job. Five jobs here
+  # run their container as `--user root` with Odoo's addons-path pointed at
+  # ${GITHUB_WORKSPACE}, and CPython writes __pycache__/*.pyc next to the source
+  # the moment it imports a module — as root, into the bind-mounted host
+  # workspace. scripts/check_vendor.sh already documents this happening
+  # ("Odoo writes __pycache__/*.pyc INTO the module directory the moment it
+  # imports it"); on a throwaway VM nobody ever saw the consequence.
+  #
+  # Prevention, not cleanup: a cleanup step does not run reliably when a job is
+  # cancelled, and cancel-in-progress above makes cancellation routine.
+  PYTHONDONTWRITEBYTECODE: "1"
 
 jobs:
   lint-and-fast-tests:
     name: Lint + reference golden tests
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux-x64-docker]
     steps:
+      - name: Reclaim the workspace from earlier container jobs
+        # LEFTOVER-STATE FIX 2 of 2, and the one that would otherwise wedge the
+        # machine permanently.
+        #
+        # One runner means all six jobs share ONE workspace directory
+        # (_work/<repo>/<repo>) and run one after another. The other five jobs
+        # run `actions/checkout` INSIDE a container as `--user root`, so after
+        # any of them the checkout — .git included — is owned by root on the
+        # host. This job is the only one with no `container:`, so its checkout
+        # runs as the runner user, and `actions/checkout` begins with
+        # `git clean -ffdx` + `git reset --hard`. A non-root user cannot clean
+        # root-owned files, so from the first time a container job runs before
+        # this one, this job fails at checkout — on this run and on every run
+        # afterwards, until somebody logs into the machine and deletes them by
+        # hand.
+        #
+        # Job order is not fixed, so "it worked once" proves nothing; it is a
+        # coin toss that lands badly sooner or later.
+        #
+        # The fix uses only what the runner is guaranteed to have: the Docker
+        # socket and the runner user's membership of the docker group. A
+        # throwaway container is root, so it can hand ownership back. The image
+        # is the odoo digest already pinned by every other job in this file, so
+        # this introduces no new dependency and no unpinned tag (R7).
+        #
+        # It reports which branch it took. "No output" must never be the same
+        # thing as "nothing needed doing".
+        run: |
+          set -euo pipefail
+          ws="${{ runner.workspace }}"
+          mkdir -p "${ws}"
+          me="$(id -u):$(id -g)"
+          # UNBOUNDED on purpose: a bounded search would miss root-owned
+          # objects under .git/objects/xx/, which sit five levels down and are
+          # exactly what `git clean` chokes on. `-print -quit` stops at the
+          # first hit, so the dirty case is fast; the clean case walks the tree
+          # once, which costs about a second.
+          foreign="$(find "${ws}" ! -user "$(id -u)" -print -quit 2>/dev/null || true)"
+          if [ -n "${foreign}" ]; then
+            echo "Found paths not owned by $(id -un) (e.g. ${foreign}); reclaiming as ${me}."
+            docker run --rm \
+              -v "${ws}:/reclaim" \
+              odoo:19.0@sha256:e415f9924395e7521245813135112f264b9222bcde3b1d3c2ee9ff073081540a \
+              chown -R "${me}" /reclaim
+            still="$(find "${ws}" ! -user "$(id -u)" -print -quit 2>/dev/null || true)"
+            if [ -n "${still}" ]; then
+              echo "::error::Reclaim did not work — ${still} is still not owned by $(id -un). Checkout would fail below."
+              exit 1
+            fi
+            echo "Reclaimed. Workspace is owned by $(id -un) again."
+          else
+            echo "Workspace already owned by $(id -un); nothing to reclaim."
+          fi
+
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
@@ -101,7 +208,7 @@ jobs:
 
   integration-tests:
     name: Odoo integration tests
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux-x64-docker]
     # Run inside the same Odoo 19 image production uses, so the suite exercises
     # the real ORM/registry/report stack (A3). A DB failure here fails CI.
     # Images are pinned by DIGEST (R7): the 19.0/16 tags are rebuilt upstream
@@ -245,7 +352,7 @@ jobs:
 
   calendar-standalone:
     name: Calendar installs, and uninstalls, alone
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux-x64-docker]
     # WHY A SEPARATE JOB.
     #
     # l10n_et_calendar's central claim is that it stands ALONE: a client who
@@ -401,7 +508,7 @@ jobs:
 
   theme-with-website:
     name: Theme login vs website
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux-x64-docker]
     # WHY A SEPARATE JOB.
     #
     # sapian_theme's login branding is template inheritance on
@@ -615,7 +722,7 @@ jobs:
 
   rail-render:
     name: App rail rendered in a browser
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux-x64-docker]
     # WHY A SEPARATE JOB — AND WHY IT INSTALLS A BROWSER.
     #
     # The app rail is an OWL component. `/odoo` serves a bootstrap shell, so
@@ -819,7 +926,7 @@ jobs:
 
   launcher-defaults:
     name: Launcher defaults reach the page
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux-x64-docker]
     # WHY A SEPARATE JOB.
     #
     # sapian_theme defaults two web_responsive fields — is_redirect_home and
