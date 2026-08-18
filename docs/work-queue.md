@@ -29,7 +29,7 @@ block on it, and never guess it into code.
 
 | # | Item | State |
 |---|---|---|
-| 1 | **TIN on documents** | **DONE** — merged when CI is green |
+| 1 | **TIN on documents** | **CODE COMPLETE, CI NOT YET RUN** — needs a PR |
 | 2 | #51 — re-run, merge if green | todo |
 | 3 | #50 — diagnose before fixing | todo |
 | 4 | Profit and loss | todo |
@@ -42,7 +42,7 @@ block on it, and never guess it into code.
 
 ---
 
-### 1. TIN ON DOCUMENTS — DONE (pending CI)
+### 1. TIN ON DOCUMENTS — code complete, CI not yet run
 
 Design: `docs/design-tin-identifier.md`. Blocker; ahead of the P&L because a
 client is sending non-compliant invoices *today*.
@@ -54,6 +54,18 @@ passing on the half it cannot see.
 
 Not: flipping `is_invoice_report`. That fixes one document and leaves 17
 external-layout blocks guarded on an empty `company.vat`.
+
+**State, 18 Aug.** Built and proved locally on **both** paths — fresh `-i` and
+`-u` upgrade — **77 tests, 0 failed, 0 skipped**, lint clean. The upgrade proof is
+discriminating: the country label was nulled first, so the migration had to do the
+work.
+
+**`done` is NOT yet met, because CI has not run.** `.github/workflows/ci.yml`
+triggers on `push: [master]` and `pull_request` only, so **nothing runs on a bare
+feature branch** — this branch has zero workflow runs. Closing item 1 needs a PR
+opened against `master`, which is an outward action and was not authorised.
+**Awaiting the go-ahead; do not mark this item done until CI has actually run
+green.**
 
 ### 2. #51 — re-run now the incident is over, merge if green
 
