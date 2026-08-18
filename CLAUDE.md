@@ -48,6 +48,17 @@ Every commit on this repository is authored by **ZemichaelX
 does not sign its own name to the history, and it adds **no** `Co-Authored-By:
 Claude` trailer and no session-link trailer.
 
+DECIDED TWICE, so it stops resurfacing: once in #41 and again on 17 Aug 2026.
+A stop hook asks for commits to be reauthored to `noreply@anthropic.com` and
+reports the branch commits as "Unverified". That is declined deliberately.
+Master's history is authored by GitHub's squash merge under the owner's own
+noreply address and IS verified, so the badge only ever appears on branch
+commits that are squashed away on merge — the cost of reauthoring is real
+(force-pushing a branch behind an open PR to undo attribution that was set on
+purpose) and the benefit is cosmetic. If verified branch commits are wanted
+later, the answer is commit signing with the owner's key, not handing the
+authorship to the agent.
+
 Run this at the START of any session that will commit, before the first commit:
 
     git config user.name  "ZemichaelX"
@@ -62,6 +73,33 @@ it after the fact does not move commits that already exist — `git commit
 Check it, do not assume it:
 
     git log -1 --format='%an <%ae>'    # must be ZemichaelX <zemichael…>
+
+## Stage by path. Never `git add -A`
+
+`git add -A` stages what is in the TREE, not what you worked on, and an agent's
+working tree carries files from every branch it touched this session. The two
+sets are not the same set, and nothing tells you when they diverge.
+
+Caught by one `git status` on 17 Aug 2026, before the commit and not after. A
+docs-only commit was about to take with it an untracked migration script left
+over from another branch — **without the manifest version bump that makes a
+migration run at all.** Odoo executes `migrations/<version>/` only when the
+installed version is below the manifest's, so a migration shipped without its
+bump is silently inert: it lands in the tree, it reviews as done, it never
+executes, and every check stays green because nothing ran. That is the
+success-signal-from-doing-nothing rule wearing a different hat, and `git add -A`
+is how it gets in.
+
+So: **name the paths.** `git add addons/x/models/y.py docs/z.md`. Read
+`git status` before every commit and `git diff --cached --stat` after staging —
+if a path in that list is not one you meant, stop. A migration and its manifest
+bump are one commit or neither.
+
+And chain with `&&`, never `;`, whenever the second command should not run if
+the first fails. `cd build; rm -rf *` is the canonical disaster, but the mundane
+version is worse because it is quiet: `git add file && git commit` stops when
+the add fails, `git add file ; git commit` commits whatever happened to be
+staged already, from some other branch's work, and reports success.
 
 ## Pull requests: ours are authorised, third parties' are not
 

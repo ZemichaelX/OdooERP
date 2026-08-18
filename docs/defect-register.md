@@ -5,6 +5,11 @@ confirmed on current master, on Zemichael's tenant, or only in CI.
 
 Last updated: 17 August 2026.
 
+**Entry numbers are identities, not an ordering.** A new entry takes the next
+free number and keeps it for life — including when it moves to Closed. Two
+branches numbering independently is how 9, 23, 24 and 25 each briefly existed
+twice on 18 Aug; check the highest number in the file before adding one.
+
 **Read the status words literally.** *Verified on tenant* means someone looked at
 `demo_allapps` on Zemichael's machine after upgrading it. *Green in CI* means
 nothing about the tenant — see rule 5 below.
@@ -207,20 +212,18 @@ and renders teal, which is the giveaway.
 inside `.o_sapian_auth` rather than adding a rule per control, or we chase
 elements forever.
 
-**2. A purple wedge at the top-left of both auth pages**
-Verified present on tenant *after* the #47 upgrade — so it survives #47.
+**2. ~~A purple wedge at the top-left of both auth pages~~ — CLOSED, NOT OURS**
+Closed 17 Aug. It disappears in an incognito window with extensions disabled, so
+it was a **browser extension badge**, not anything this repository serves.
 
-Candidate, measured pre-upgrade: `portal/views/portal_templates.xml:12`,
-`<a class="o_skip_to_content btn btn-primary rounded-0 visually-hidden-focusable
-position-absolute start-0">`, computed `#714B67`, and the only rule for it in the
-served bundle is `.o_skip_to_content{z-index:1031}`. Top-left, square corners,
-absolutely positioned, `btn-primary`.
-
-**Unexplained:** if it carries `.btn-primary` inside a body with `o_sapian_auth`,
-our rule should reach it. Either it is not that element, or `--btn-bg` is not
-what this Bootstrap build reads. Needs a measurement on an upgraded page.
-
-Same corner as #46's white rectangle, different cause.
+Recorded rather than deleted because the elimination was earned twice and both
+halves are reusable. First, `--btn-bg` IS what this Bootstrap build reads —
+measured on the upgraded tenant, `.o_skip_to_content` computes `#14454F` and the
+winning rule is `.o_sapian_auth .btn-primary`, beating `.btn-primary`'s
+`#714B67`. So the candidate could not have stayed purple. Second, the element is
+`[x,y,w,h] = [-1,-1,1,1]`, clipped to `rect(0,0,0,0)` and off-viewport, and Tab
+on the tenant goes straight to "Choose a user" — there is no skip-to-content
+link in the tab order at all.
 
 **3. Five shipped templates hardcode a purple** — pinned
 Journal Notification, New eInvoices Notification, two Purchase templates, 2FA.
@@ -239,6 +242,16 @@ One concern: *no mail leaving a client's system advertises Odoo.*
 The three `auth_signup` ones are `mail.template` data records, not views, so they
 need a `body_html` override. They go in the existing `sapian_theme_auth_signup`
 bridge. The livechat one needs a new `im_livechat` bridge.
+
+**4b. The module graph order is not stable between identical CI runs**
+Measured 17 Aug, same commit, two runs of the `SapianBot survives an upgrade`
+job: `sapian_theme_mail` loaded at **27/30** and then at **26/30**. `mail_bot` is
+in that set and loads at **22/30 locally** — before us — so a defect that depends
+on loading after `mail_bot` will reproduce intermittently forever.
+
+**Consequence for whatever the SapianBot fix turns out to be: it must not depend
+on our module loading after `mail_bot`.** An ordering that happens to hold today
+is not a fix.
 
 **5. Odoo's identity elsewhere in Discuss** — #49, red, not merged
 Nine leaks swept 16 Aug against a 229-module database. Six in scope for #49
@@ -1044,6 +1057,147 @@ free. The payslip half is **OUR CODE** and is a build.
 handed printed payslips. Recorded so the absence is a decision on the record: the
 moment a client with fifty staff asks for self-service, the payslip half is not a
 setting.
+
+---
+
+**41. The website record is still called "My Website"**
+Verified on tenant, 17 Aug. The browser tab reads `Login | My Website`. The
+`website` record's name was never moved off Odoo's default, so it leaks into the
+tab title, the page metadata and some mail templates. Zemichael is fixing this
+one in Settings on his tenant.
+
+**The code owed is prevention, not that fix:** `scripts/build_demo.sh` should
+seed the website name from the company name, so a fresh demo never ships "My
+Website" and nobody has to remember the Settings step. Same shape as the
+launcher-defaults provisioning call — installing the module is not enough.
+
+---
+
+**42. A partial GitHub outage is a total CI outage for us, because five jobs
+have no git** — hardening item, its own PR
+
+**Not a defect in this repository, and nothing here is broken by it.** On
+17 Aug 2026 a GitHub incident opened at **13:40 UTC**: *"Archive downloads and
+raw repository content downloads are experiencing an approximate 50% error
+rate."* Archive download is exactly the call `actions/checkout` makes when git
+is absent, so five of our six CI jobs lost their checkout while the sixth
+carried on.
+
+The clock is what identifies the cause, and it rules out every candidate that
+lives in a branch:
+
+| Run | Started (UTC) | Result |
+|---|---|---|
+| master CI #131 | 12:33 | green, 11m19s |
+| #49's run 132 | 12:51 | container jobs checked out and ran; 11m41s |
+| **incident opens** | **13:40** | |
+| #51's run 133 | 14:11 | five jobs dead at checkout; **2m02s** |
+
+Same branch content, same `pull_request` event, same repo settings on either
+side of 13:40. **Zemichael did not change the Workflow permissions setting**, and
+the `Resource not accessible by integration` string in the annotations is the
+incident, not a token — do not record a permissions lesson from this. `ci.yml`
+is byte-identical between master and #51, and its checkout steps are identical
+to #49's, so the branch was never a candidate either.
+
+**The real exposure, argued on resilience and not on today's red:** five jobs
+(`integration-tests`, `calendar-standalone`, `theme-with-website`, `rail-render`,
+`launcher-defaults`) declare `container: odoo:19.0`, and that image ships no git.
+`actions/checkout` therefore falls back to the REST archive endpoint on every
+one of them, every run. The sixth, `lint-and-fast-tests`, runs on the runner,
+which has git, and it was untouched all afternoon. So a 50%-error partial outage
+of one GitHub endpoint takes 5/6 of our suite to zero, and our only surviving
+signal is the job that cannot run an Odoo test.
+
+Two ways to remove the dependency, costed but **not** to be built as a reaction
+to this incident:
+
+1. Install git in the container before checkout — small, but keeps CI on an
+   invocation path no human runs, and puts Debian's mirrors in the critical path.
+2. Check out on the runner and invoke Odoo through
+   `docker compose -f docker/docker-compose.yml run --rm odoo …` — removes the
+   fallback entirely and makes CI exercise the operator's real command (rule 5
+   working for us). Costs, from reading the compose file: `odoo` is `build: .`,
+   so CI builds the Dockerfile rather than pulling the pinned image; compose
+   hard-fails without `docker/.env` (`DB_PASSWORD` is `:?`-required) and needs
+   `config/odoo.runtime.conf` to exist as a file, both gitignored, and neither
+   may be created by `preflight.sh::ensure_runtime_conf`, which prints the
+   password it generates; every stdout-reading floor must be re-proved to still
+   **discriminate** through `compose run`; and the two Chrome jobs install Chrome
+   inside the container today, so they are a redesign, not a port.
+
+**While the incident is open, a CI result means nothing in either direction** —
+at a 50% error rate a green run is luck and a red run is weather. Wait for
+githubstatus.com to report resolved, then re-run **once**.
+
+**What this does not excuse.** #50 is genuinely red on its own account: its run
+started 09:59 UTC, nearly four hours before the incident. #49's bot-job failure
+on run 130 also predates 13:40, so the OdooBot revert remains a real,
+order-dependent defect and the traceback is still the next thing there.
+
+> **Rule 3, with today as the example.** Five jobs that fail at checkout run no
+> test body. Those were runs that *could not start*, not runs that failed — and
+> **the duration said so before anything else did**: 2m02s against a consistent
+> 11m30s across six prior runs, pass and fail alike. When a red arrives far
+> faster than a green ever does, read the clock before reading the diff.
+
+**43. Every CI job warns that Node.js 20 is deprecated**
+Observed 17 Aug in the annotations of every job. `actions/checkout@v4` and
+`actions/setup-python@v5` are being forced onto Node 24. Nothing is failing
+today; it is a countdown. The fix is a version bump of both actions, in its own
+PR, so that a change in checkout behaviour arrives on a run where it is the only
+variable — which is precisely the property this afternoon lacked.
+
+**44. Every branch push runs the whole suite twice**
+`ci.yml` triggers on both `push` and `pull_request`, so a push to a branch with
+an open PR fires two full runs of six jobs. Double runner time and **no extra
+information**: same tree, same jobs, same result. The usual shape is to keep
+`pull_request` for branches and restrict `push` to `master`, so master's own
+history stays covered without paying twice for every branch commit.
+
+---
+
+## Claude Code's own open state, 17 Aug
+
+Left here deliberately so a fresh session picks it up from the repository rather
+than from a transcript (rule 5: the environment that verifies is not the
+environment that runs — and a transcript is neither).
+
+- **PR #49 is RED and must not be merged.** Its `SapianBot survives an upgrade`
+  job fails at step 1. H2 is answered: the row reads `name='OdooBot'`,
+  `email='odoobot@example.com'`, `image_sha1` equal to OUR file — so the hook
+  wrote the image and something wrote exactly two fields back, as uid 1. The
+  write-tracing probe is pushed and verified loading locally
+  (`SAPIAN-TRACE res.partner.write is patched`, one captured write, ours, all
+  three fields). **The CI traceback has not been read yet. Read it before
+  proposing any fix**, and note what would have to be true for `mail_bot` to be
+  responsible: its data block names only `odoobot_state`, so the write would
+  have to reach `name` and `email` through `res.users` rather than from that
+  block's fields.
+  **A Claude Code Remote session cannot fetch that log — do not spend a session
+  finding out again.** The jobs and check-runs APIs answer `403 Resource not
+  accessible by integration` for the GitHub App token (while `list_workflows`
+  and `list_workflow_runs` succeed, so it is a job-level scope gap), and the
+  signed run-log ZIP lives on `results-receiver.actions.githubusercontent.com`,
+  which the session egress proxy refuses at CONNECT. There is no third copy: the
+  run has no artefacts. **The traceback has to come from the operator:**
+  `gh run view 32031930149 --log | grep -n -A 30 'SAPIAN-TRACE write on partner 2'`,
+  plus `grep -c` on the same string — two blocks are expected, and a count of 1
+  means the probe never saw the write, which is a different problem from the one
+  being chased.
+- **The palette guard has ESTABLISHED NOTHING.** `TestEveryControlIsInThePalette`
+  is written and committed, and its first run ended in a CDP `TimeoutError` —
+  rule 3, a run that could not start. It is not known to pass, and it is not
+  known to discriminate. The `SAPIAN-PALETTE` marker never printed, which is at
+  least the CI grep's own failure mode behaving as designed.
+- **Three approved Job 2 additions are NOT BUILT:** the focus-ring / outline
+  colour inside `.o_sapian_auth` (colour and outline, not colour alone); a guard
+  that enumerates controls on a page **with a stored user list**, because
+  "Choose a user" only renders when a remembered session exists and a clean page
+  is blind to the exact element that started this; and the timeout fix the guard
+  needs before either can be measured.
+- **PR #50's Windows verification is the operator's**, rule 4. Linux evidence
+  through a compose shim is a substitute, not a measurement.
 
 ---
 
