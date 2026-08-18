@@ -96,6 +96,71 @@ Concretely, for anything that reads rendered output:
   that never painted, an asset guard on a bundle that was not built, a mail guard
   on a transport that discarded the body.
 
+### Rule 2, worked example: the HTML named `.pdf`
+
+Found while building the TIN guard, one layer beneath the renderer example above.
+
+`_render_qweb_pdf` **returns HTML during tests** unless `force_report_rendering`
+is in the context (`ir_actions_report.py:1027`). So the invoice attachment the
+guard captured at the SMTP boundary was named `INV_....pdf`, was **8,083 bytes**,
+and began `<!DOCTYPE html>`.
+
+**And it contained both TINs.** Every content assertion in the guard — seller TIN
+present, buyer TIN present — would have passed, on a document that was not a PDF
+and that no customer would ever receive. The guard would have been green, the
+feature would have shipped, and the thing it was written to prove would have been
+untested.
+
+Only the format check saw it:
+
+```python
+self.assertTrue(pdfs[0].startswith(b"%PDF-"), ...)
+```
+
+**The general form:**
+
+> **When asserting on a rendered artefact, assert its FORMAT before its CONTENT.
+> Correct content in the wrong format passes silently.**
+
+Cheap to apply everywhere: magic bytes for a PDF, a parse for JSON or XML, an
+image decode for a PNG, a non-zero page count for a document. One line, and it is
+the line that stands between "the bytes say what we want" and "the bytes are the
+thing we think they are".
+
+### Rule 2, standing check: `noupdate` is three for three
+
+**Not a lesson any more — a check to run before writing the XML.**
+
+An XML record targeting a core `ir_model_data` row whose `noupdate` is true is
+**skipped with no error and no log line**. Worse than silent: the loader prints
+`loading <module>/data/<file>.xml` while writing nothing, so the log positively
+suggests the work happened.
+
+Three for three, on three separate occasions:
+
+| Target | Where it bit |
+|---|---|
+| `base.partner_root` | #49 — the SapianBot rename would have reached new databases only |
+| **`base.et`** | The TIN work, 18 Aug — `vat_label = TIN` loaded and did nothing |
+| The chart template | Entry 26 — a template is read once at chart load and never re-read |
+
+For `base.et` the flag was read directly after the failure:
+
+```sql
+select module, name, noupdate from ir_model_data where module='base' and name='et';
+--  base | et | t
+```
+
+**The standing check, before writing XML that targets a core xmlid:**
+
+1. Read that row's `noupdate` flag.
+2. If it is **true**, the value **must be set in code** — a post-init hook for
+   fresh installs and a versioned migration for existing databases. Both, because
+   CI installs and clients upgrade.
+3. Assert the **value**, never the file loading. Every one of these three was
+   caught by a test that read the resulting state; none would have been caught by
+   checking that the data file was listed in the manifest or appeared in the log.
+
 ---
 
 ## The branding rule

@@ -29,16 +29,29 @@ block on it, and never guess it into code.
 
 | # | Item | State |
 |---|---|---|
-| 1 | **TIN on documents** | **CODE COMPLETE, CI NOT YET RUN** — needs a PR |
-| 2 | #51 — re-run, merge if green | todo |
-| 3 | #50 — diagnose before fixing | todo |
-| 4 | Profit and loss | todo |
-| 5 | Balance sheet | todo |
-| 6 | #49 — remove the write-tripwire, make the fix order-independent | todo |
-| 7 | Palette additions | todo |
-| 8 | PR 4 — the four remaining "Powered by Odoo" mails | todo |
-| 9 | Landing slot and grid toggle — Phase A discovery first | todo |
-| 10 | Branch cleanup — 35 remote branches | todo |
+| 1 | **TIN on documents** | **IN PROGRESS** — code complete, PR open, done when green **and merged** |
+| 2 | #51 — re-run, merge if green | todo (ten minutes) |
+| 3 | **Account types** — nine accounts, three-digit rules | todo |
+| 4 | **Profit and loss** | todo |
+| 5 | **Balance sheet** | todo |
+| 6 | #50 — diagnose before fixing | todo |
+| 7 | #49 — write-tripwire out, fix order-independent | todo |
+| 8 | Palette additions | todo |
+| 9 | PR 4 — the four remaining "Powered by Odoo" mails | todo |
+| 10 | Landing slot and grid toggle — Phase A discovery first | todo |
+| 11 | Branch cleanup — 35 remote branches | todo |
+
+**Reordered 18 Aug** so the reporting blocker (register entry 27) clears today.
+The two reports moved up; **#50 moved down because its diagnosis is unbounded** and
+an unbounded item must not sit in front of a dated one. The old item 4 was **split
+in two — account types (3) and the P&L (4)** — because a data migration and a new
+report are different risks, and one PR each keeps the report from waiting on a
+migration review.
+
+**If the day runs short, what gives is item 6 onwards — never the tie-outs on 4
+and 5.** A P&L whose tie-out does not discriminate is worse than no P&L, because it
+invites trust it has not earned. **If ever tempted to ship one without a
+proven-red tie-out: stop and say so instead.**
 
 ---
 
@@ -72,36 +85,66 @@ green.**
 Ten minutes. It was never diagnosed as red on its merits; it was caught by the
 GitHub incident.
 
-### 3. #50 — genuinely red from 09:59 UTC, four hours before the incident
+### 3. ACCOUNT TYPES — the chart, not the report
 
-**Never diagnosed. Diagnose before fixing** — a fix aimed at an undiagnosed red is
-a guess. Windows verification stays **OWED BY THE OPERATOR** in the PR body
-(rule 4): Linux evidence is not proof for a Windows bug.
+Design: `docs/design-pl-account-types.md`. **Nine accounts, three-digit rules**, in
+`l10n_et_base` beside `CORE_ACCOUNT_FIXES`, with a **versioned migration** — the
+template merge covers fresh chart loads only, and `_pre_reload_data` does not update
+fields on accounts that already exist.
 
-### 4. PROFIT AND LOSS — design approved
+`592100 "Other"` stays **UNCLASSIFIED** until the accountants answer. An account
+whose name says nothing, typed by code range alone, is where a silent
+misclassification lives.
 
-Design: `docs/design-pl-account-types.md`. **Account types first, then the
-report** — the grouping belongs in `l10n_et_base` beside `CORE_ACCOUNT_FIXES`, in
-three-digit rules, nine accounts. `592100 "Other"` stays **unclassified** until
-the accountants answer, and the tie-out must **name it as unclassified** rather
-than absorb it.
+Measured and already known: the change is **allowed with posted entries present**,
+**no total moves** (139,993.00 before and after), and only **one** of the nine
+carries posted entries. Prior-period statements reprint with a gross-profit line
+they did not have — net profit unchanged, so nothing filed is contradicted.
 
-Tie-out, approved as proposed: net profit vs the ledger, and
-`112 of 112 accounts classified, unclassified: none`.
+**Watch the two-digit trap:** a `63` rule wrongly catches `632100`/`632200`/`632400`
+(construction, i.e. capex) as depreciation. `631` only.
+
+### 4. PROFIT AND LOSS
+
+Reuses `l10n.et.report.period.mixin` almost wholesale — `_period_line_domain`,
+`_account_movement`, **`_tie_out_row`**, `_store_csv`, `_csv_tie_out_rows`. What is
+new: the section grouping (now reading account **types**, thanks to item 3), the
+model, and two templates.
+
+**Tie-out, approved as proposed, and non-negotiable:**
+
+1. **Net profit vs the ledger** — the statement's net profit against the
+   independently summed movement of every income and expense account.
+2. **`112 of 112 accounts classified, unclassified: none`** — going red **by name**
+   when an account falls through. While `592100` is unmapped this reads
+   `111 of 112, unclassified: 592100 Other`, on every run, until somebody answers.
+
+**The tie-out must be proved RED before it is trusted.** Break the classification
+on purpose and watch it fail.
 
 ### 5. BALANCE SHEET
 
-After 4 and 5 the reporting blocker (register entry 27) is cleared.
+Same shape. Its own tie-out: **assets − (liabilities + equity + net profit) = 0.00**,
+which also ties the two statements to each other.
+
+After 4 and 5 the reporting blocker is cleared.
 **Trial balance and general ledger are deliberately NOT in this queue.**
 
-### 6. #49 — the write-tripwire and load order
+### 6. #50 — genuinely red from 09:59 UTC, four hours before the incident
+
+**Never diagnosed. Diagnose before fixing** — a fix aimed at an undiagnosed red is
+a guess. Moved down the queue on 18 Aug precisely because that diagnosis is
+unbounded. Windows verification stays **OWED BY THE OPERATOR** in the PR body
+(rule 4): Linux evidence is not proof for a Windows bug.
+
+### 7. #49 — the write-tripwire and load order
 
 Remove the write-tripwire probe from **shipping** code, and make the fix
 **order-independent**. 132's green was luck: our module moved between 26/30 and
 27/30 across identical runs. **The guard must force `mail_bot` to load after us,
 not hope for it.**
 
-### 7. PALETTE ADDITIONS — one PR
+### 8. PALETTE ADDITIONS — one PR
 
 Focus ring and outline inside `.o_sapian_auth`, outline on "Choose a user", and
 the property guard **enumerating every interactive control**. It must run on a
@@ -109,19 +152,18 @@ page **with a stored user list**, or it cannot see the element that started this
 (register entry 1). Fix the CDP `TimeoutError` that made the first attempt
 establish nothing — an attempt that establishes nothing is rule 3.
 
-### 8. PR 4 — the four remaining "Powered by Odoo" mails
+### 9. PR 4 — the four remaining "Powered by Odoo" mails
 
 Three `auth_signup` templates into the existing `sapian_theme_auth_signup` bridge
 (they are `mail.template` data records, so they need a `body_html` override), and
 the `im_livechat` transcript into a **new** bridge. Register entry 4.
 
-### 9. LANDING SLOT AND GRID TOGGLE — Phase A discovery first
+### 10. LANDING SLOT AND GRID TOGGLE — Phase A discovery first
 
 **Report which stock overview holds the slot and what tiles each renders. Do not
-pick one yourself.** Register entry 12: the landing page becomes a configurable
-slot so swapping it later is a data change, not a code change.
+pick one yourself.** Register entry 12.
 
-### 10. BRANCH CLEANUP
+### 11. BRANCH CLEANUP
 
 35 remote branches. Delete the merged ones; **list what was kept and why.**
 
