@@ -219,4 +219,145 @@
             </t>
         </t>
     </template>
+
+    <!-- Profit and loss. Sections come from ACCOUNT TYPES (set in the chart by
+         l10n_et_base), never from prefixes hard-coded here. The two checks at
+         the foot are part of the statement, not an appendix: an accountant who
+         signs this needs to see that it reconciles and that nothing fell out. -->
+    <template id="report_profit_loss">
+        <t t-call="web.html_container">
+            <t t-foreach="docs" t-as="o">
+                <t t-call="web.external_layout">
+                    <div class="page">
+                        <t t-set="data" t-value="o._get_report_data()"/>
+                        <h2><span t-field="o.name"/></h2>
+                        <div class="row mt-3">
+                            <div class="col-6">
+                                <strong>Company:</strong> <span t-field="o.company_id.name"/><br/>
+                                TIN: <span t-out="o.company_id.partner_id.l10n_et_tin or '&#8212;'"/>
+                            </div>
+                            <div class="col-6">
+                                <strong>Period:</strong>
+                                <span t-field="o.date_from"/> &#8211; <span t-field="o.date_to"/><br/>
+                                Currency: <span t-field="o.currency_id.name"/>
+                            </div>
+                        </div>
+
+                        <t t-set="mismatches" t-value="[tie for tie in data['tie_out'] if not tie['ok']]"/>
+                        <div t-if="not data['tie_out_ok']" class="alert alert-warning mt-3" role="alert">
+                            <strong t-if="mismatches">
+                                This statement does not reconcile to the general ledger — read before
+                                relying on it:
+                            </strong>
+                            <strong t-else="">
+                                This statement reconciles to the general ledger, but an account in the
+                                chart of accounts is not yet classified:
+                            </strong>
+                            <ul>
+                                <li t-foreach="mismatches" t-as="tie">
+                                    <span t-out="tie['label']"/>:
+                                    statement <span t-out="'%.2f' % tie['report_total']"/> vs
+                                    GL <span t-out="'%.2f' % tie['gl_total']"/> &#8212;
+                                    difference <span t-out="'%.2f' % tie['difference']"/>
+                                </li>
+                                <li t-foreach="data['warnings']" t-as="warning">
+                                    <span t-out="warning"/>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <table class="table table-sm mt-3">
+                            <thead>
+                                <tr>
+                                    <th>Account</th>
+                                    <th class="text-end">Amount</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <t t-foreach="data['sections']" t-as="section">
+                                    <tr class="table-light">
+                                        <td colspan="2"><strong t-out="section['label']"/></td>
+                                    </tr>
+                                    <tr t-foreach="section['accounts']" t-as="row">
+                                        <td class="ps-4">
+                                            <span t-out="row['code']"/> <span t-out="row['name']"/>
+                                            <span t-if="row.get('reason')" class="text-muted">
+                                                &#8212; <span t-out="row['reason']"/>
+                                            </span>
+                                        </td>
+                                        <td class="text-end"><span t-out="'%.2f' % row['amount']"/></td>
+                                    </tr>
+                                    <tr t-if="not section['accounts']">
+                                        <td class="ps-4 text-muted">No movement in the period</td>
+                                        <td class="text-end">0.00</td>
+                                    </tr>
+                                    <tr class="fw-bold">
+                                        <td>Total <span t-out="section['label']"/></td>
+                                        <td class="text-end"><span t-out="'%.2f' % section['total']"/></td>
+                                    </tr>
+                                    <tr t-if="section.get('subtotal')" class="fw-bold border-top">
+                                        <td><span t-out="section['subtotal']"/></td>
+                                        <td class="text-end">
+                                            <span t-out="'%.2f' % section['subtotal_amount']"/>
+                                        </td>
+                                    </tr>
+                                </t>
+                                <tr class="fw-bold border-top">
+                                    <td>NET PROFIT FOR THE PERIOD</td>
+                                    <td class="text-end"><span t-out="'%.2f' % data['net_profit']"/></td>
+                                </tr>
+                            </tbody>
+                        </table>
+
+                        <h6 class="mt-4">Reconciliation and coverage</h6>
+                        <table class="table table-sm">
+                            <thead>
+                                <tr>
+                                    <th>Check</th>
+                                    <th class="text-end">Statement</th>
+                                    <th class="text-end">Ledger</th>
+                                    <th class="text-center">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr t-foreach="data['tie_out']" t-as="tie">
+                                    <td><span t-out="tie['label']"/></td>
+                                    <td class="text-end"><span t-out="'%.2f' % tie['report_total']"/></td>
+                                    <td class="text-end"><span t-out="'%.2f' % tie['gl_total']"/></td>
+                                    <td class="text-center">
+                                        <span t-if="tie['ok']" class="text-success">OK</span>
+                                        <strong t-else="" class="text-danger">MISMATCH</strong>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td>
+                                        Accounts classified
+                                        <div t-if="not data['classification']['ok']" class="text-danger">
+                                            <span t-out="data['classification']['message']"/>
+                                        </div>
+                                    </td>
+                                    <td class="text-end">
+                                        <span t-out="data['classification']['classified']"/>
+                                    </td>
+                                    <td class="text-end">
+                                        <span t-out="data['classification']['total']"/>
+                                    </td>
+                                    <td class="text-center">
+                                        <span t-if="data['classification']['ok']" class="text-success">OK</span>
+                                        <strong t-else="" class="text-danger">UNCLASSIFIED</strong>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        <p class="text-muted">
+                            Computed live from posted journal items. Sections follow the
+                            account types set on the chart of accounts; an account no
+                            section claims is listed above by name and excluded from the
+                            totals, so the reconciliation fails rather than hiding it.
+                        </p>
+                    </div>
+                </t>
+            </t>
+        </t>
+    </template>
 </odoo>

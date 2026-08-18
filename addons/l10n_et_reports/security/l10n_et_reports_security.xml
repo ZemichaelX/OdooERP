@@ -12,4 +12,10 @@
         <field name="model_id" ref="model_l10n_et_wht_summary"/>
         <field name="domain_force">[('company_id', 'in', company_ids)]</field>
     </record>
+
+    <record id="l10n_et_profit_loss_company_rule" model="ir.rule">
+        <field name="name">Ethiopian Profit and Loss: multi-company</field>
+        <field name="model_id" ref="model_l10n_et_profit_loss"/>
+        <field name="domain_force">[('company_id', 'in', company_ids)]</field>
+    </record>
 </odoo>
