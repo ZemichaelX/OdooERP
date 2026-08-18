@@ -220,6 +220,82 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     steps:
+      - &git_for_checkout
+        name: git for checkout, from the runner's local apt cache
+        # WHY THIS EXISTS, AND WHY IT IS NOT AN IMAGE BUILD.
+        #
+        # The odoo image ships no git. Without git `actions/checkout` falls back
+        # to the REST archive endpoint and re-downloads the WHOLE repository for
+        # every job, every run — measured 14m05s on Calendar and 14m44s on App
+        # rail in run 32150460447. With git it is an incremental fetch against a
+        # workspace that already exists on the runner's disk.
+        #
+        # Rejected: a locally built image. `container.image` is pulled by the
+        # runner before any step runs, and a local-only tag has no registry to
+        # pull from; making it pullable means GHCR, which is a network round
+        # trip, a publishing step, and a change to every `container:` block and
+        # its pinned digest (R7).
+        #
+        # Rejected: plain `apt-get install git` per job. That is itself a
+        # download per job, which is the thing being fixed.
+        #
+        # Chosen: install from a PERSISTENT LOCAL APT CACHE beside the
+        # workspace. The runner bind-mounts its whole `_work` root into every
+        # job container, so one directory serves host and container jobs without
+        # touching `container:` at all. First run on a machine pays for the apt
+        # index and the .debs once; every run after that is local disk only.
+        #
+        # Inline rather than a script, because nothing is checked out yet — this
+        # step is what makes the checkout cheap.
+        shell: bash
+        run: |
+          set -euo pipefail
+          if command -v git >/dev/null 2>&1; then
+            echo "git already present: $(git --version)"
+            exit 0
+          fi
+          export DEBIAN_FRONTEND=noninteractive
+
+          CACHE=""
+          if [ -n "${GITHUB_WORKSPACE:-}" ]; then
+            CACHE="$(dirname "$(dirname "${GITHUB_WORKSPACE}")")/_sapian_ci_cache"
+            if ! mkdir -p "${CACHE}/apt-archives/partial" "${CACHE}/apt-lists" 2>/dev/null; then
+              echo "cache at ${CACHE} is not writable; installing over the network this run"
+              CACHE=""
+            fi
+          fi
+
+          if [ -n "${CACHE}" ] && [ -n "$(ls -A "${CACHE}/apt-lists" 2>/dev/null || true)" ]; then
+            echo "restoring apt index from ${CACHE}/apt-lists (no network)"
+            cp -a "${CACHE}/apt-lists/." /var/lib/apt/lists/ 2>/dev/null || true
+          else
+            echo "apt index cache is empty — populating it once (the slow first run)"
+            apt-get update -qq
+            if [ -n "${CACHE}" ]; then
+              cp -a /var/lib/apt/lists/. "${CACHE}/apt-lists/" 2>/dev/null || true
+            fi
+          fi
+
+          if [ -n "${CACHE}" ]; then
+            if ! apt-get install -y -qq --no-install-recommends \
+                   -o Dir::Cache::archives="${CACHE}/apt-archives" git >/dev/null 2>&1; then
+              echo "the cached apt index is stale — refreshing it and retrying once"
+              apt-get update -qq
+              apt-get install -y -qq --no-install-recommends \
+                -o Dir::Cache::archives="${CACHE}/apt-archives" git >/dev/null
+              rm -rf "${CACHE:?}/apt-lists/"* 2>/dev/null || true
+              cp -a /var/lib/apt/lists/. "${CACHE}/apt-lists/" 2>/dev/null || true
+            fi
+          else
+            apt-get install -y -qq --no-install-recommends git >/dev/null
+          fi
+
+          command -v git >/dev/null 2>&1 || {
+            echo "::error::git is still absent, so actions/checkout would silently fall back to the REST archive and re-download the whole repository."
+            exit 1
+          }
+          echo "git ready: $(git --version)"
+
       - uses: actions/checkout@v4
 
       - name: Run the Odoo integration suites (with demo data)
@@ -371,6 +447,8 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     steps:
+      - *git_for_checkout
+
       - uses: actions/checkout@v4
 
       - name: Install alone, run its tests, uninstall, reinstall
@@ -534,6 +612,8 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     steps:
+      - *git_for_checkout
+
       - uses: actions/checkout@v4
 
       - name: Login branding survives `website`
@@ -748,6 +828,8 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     steps:
+      - *git_for_checkout
+
       - uses: actions/checkout@v4
 
       - name: Install headless Chrome and websocket-client
@@ -953,6 +1035,8 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     steps:
+      - *git_for_checkout
+
       - uses: actions/checkout@v4
 
       - name: Install headless Chrome and websocket-client
