@@ -265,12 +265,19 @@ jobs:
           # invisible from inside the product, and both of these modules exist
           # because it stayed invisible for months.
           #
-          # The floors are deliberately well under the measured figures — 33 and
+          # The floors are deliberately well under the measured figures — 68 and
           # 22 on a database with website and account installed. A floor is here
           # to notice a suite GOING MISSING, not to track its size, and one set
           # a test or two below today's count is a floor that has to be edited
           # every time somebody adds a case.
-          for pair in "sapian_theme_mail:20" "sapian_theme_auth_signup:12"; do
+          #
+          # sapian_theme_mail's floor moves 20 -> 40 with this version. It was
+          # set when the module had 33 tests; the SapianBot rename takes it to
+          # 68, and a floor left at 20 would sit at under a third of the suite —
+          # far enough under to let most of it disappear and still report OK,
+          # which is the failure the floor exists to prevent rather than a
+          # tolerance it is meant to allow.
+          for pair in "sapian_theme_mail:40" "sapian_theme_auth_signup:12"; do
             MODULE="${pair%%:*}"; FLOOR="${pair##*:}"
             RAN=$(grep -oE "odoo\.tests\.stats: ${MODULE}: [0-9]+ tests" /tmp/odoo-test.log \
                   | grep -oE "[0-9]+ tests" | grep -oE "^[0-9]+" || echo 0)
