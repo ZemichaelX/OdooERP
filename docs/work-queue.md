@@ -238,14 +238,31 @@ one suspect.
 **Three checks, not two.** The identity; the **cross-statement** check (result
 for the period vs what the P&L reports for the same dates); and coverage.
 
-Rendered on the readiness tenant as at 2026-12-31: **assets 885,766.75 = total
-liabilities and equity 885,766.75**, difference 0.00, result agreeing with the
-P&L's 257,352.00.
+**Re-measured 19 Aug after the rebase, in CI.** The figures previously recorded
+here came from a hand-built `scratch_readiness` database that no longer exists
+and cannot be reproduced, so they are replaced by the goldens the suite actually
+asserts on the July-2026 fixture — which are reproducible on every run:
+**total assets 22,450.00 = total liabilities and equity 22,450.00**, difference
+**0.00**, with the result for the period **-63,000.00** equal to the profit &
+loss's net profit to the cent. Coverage: every balance-sheet account classified,
+`unclassified: none`, with off-balance accounts excluded from the denominator
+and counted separately on the statement.
 
-**Red proofs, predicted then observed:** removing current liabilities gave
-**9 failed of 50** — an EXACT set match against the nine named in advance;
-making the cross-statement check consult itself instead of the P&L gave
-**1 failed of 50**, the one named. 0 skips in both.
+**Red proofs, re-run 19 Aug on the rebased branch, one throwaway branch each so
+the two breaks could not contaminate one another.** Counts and names written
+down before running:
+
+| Break | Predicted | Observed |
+|---|---|---|
+| C — current liabilities removed from the shipped section table | 9 failures, named | **9 failed, 0 errors, of 432** — an EXACT set match |
+| D — cross-statement check made to consult itself instead of the P&L | 1 failure, named | **1 failed, 0 errors, of 432** — the one named |
+
+D's single failure is a strict subset of C's nine. `l10n_et_reports` ran **60
+tests** in both. **Skips: 16 in the whole run, 0 in `l10n_et_reports`** — the 16
+are `sapian_theme` app-rail and backend-footer tests skipping on
+`websocket-client module is not installed`, they skip identically in the green
+run, and they are covered by the dedicated browser job which installs it. The
+module under test skipped nothing in either direction.
 
 **One aborted run, discarded rather than reported.** The first attempt at proof
 D restored the previous break with `assert 'current_liabilities' not in src` —
