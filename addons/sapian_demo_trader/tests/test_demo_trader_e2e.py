@@ -96,8 +96,8 @@ class TestDemoTraderE2E(TransactionCase):
             ]
         )
         self.assertEqual(len(invoices), 2)
-        self.assertEqual(sum(invoices.mapped("amount_untaxed")), 115300.0)
-        self.assertEqual(sum(invoices.mapped("amount_tax")), 17295.0)
+        self.assertEqual(sum(invoices.mapped("amount_untaxed")), 1268300.0)
+        self.assertEqual(sum(invoices.mapped("amount_tax")), 190245.0)
         # Demo-data review regressions: invoices are in ETB (not the default
         # USD pricelist), and the due date is never before the issue date.
         etb = self.env.ref("base.ETB")
@@ -129,12 +129,12 @@ class TestDemoTraderE2E(TransactionCase):
             ]
         )
         self.assertEqual(bill.state, "posted")
-        self.assertEqual(bill.amount_untaxed, 68800.0)
+        self.assertEqual(bill.amount_untaxed, 482800.0)
         wht_lines = bill.line_ids.filtered(lambda line: line.tax_line_id.l10n_et_wht_kind)
         self.assertEqual(wht_lines.tax_line_id.l10n_et_wht_kind, "goods")
-        self.assertEqual(wht_lines.credit, 2064.0)
+        self.assertEqual(wht_lines.credit, 14484.0)
         # total = 68,800 + 10,320 VAT − 2,064 WHT
-        self.assertEqual(bill.amount_total, 77056.0)
+        self.assertEqual(bill.amount_total, 540736.0)
         receipts = self.env["stock.picking"].search(
             [
                 ("company_id", "=", self.company.id),
@@ -157,7 +157,7 @@ class TestDemoTraderE2E(TransactionCase):
             wht_by_kind[line.tax_line_id.l10n_et_wht_kind] = line.credit
         self.assertEqual(
             wht_by_kind,
-            {"goods": 2064.0, "punitive": 4500.0, "foreign_digital": 1200.0},
+            {"goods": 14484.0, "punitive": 4500.0, "foreign_digital": 1200.0},
         )
 
     def test_payroll_posted_golden(self):
@@ -424,13 +424,13 @@ class TestDemoTraderE2E(TransactionCase):
         """Output 17,295 / input 13,770 / net +3,525 payable; both tie-outs OK."""
         declaration = self._report("l10n.et.vat.declaration")
         data = declaration._get_report_data()
-        self.assertEqual(data["output_total_base"], 115300.0)
-        self.assertEqual(data["output_total_tax"], 17295.0)
-        self.assertEqual(data["input_total_base"], 91800.0)
-        self.assertEqual(data["input_total_tax"], 13770.0)
+        self.assertEqual(data["output_total_base"], 1268300.0)
+        self.assertEqual(data["output_total_tax"], 190245.0)
+        self.assertEqual(data["input_total_base"], 505800.0)
+        self.assertEqual(data["input_total_tax"], 75870.0)
         # July is a normal trading month for a materials retailer: stock bought is
         # sold within weeks, so output exceeds input and the month is PAYABLE.
-        self.assertEqual(data["net_vat"], 3525.0)
+        self.assertEqual(data["net_vat"], 114375.0)
         self.assertTrue(data["is_payable"])
         self.assertTrue(data["tie_out_ok"], data["tie_out"])
 
@@ -438,8 +438,8 @@ class TestDemoTraderE2E(TransactionCase):
         """WHT rows tie to GL at 7,764; Yonas flagged MISSING, BuildSoft not."""
         summary = self._report("l10n.et.wht.summary")
         data = summary._get_report_data()
-        self.assertEqual(data["totals_by_rate"], {3.0: 2064.0, 15.0: 1200.0, 30.0: 4500.0})
-        self.assertEqual(data["grand_total"], 7764.0)
+        self.assertEqual(data["totals_by_rate"], {3.0: 14484.0, 15.0: 1200.0, 30.0: 4500.0})
+        self.assertEqual(data["grand_total"], 20184.0)
         self.assertTrue(data["tie_out_ok"], data["tie_out"])
         self.assertEqual(len(data["missing_tin"]), 1)
         self.assertIn("Yonas Transport", data["missing_tin"][0])
@@ -449,14 +449,14 @@ class TestDemoTraderE2E(TransactionCase):
         render = self.env["ir.actions.report"]._render_qweb_html
         declaration = self._report("l10n.et.vat.declaration")
         html = render("l10n_et_reports.report_vat_declaration", declaration.ids)[0].decode()
-        self.assertIn("17295.00", html)
+        self.assertIn("190245.00", html)
         self.assertNotIn("MISMATCH", html)
 
         summary = self._report("l10n.et.wht.summary")
         html = render("l10n_et_reports.report_wht_summary", summary.ids)[0].decode()
         self.assertIn("MISSING", html)
         self.assertIn("N/A (foreign)", html)
-        self.assertIn("7764.00", html)
+        self.assertIn("20184.00", html)
 
         run = self.env["l10n.et.payroll.run"].search([("company_id", "=", self.company.id)])
         html = render("l10n_et_payroll.report_paye_declaration", run.ids)[0].decode()

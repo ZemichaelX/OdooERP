@@ -247,13 +247,14 @@ jobs:
           # 371 -> 385 when sapian_theme_auth_signup landed with 14, and
           # 385 -> 400 when the profit & loss statement landed with 15 in
           # l10n_et_reports (27 -> 42), 400 -> 418 when the balance sheet took
-          # it to 60, and 418 -> 454 when the SapianBot rename took
-          # sapian_theme_mail to 68. The floor
+          # it to 60, 418 -> 454 when the SapianBot rename took
+          # sapian_theme_mail to 68, and 454 -> 462 when the demo's books grew
+          # nine tests that read the statements back. The floor
           # is what stops a module's suite going missing quietly, so it has to
           # move with the suite. Measured, not guessed: run 32232939918 summed
           # 632 across its module stats lines, of which sapian_theme_mail is 68
           # — a floor left at 418 would not have noticed that module vanishing.
-          MIN_EXPECTED_TESTS=454
+          MIN_EXPECTED_TESTS=462
           EXECUTED=$(grep -oE "odoo\.tests\.stats: [A-Za-z0-9_]+: [0-9]+ tests" /tmp/odoo-test.log \
                      | awk '$4 == "tests" { total += $3 } END { print total + 0 }')
           echo "Executed ${EXECUTED} tests (floor ${MIN_EXPECTED_TESTS}):"
