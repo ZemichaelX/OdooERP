@@ -97,6 +97,11 @@ class ResPartner(models.Model):
         Returns True when something actually changed, so the caller can log a
         fact instead of an intention.
         """
+        # RED PROOF E: the applier does nothing, so the system partner keeps
+        # whatever `mail` gave it. If the identity assertions still pass here,
+        # they cannot detect the defect they exist for and every green run of
+        # this suite is decoration.
+        return False
         bot = self.env.ref("base.partner_root", raise_if_not_found=False)
         if not bot:
             # Not a silent return: `base.partner_root` is created by `base`
