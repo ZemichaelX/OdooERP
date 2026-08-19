@@ -549,6 +549,7 @@ class SapianDemoTrader(models.AbstractModel):
         category_model = self.env["product.category"]
         valuation = self._account(cat.STOCK_VALUATION_CODE)
         cogs = self._account(cat.COGS_CODE)
+        service_expense = self._account(cat.SERVICE_EXPENSE_CODE)
         journal = self.env["account.journal"].search(
             [
                 ("company_id", "=", self.env.company.id),
@@ -559,9 +560,14 @@ class SapianDemoTrader(models.AbstractModel):
         created = {}
         for key, name, amharic in cat.CATEGORIES:
             vals = {"name": f"{name} — {amharic}" if amharic else name}
-            if key != "services":
-                # Services hold no stock, so valuation accounts on them would be
-                # configuration a reader has to discount rather than read.
+            if key == "services":
+                # An operating expense account, so service bills stop falling
+                # back on the company default and accumulating in 230100.
+                vals["property_account_expense_categ_id"] = service_expense.id
+            else:
+                # Goods. Valuation accounts belong only here — putting them on a
+                # category that holds no stock is configuration a reader has to
+                # discount rather than read.
                 vals.update(
                     {
                         "property_cost_method": "fifo",
@@ -817,7 +823,12 @@ class SapianDemoTrader(models.AbstractModel):
         warehouse = self.env["stock.warehouse"].search(
             [("company_id", "=", self.env.company.id)], limit=1
         )
-        opening = {"sheet_g32": 120, "rebar_12": 400, "hcb_20": 2000}
+        # Sized for a month at the real trading volume (see _run_sales_flow).
+        # hcb_20 is DELIBERATELY short of what July sells: 4,000 opening against
+        # 8,800 sold, with 6,000 bought in during the month. That is what makes
+        # it the product the demo can be traced through — opening, purchase,
+        # sale and a closing figure that is none of them by accident.
+        opening = {"sheet_g32": 500, "rebar_12": 1200, "hcb_20": 4000}
         for key, quantity in opening.items():
             quant_model.with_context(inventory_mode=True).create(
                 {
@@ -861,7 +872,7 @@ class SapianDemoTrader(models.AbstractModel):
                     Command.create(
                         {
                             "product_id": products["sheet_g32"].id,
-                            "product_uom_qty": 40,
+                            "product_uom_qty": 440,
                             "price_unit": cat.PRICES["sheet_sale"],
                         }
                     )
@@ -878,14 +889,14 @@ class SapianDemoTrader(models.AbstractModel):
                     Command.create(
                         {
                             "product_id": products["rebar_12"].id,
-                            "product_uom_qty": 100,
+                            "product_uom_qty": 1100,
                             "price_unit": cat.PRICES["rebar_sale"],
                         }
                     ),
                     Command.create(
                         {
                             "product_id": products["hcb_20"].id,
-                            "product_uom_qty": 800,
+                            "product_uom_qty": 8800,
                             "price_unit": cat.PRICES["hcb_sale"],
                         }
                     ),
@@ -916,12 +927,17 @@ class SapianDemoTrader(models.AbstractModel):
         BAGS, 30 -> 60. Nothing else moves cement, so the 60 bags on hand are
         the conversion and nothing else.
 
-        Base 68,800 -> 3% WHT 2,064, input VAT 10,320:
-            30 quintals cement OPC @ 2,000 = 60,000
-            50 kg rebar 8 mm       @   176 =  8,800
+        Base 482,800 -> 3% WHT 14,484, input VAT 72,420:
+            30 quintals cement OPC @ 2,000 =  60,000
+            50 kg rebar 8 mm       @   176 =   8,800
+            6,000 HCB 20           @    69 = 414,000
 
         The 30 quintals are load-bearing and must not be reduced to make a
         rounder WHT figure: they are what produces the 60 bags on hand.
+
+        The 6,000 blocks are load-bearing for a different reason: they are the
+        only line in the demo that buys a product the same month also sells,
+        which is what lets one product be followed the whole way through.
         """
         quintal = self.env["uom.uom"].search([("name", "=", cat.UOM_QUINTAL_NAME)], limit=1)
         order = self.env["purchase.order"].create(
@@ -941,6 +957,18 @@ class SapianDemoTrader(models.AbstractModel):
                             "product_id": products["rebar_8"].id,
                             "product_qty": 50,
                             "price_unit": cat.PRICES["rebar_cost"],
+                        }
+                    ),
+                    # THE SAME SKU THE MONTH SELLS. Until this line the demo
+                    # bought two products and sold three different ones, so no
+                    # single product could be followed from purchase order to
+                    # delivery note. 6,000 blocks in, 8,800 out against 4,000
+                    # opening, leaving 1,200 on hand.
+                    Command.create(
+                        {
+                            "product_id": products["hcb_20"].id,
+                            "product_qty": 6000,
+                            "price_unit": cat.PRICES["hcb_cost"],
                         }
                     ),
                 ],

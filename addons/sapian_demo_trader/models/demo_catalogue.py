@@ -104,6 +104,13 @@ PRICES = {
 # because a demo that hard-codes account ids breaks on the next chart it meets.
 STOCK_VALUATION_CODE = "235100"  # Stock, asset_current
 COGS_CODE = "511100"  # Cost of Goods and Services, expense_direct_cost
+# Services hold no stock, so their bills need an ordinary OPERATING expense
+# account. Without one they fall back on the company default and pile up in
+# 230100 Goods in Transit — a current asset — which is what put 91,800 there.
+# Deliberately NOT 511100: a delivery contractor and a software subscription are
+# not the cost of the goods sold, and routing them through cost of sales would
+# understate gross profit.
+SERVICE_EXPENSE_CODE = "625100"  # Contracted professional services, expense
 
 # (key, display name, Amharic)
 CATEGORIES = [
