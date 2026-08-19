@@ -249,14 +249,12 @@ class L10nEtBalanceSheet(models.Model):
         the statement a client would print rather than a re-derivation of it.
         """
         self.ensure_one()
-        statement = self.env["l10n.et.profit.loss"].new(
-            {
-                "company_id": self.company_id.id,
-                "date_from": self.date_from,
-                "date_to": self.date_to,
-            }
+        # RED PROOF D: consult ourselves instead of the profit & loss, so the
+        # cross-statement check compares a figure with itself and can never
+        # disagree. This is the defect the check exists to catch.
+        return self._result_between(
+            self._profit_and_loss_accounts(), self.date_from, self.date_to
         )
-        return statement._get_report_data()["net_profit"]
 
     # ---- the statement ---------------------------------------------------
 
