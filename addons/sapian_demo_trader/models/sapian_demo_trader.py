@@ -38,6 +38,7 @@ import base64
 import logging
 
 from odoo import Command, api, models
+from odoo.exceptions import UserError
 from odoo.tools import file_open
 
 from . import demo_catalogue as cat
@@ -455,6 +456,7 @@ class SapianDemoTrader(models.AbstractModel):
             "piece": self.env.ref("uom.product_uom_unit"),
             "m3": self.env.ref("uom.product_uom_cubic_meter"),
         }
+        categories = self._create_product_categories()
         product_model = self.env["product.product"]
         products = {}
         for key, name, amharic, unit, sale, cost in cat.PRODUCTS:
@@ -463,6 +465,10 @@ class SapianDemoTrader(models.AbstractModel):
                 "name": label,
                 "list_price": sale,
                 "standard_price": cost,
+                # Never left to fall back on "All": that category carries Odoo's
+                # default periodic valuation, which posts no cost-of-goods entry
+                # at all. See _create_product_categories.
+                "categ_id": categories[cat.CATEGORY_BY_PRODUCT[key]].id,
             }
             if unit == "service":
                 vals["type"] = "service"
@@ -476,6 +482,103 @@ class SapianDemoTrader(models.AbstractModel):
                     vals["uom_id"] = unit_by_key[unit].id
             products[key] = product_model.create(vals)
         return products
+
+    def _account(self, code):
+        """One account of the tenant's own chart, by code, or a clear failure.
+
+        Resolved by CODE rather than xmlid so this works on any chart that
+        carries the code, and so a missing account is a named error instead of
+        a silent False that would later post nowhere.
+        """
+        account = self.env["account.account"].search(
+            [
+                *self.env["account.account"]._check_company_domain(self.env.company),
+                ("code", "=", code),
+            ],
+            limit=1,
+        )
+        if not account:
+            raise UserError(
+                self.env._(
+                    "The demo needs account %(code)s and this company's chart does "
+                    "not carry it. Perpetual stock valuation cannot be configured "
+                    "without it, and without that the profit & loss reports a cost "
+                    "of sales of zero.",
+                    code=code,
+                )
+            )
+        return account
+
+    def _create_product_categories(self):
+        """Categories that actually value stock, which is the whole point.
+
+        WHAT WAS WRONG. No product carried a category, so every one of them sat
+        in "All". `stock_account/data/stock_account_data.xml` sets the system
+        default `property_valuation = 'periodic'` on product.category, and
+        periodic means "the accounting entries are suggested manually in the
+        inventory valuation report" — i.e. none are posted. The gate is
+        `stock_account/models/account_move.py`:
+
+            if not line._eligible_for_stock_account() \
+                    or line.product_id.valuation != 'real_time':
+                continue
+
+        called unconditionally from `_post`. There is no anglo-saxon condition;
+        `real_time` plus the two accounts is the whole requirement. Without it
+        the July profit & loss showed revenue 115,300.00 and cost of sales
+        0.00 — a trader who sold building materials that cost nothing, which is
+        the first thing an accountant disbelieves.
+
+        WHY FIFO. `standard` costing would value the cost of sales at the
+        product's standard price and push any difference against the real
+        purchase price into a price-difference account — a line the demo would
+        then have to explain. FIFO values each receipt at what was actually paid
+        for it, so the cost of sales IS the cost of those goods, and no
+        price-difference account is needed.
+
+        NO INTERIM ACCOUNTS ARE SET, and that is not an omission. Odoo 19
+        removed `property_stock_account_input_categ_id` and
+        `property_stock_account_output_categ_id` from product.category — a
+        search of the whole 19.0 tree finds no reference to either — and setting
+        them would raise on create. The fields that survive are
+        property_valuation, property_cost_method, property_stock_journal,
+        property_stock_valuation_account_id and
+        property_price_difference_account_id. FIFO needs no price-difference
+        account, because each receipt is valued at what was actually paid.
+        """
+        category_model = self.env["product.category"]
+        valuation = self._account(cat.STOCK_VALUATION_CODE)
+        cogs = self._account(cat.COGS_CODE)
+        service_expense = self._account(cat.SERVICE_EXPENSE_CODE)
+        journal = self.env["account.journal"].search(
+            [
+                ("company_id", "=", self.env.company.id),
+                ("type", "=", "general"),
+            ],
+            limit=1,
+        )
+        created = {}
+        for key, name, amharic in cat.CATEGORIES:
+            vals = {"name": f"{name} — {amharic}" if amharic else name}
+            if key == "services":
+                # An operating expense account, so service bills stop falling
+                # back on the company default and accumulating in 230100.
+                vals["property_account_expense_categ_id"] = service_expense.id
+            else:
+                # Goods. Valuation accounts belong only here — putting them on a
+                # category that holds no stock is configuration a reader has to
+                # discount rather than read.
+                vals.update(
+                    {
+                        "property_cost_method": "fifo",
+                        "property_valuation": "real_time",
+                        "property_stock_valuation_account_id": valuation.id,
+                        "property_stock_journal": journal.id,
+                        "property_account_expense_categ_id": cogs.id,
+                    }
+                )
+            created[key] = category_model.create(vals)
+        return created
 
     def _create_partners(self):
         """Customers + the three supplier compliance profiles.
@@ -720,15 +823,116 @@ class SapianDemoTrader(models.AbstractModel):
         warehouse = self.env["stock.warehouse"].search(
             [("company_id", "=", self.env.company.id)], limit=1
         )
-        opening = {"sheet_g32": 120, "rebar_12": 400, "hcb_20": 2000}
+        # WITHOUT THIS THE OPENING STOCK HAS QUANTITY AND NO VALUE.
+        #
+        # Odoo 19 values the ordinary buy/sell path through the BILL and the
+        # INVOICE, not the picking — which is why a delivery does not relieve
+        # stock a second time after the invoice has posted its cost of sales.
+        # An inventory adjustment has no document, so `stock_move.py`'s gate
+        #
+        #     and (self.location_dest_id.valuation_account_id
+        #          or self.location_id.valuation_account_id)
+        #
+        # is never satisfied and no entry is written at all. Nothing in Odoo's
+        # own data sets that field on any location.
+        #
+        # The counterpart is EQUITY, not an expense: stock the owner put into
+        # the business at the start of the month is capital contributed, and
+        # routing it through the profit & loss would report a month that spent
+        # 887,200 on nothing.
+        # AND THE JOURNAL THE ENTRY IS WRITTEN IN, which is on the COMPANY in
+        # Odoo 19, not the category. stock_move.py builds the valuation entry
+        # with
+        #
+        #     'journal_id': self.company_id.account_stock_journal_id.id
+        #
+        # so with the company field unset the insert fails outright:
+        # NotNullViolation on account_move.journal_id. The category's
+        # property_stock_journal is not consulted on this path.
+        company = self.env.company
+        if not company.sudo().account_stock_journal_id:
+            company.sudo().account_stock_journal_id = self._stock_journal().id
+        if not company.sudo().account_stock_valuation_id:
+            company.sudo().account_stock_valuation_id = self._account(
+                cat.STOCK_VALUATION_CODE
+            ).id
+
+        adjustment_location = self.env["stock.location"].search(
+            [("usage", "=", "inventory"), ("company_id", "in", (False, self.env.company.id))],
+            limit=1,
+        )
+        if adjustment_location:
+            adjustment_location.sudo().valuation_account_id = self._account(
+                cat.OPENING_EQUITY_CODE
+            ).id
+        # Sized for a month at the real trading volume (see _run_sales_flow).
+        # hcb_20 is DELIBERATELY short of what July sells: 4,000 opening against
+        # 8,800 sold, with 6,000 bought in during the month. That is what makes
+        # it the product the demo can be traced through — opening, purchase,
+        # sale and a closing figure that is none of them by accident.
+        opening = {"sheet_g32": 500, "rebar_12": 1200, "hcb_20": 4000}
         for key, quantity in opening.items():
             quant_model.with_context(inventory_mode=True).create(
                 {
                     "product_id": products[key].id,
                     "location_id": warehouse.lot_stock_id.id,
                     "inventory_quantity": quantity,
+                    # DATED, and this is not cosmetic. _apply_inventory stamps
+                    # its accounting entry with fields.Date.context_today unless
+                    # told otherwise, so on a database built in August the
+                    # opening stock landed in AUGUST while July's deliveries
+                    # relieved it in July. The 31 July balance sheet then showed
+                    # 235100 Stock at -670,000.00: goods sold out of a warehouse
+                    # they had never been received into. `accounting_date` is
+                    # what stock_account reads into force_period_date.
+                    "accounting_date": cat.OPENING_DATE,
                 }
-            )._apply_inventory()
+            )._apply_inventory(date=cat.OPENING_DATE)
+        self._create_opening_cash()
+
+    def _create_opening_cash(self):
+        """Money in the bank on day one, from the same capital contribution.
+
+        A trader who buys 540,736 of stock and meets a payroll needs a float to
+        do it with. Without one every payment in this demo would overdraw an
+        account that started at nothing, and a negative bank balance is exactly
+        as unbelievable as the zero it replaces.
+        """
+        journal = self._bank_journal()
+        bank_account = journal.default_account_id
+        equity = self._account(cat.OPENING_EQUITY_CODE)
+        if not bank_account:
+            raise UserError(
+                self.env._("The bank journal has no account, so opening cash cannot be placed.")
+            )
+        entry = self.env["account.move"].create(
+            {
+                "move_type": "entry",
+                "date": cat.OPENING_DATE,
+                "ref": self.env._("Opening balance — capital introduced"),
+                "journal_id": journal.id,
+                "line_ids": [
+                    Command.create(
+                        {
+                            "account_id": bank_account.id,
+                            "debit": cat.OPENING_CASH,
+                            "credit": 0.0,
+                            "name": self.env._("Opening cash"),
+                        }
+                    ),
+                    Command.create(
+                        {
+                            "account_id": equity.id,
+                            "debit": 0.0,
+                            "credit": cat.OPENING_CASH,
+                            "name": self.env._("Capital introduced"),
+                        }
+                    ),
+                ],
+            }
+        )
+        entry.action_post()
+        return entry
 
     def _run_sales_flow(self, partners, products):
         """Two quotation -> delivery -> invoice flows with 15% VAT.
@@ -764,7 +968,7 @@ class SapianDemoTrader(models.AbstractModel):
                     Command.create(
                         {
                             "product_id": products["sheet_g32"].id,
-                            "product_uom_qty": 40,
+                            "product_uom_qty": 440,
                             "price_unit": cat.PRICES["sheet_sale"],
                         }
                     )
@@ -781,14 +985,14 @@ class SapianDemoTrader(models.AbstractModel):
                     Command.create(
                         {
                             "product_id": products["rebar_12"].id,
-                            "product_uom_qty": 100,
+                            "product_uom_qty": 1100,
                             "price_unit": cat.PRICES["rebar_sale"],
                         }
                     ),
                     Command.create(
                         {
                             "product_id": products["hcb_20"].id,
-                            "product_uom_qty": 800,
+                            "product_uom_qty": 8800,
                             "price_unit": cat.PRICES["hcb_sale"],
                         }
                     ),
@@ -811,6 +1015,119 @@ class SapianDemoTrader(models.AbstractModel):
             # producing a due-before-issued document.
             invoices.write({"invoice_date": "2026-07-10", "invoice_date_due": "2026-08-09"})
             invoices.action_post()
+            # Mebrat settles in full on the 20th; Abyssinia pays 60% and still
+            # owes the rest at month end, so trade debtors is a real figure
+            # rather than either everything or nothing.
+            if order == order_mebrat:
+                self._pay(invoices, "2026-07-20")
+            else:
+                self._pay(invoices, "2026-07-24", partial_ratio=0.6)
+
+    def _stock_journal(self):
+        """The journal stock valuation entries are written in.
+
+        Odoo's chart template creates a Miscellaneous journal; this reuses it
+        rather than inventing one, because a demo with a journal per concept is
+        a demo whose journal list nobody recognises.
+        """
+        journal = self.env["account.journal"].search(
+            [("company_id", "=", self.env.company.id), ("type", "=", "general")],
+            limit=1,
+        )
+        if not journal:
+            raise UserError(
+                self.env._(
+                    "This company has no general journal, so stock valuation "
+                    "entries have nowhere to be written and the opening stock "
+                    "would fail to post."
+                )
+            )
+        return journal
+
+    def _settled_bank_journal(self):
+        """The bank journal, configured so a payment reaches the BANK.
+
+        By default Odoo routes a registered payment through an outstanding
+        account — 211003 Outstanding Receipts, 211004 Outstanding Payments —
+        where it waits to be matched against a bank statement. Measured on the
+        first green run: 1,053,239.00 sitting in receipts and 561,486.00 in
+        payments, while the demo claimed the invoices were settled. That is
+        correct Odoo behaviour and the wrong story for a demo, which has no
+        bank feed and nobody to reconcile it.
+
+        Pointing the payment methods at the journal's own account makes a
+        payment do what the demo says it does: money leaves the customer and
+        arrives in the bank. It is also how a small trader who does not
+        reconcile actually keeps books.
+        """
+        journal = self._bank_journal()
+        account = journal.default_account_id
+        if account:
+            lines = (
+                journal.inbound_payment_method_line_ids
+                | journal.outbound_payment_method_line_ids
+            )
+            lines.filtered(lambda line: line.payment_account_id != account).write(
+                {"payment_account_id": account.id}
+            )
+        return journal
+
+    def _bank_journal(self):
+        """The company's bank journal, or a clear failure.
+
+        The chart template creates one; if it ever stops doing so, a demo that
+        silently skipped every payment would look exactly like a demo whose
+        customers had not paid, which is the confusion this whole pass exists
+        to remove.
+        """
+        journal = self.env["account.journal"].search(
+            [("company_id", "=", self.env.company.id), ("type", "=", "bank")],
+            limit=1,
+        )
+        if not journal:
+            raise UserError(
+                self.env._(
+                    "This company has no bank journal, so no payment can be "
+                    "recorded and the demo's cash would stay at zero."
+                )
+            )
+        return journal
+
+    def _pay(self, moves, when, partial_ratio=None):
+        """Settle posted invoices or bills through the bank, on a real date.
+
+        MONEY THAT NEVER ARRIVES IS THE DEFECT THIS FIXES. The demo posted six
+        invoices and three bills and never paid any of them, so Bank and Cash
+        read 0.00 on the balance sheet while trade debtors carried the lot. A
+        company with no money anywhere is the second thing an accountant
+        disbelieves, after one whose goods cost nothing.
+
+        `partial_ratio` leaves part of an invoice outstanding on purpose:
+        receivables of zero would be as unrealistic as receivables of
+        everything, and a demo month should end with somebody still owing.
+        """
+        journal = self._settled_bank_journal()
+        paid = self.env["account.move"].browse()
+        for move in moves.filtered(lambda m: m.state == "posted"):
+            amount = move.amount_residual
+            if partial_ratio is not None:
+                amount = move.currency_id.round(amount * partial_ratio)
+            if move.currency_id.is_zero(amount):
+                continue
+            wizard = (
+                self.env["account.payment.register"]
+                .with_context(active_model="account.move", active_ids=move.ids)
+                .create(
+                    {
+                        "journal_id": journal.id,
+                        "amount": amount,
+                        "payment_date": when,
+                    }
+                )
+            )
+            wizard._create_payments()
+            paid |= move
+        return paid
 
     def _run_purchase_flow(self, partners, products):
         """PO -> receipt -> vendor bill from the COMPLIANT supplier.
@@ -819,12 +1136,17 @@ class SapianDemoTrader(models.AbstractModel):
         BAGS, 30 -> 60. Nothing else moves cement, so the 60 bags on hand are
         the conversion and nothing else.
 
-        Base 68,800 -> 3% WHT 2,064, input VAT 10,320:
-            30 quintals cement OPC @ 2,000 = 60,000
-            50 kg rebar 8 mm       @   176 =  8,800
+        Base 482,800 -> 3% WHT 14,484, input VAT 72,420:
+            30 quintals cement OPC @ 2,000 =  60,000
+            50 kg rebar 8 mm       @   176 =   8,800
+            6,000 HCB 20           @    69 = 414,000
 
         The 30 quintals are load-bearing and must not be reduced to make a
         rounder WHT figure: they are what produces the 60 bags on hand.
+
+        The 6,000 blocks are load-bearing for a different reason: they are the
+        only line in the demo that buys a product the same month also sells,
+        which is what lets one product be followed the whole way through.
         """
         quintal = self.env["uom.uom"].search([("name", "=", cat.UOM_QUINTAL_NAME)], limit=1)
         order = self.env["purchase.order"].create(
@@ -846,6 +1168,18 @@ class SapianDemoTrader(models.AbstractModel):
                             "price_unit": cat.PRICES["rebar_cost"],
                         }
                     ),
+                    # THE SAME SKU THE MONTH SELLS. Until this line the demo
+                    # bought two products and sold three different ones, so no
+                    # single product could be followed from purchase order to
+                    # delivery note. 6,000 blocks in, 8,800 out against 4,000
+                    # opening, leaving 1,200 on hand.
+                    Command.create(
+                        {
+                            "product_id": products["hcb_20"].id,
+                            "product_qty": 6000,
+                            "price_unit": cat.PRICES["hcb_cost"],
+                        }
+                    ),
                 ],
             }
         )
@@ -855,6 +1189,9 @@ class SapianDemoTrader(models.AbstractModel):
         bill = order.invoice_ids
         bill.write({"invoice_date": "2026-07-15"})
         bill.action_post()
+        # The supplier is paid, so the money leaves the bank and 230100 stops
+        # being where the month's purchases live.
+        self._pay(bill, "2026-07-28")
 
     def _create_direct_bills(self, partners, products):
         """Two direct vendor bills: the punitive-WHT and foreign-digital paths.
@@ -864,6 +1201,7 @@ class SapianDemoTrader(models.AbstractModel):
         Amounts unchanged; only who is billed and for what.
         """
         move_model = self.env["account.move"]
+        bills = move_model.browse()
         for partner, product, price, date in (
             (partners["yonas"], products["delivery"], 15000, "2026-07-18"),
             (partners["buildsoft"], products["software"], 8000, "2026-07-20"),
@@ -886,6 +1224,11 @@ class SapianDemoTrader(models.AbstractModel):
                 }
             )
             bill.action_post()
+            bills |= bill
+        # Paid, like the goods bill. A payables balance made only of bills
+        # nobody ever settled is the same defect as debtors made only of
+        # invoices nobody ever paid.
+        self._pay(bills, "2026-07-30")
 
     def _run_payroll(self, employees):
         """July 2026 payroll: one payslip per PAYE band, posted + bank file.
@@ -929,6 +1272,76 @@ class SapianDemoTrader(models.AbstractModel):
         )
         run.action_confirm()
         run.action_export_bank_file()
+        self._pay_net_wages(run)
+        return run
+
+    def _pay_net_wages(self, run):
+        """Actually pay the staff, instead of only writing the bank file.
+
+        The run posted its journal entry and exported a transfer file, and then
+        nothing happened: the net wages account kept the whole month's salaries
+        as a payable for ever. A demo that runs payroll and never pays it tells
+        an accountant that the bank file was never sent.
+
+        The amount is read off the LEDGER rather than from run.total_net, so it
+        is whatever the account actually still owes — if the two ever disagree,
+        the ledger is the one that matters and a hard-coded figure would hide
+        the disagreement.
+        """
+        company = self.env.company
+        account = company.sudo().l10n_et_net_wages_account_id
+        if not account:
+            return self.env["account.move"].browse()
+        lines = (
+            self.env["account.move.line"]
+            .sudo()
+            .search(
+                [
+                    ("account_id", "=", account.id),
+                    ("company_id", "=", company.id),
+                    ("parent_state", "=", "posted"),
+                ]
+            )
+        )
+        outstanding = sum(lines.mapped("credit")) - sum(lines.mapped("debit"))
+        if company.currency_id.is_zero(outstanding):
+            return self.env["account.move"].browse()
+        journal = self._bank_journal()
+        entry = self.env["account.move"].create(
+            {
+                "move_type": "entry",
+                "date": "2026-07-31",
+                "ref": self.env._("July 2026 salaries paid"),
+                "journal_id": journal.id,
+                "line_ids": [
+                    Command.create(
+                        {
+                            "account_id": account.id,
+                            "debit": outstanding,
+                            "credit": 0.0,
+                            "name": self.env._("Net wages paid"),
+                        }
+                    ),
+                    Command.create(
+                        {
+                            "account_id": journal.default_account_id.id,
+                            "debit": 0.0,
+                            "credit": outstanding,
+                            "name": self.env._("Salary transfer"),
+                        }
+                    ),
+                ],
+            }
+        )
+        entry.action_post()
+        # Reconcile, so the payable is CLEARED rather than merely offset by a
+        # second entry that happens to net to zero.
+        to_reconcile = (lines | entry.line_ids).filtered(
+            lambda line: line.account_id == account and not line.reconciled
+        )
+        if len(to_reconcile) > 1:
+            to_reconcile.reconcile()
+        return entry
         return run
 
     def _create_report_periods(self):
