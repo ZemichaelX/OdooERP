@@ -840,6 +840,23 @@ class SapianDemoTrader(models.AbstractModel):
         # the business at the start of the month is capital contributed, and
         # routing it through the profit & loss would report a month that spent
         # 887,200 on nothing.
+        # AND THE JOURNAL THE ENTRY IS WRITTEN IN, which is on the COMPANY in
+        # Odoo 19, not the category. stock_move.py builds the valuation entry
+        # with
+        #
+        #     'journal_id': self.company_id.account_stock_journal_id.id
+        #
+        # so with the company field unset the insert fails outright:
+        # NotNullViolation on account_move.journal_id. The category's
+        # property_stock_journal is not consulted on this path.
+        company = self.env.company
+        if not company.sudo().account_stock_journal_id:
+            company.sudo().account_stock_journal_id = self._stock_journal().id
+        if not company.sudo().account_stock_valuation_id:
+            company.sudo().account_stock_valuation_id = self._account(
+                cat.STOCK_VALUATION_CODE
+            ).id
+
         adjustment_location = self.env["stock.location"].search(
             [("usage", "=", "inventory"), ("company_id", "in", (False, self.env.company.id))],
             limit=1,
@@ -996,6 +1013,27 @@ class SapianDemoTrader(models.AbstractModel):
                 self._pay(invoices, "2026-07-20")
             else:
                 self._pay(invoices, "2026-07-24", partial_ratio=0.6)
+
+    def _stock_journal(self):
+        """The journal stock valuation entries are written in.
+
+        Odoo's chart template creates a Miscellaneous journal; this reuses it
+        rather than inventing one, because a demo with a journal per concept is
+        a demo whose journal list nobody recognises.
+        """
+        journal = self.env["account.journal"].search(
+            [("company_id", "=", self.env.company.id), ("type", "=", "general")],
+            limit=1,
+        )
+        if not journal:
+            raise UserError(
+                self.env._(
+                    "This company has no general journal, so stock valuation "
+                    "entries have nowhere to be written and the opening stock "
+                    "would fail to post."
+                )
+            )
+        return journal
 
     def _bank_journal(self):
         """The company's bank journal, or a clear failure.
