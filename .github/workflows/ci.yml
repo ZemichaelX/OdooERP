@@ -1333,6 +1333,96 @@ jobs:
           fi
           echo "All five steps ran and all five passed."
 
+  auth-controls-palette:
+    name: Every auth control is in the palette
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # THE JOB THAT DID NOT EXIST, and whose absence is half the defect.
+    #
+    # sapian_theme carried TestEveryControlIsInThePalette tagged
+    # `-standard, sapian_palette`, with a docstring saying "the CI job greps for
+    # that line, so a skipped run cannot pass". `grep -rn sapian_palette` over
+    # the whole repository matched that file and nothing else: no job selected
+    # the tag, so the guard had never run once. Meanwhile it read only `color`
+    # and `background-color`, on `a, button, .btn, input[type=submit],
+    # [role=button], summary` — and asserted nothing at all.
+    #
+    # An operator then found a PURPLE FOCUS OUTLINE on the email input of
+    # /web/reset_password while every other auth check reported the page clean.
+    # A plain input is in none of those selectors, an outline is in neither of
+    # those properties, and nothing in the JS could fail.
+    #
+    # auth_signup is installed because /web/reset_password is its route — the
+    # page the defect was seen on.
+    container:
+      image: odoo:19.0@sha256:e415f9924395e7521245813135112f264b9222bcde3b1d3c2ee9ff073081540a
+      options: --user root
+    services:
+      db:
+        image: postgres:16@sha256:33f923b05f64ca54ac4401c01126a6b92afe839a0aa0a52bc5aeb5cc958e5f20
+        env:
+          POSTGRES_USER: odoo
+          POSTGRES_PASSWORD: odoo
+          POSTGRES_DB: postgres
+        options: >-
+          --health-cmd "pg_isready -U odoo"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install headless Chrome and websocket-client
+        shell: bash
+        run: bash "${GITHUB_WORKSPACE}/scripts/install_test_browser.sh"
+
+      - name: Enumerate every control on both auth pages, in every state
+        shell: bash
+        run: |
+          set -uo pipefail
+          mkdir -p /tmp/odoo-data
+          ARGS="--db_host=db --db_port=5432 --db_user=odoo --db_password=odoo
+                --data-dir=/tmp/odoo-data
+                --addons-path=${GITHUB_WORKSPACE}/addons,${GITHUB_WORKSPACE}/vendor/oca_web,/usr/lib/python3/dist-packages/odoo/addons
+                --workers=0 --max-cron-threads=0 --stop-after-init"
+
+          odoo ${ARGS} -d ci_palette -i base --without-demo=all --log-level=warn
+          odoo ${ARGS} -d ci_palette -i sapian_theme,auth_signup \
+            --without-demo=all \
+            --test-enable --test-tags 'sapian_palette' \
+            --log-level=test 2>&1 | tee /tmp/palette.log
+          RC=${PIPESTATUS[0]}
+
+          echo "---- EVERY CONTROL, EVERY STATE ----"
+          grep -F 'SAPIAN-CONTROL ' /tmp/palette.log | sed 's/^.*SAPIAN-CONTROL /SAPIAN-CONTROL /' || true
+          echo "---- SUMMARY ----"
+          grep -F 'SAPIAN-CONTROL-SUMMARY' /tmp/palette.log | sed 's/^.*SAPIAN-CONTROL-SUMMARY/SUMMARY/' || true
+          echo "---- FOREIGN ONLY ----"
+          grep -F 'SAPIAN-CONTROL ' /tmp/palette.log | grep -F 'FOREIGN' || echo "(none)"
+
+          # THE BROWSER ACTUALLY RAN AND REPORTED. Without this the job goes
+          # green when Chrome is missing and browser_js skips — which is the
+          # exact way this guard was allowed to never run.
+          SUMMARIES=$(grep -cF 'SAPIAN-CONTROL-SUMMARY' /tmp/palette.log || true)
+          echo "summary lines: ${SUMMARIES} (expected one per auth route, floor 2)"
+          if [ "${SUMMARIES}" -lt 2 ]; then
+            echo "::error::The palette guard reported ${SUMMARIES} summary lines. It did not run on both auth pages, so it measured nothing."
+            exit 1
+          fi
+          if ! grep -q "odoo\.tests\.result:" /tmp/palette.log; then
+            echo "::error::The test runner never reported a result line — no tests were executed."
+            exit 1
+          fi
+          SKIPPED=$(grep -c 'skipped' /tmp/palette.log || true)
+          echo "skip mentions in the log: ${SKIPPED}"
+
+          if grep -qE "tests\.result: ([1-9][0-9]* failed|0 failed, [1-9][0-9]* error)" /tmp/palette.log; then
+            echo "::error::A control on an auth page wears a colour outside the palette — see the FOREIGN lines above."
+            exit 1
+          fi
+          [ "${RC}" -eq 0 ] || { echo "::error::The palette run exited ${RC}."; exit 1; }
+          echo "OK — every enumerated control state is neutral or in the palette."
+
   verification-crosses-a-dbfilter:
     name: Verification reaches the database it just built
     runs-on: ubuntu-latest
