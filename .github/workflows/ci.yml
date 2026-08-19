@@ -1375,19 +1375,23 @@ jobs:
           # Apply the launcher defaults exactly as provisioning does, so this
           # measures the tenant the operator gets rather than a bare install.
           echo 'env["res.users"]._sapian_apply_launcher_defaults(dry_run=False); env.cr.commit(); print("SAPIAN-ALLAPPS defaults applied")' \
-            | odoo --db_host=db --db_port=5432 --db_user=odoo --db_password=odoo \
-                   --data-dir=/tmp/odoo-data \
-                   --addons-path="${GITHUB_WORKSPACE}/addons,${GITHUB_WORKSPACE}/vendor/oca_web,/usr/lib/python3/dist-packages/odoo/addons" \
-                   shell -d ci_allapps --no-http --log-level=warn 2>&1 | tee /tmp/allapps-defaults.log
+            | odoo shell ${ARGS} -d ci_allapps --no-http --log-level=warn 2>&1 | tee /tmp/allapps-defaults.log
           grep -q "SAPIAN-ALLAPPS defaults applied" /tmp/allapps-defaults.log \
             || { echo "::error::The launcher defaults step never reported — nothing below measures the shipped tenant."; exit 1; }
 
+          # THE DISCRIMINATOR. check_launcher.py measures the fetch; this asks
+          # the asset pipeline directly. Both defects show the same zero in the
+          # verifier, and only these two readings side by side separate them.
+          odoo shell ${ARGS} -d ci_allapps --no-http --log-level=warn \
+               < "${GITHUB_WORKSPACE}/scripts/ci_probe_assets.py" 2>&1 | tee /tmp/allapps-probe.log
+          grep -q '^PROBE probe_finished=1' /tmp/allapps-probe.log \
+            || { echo "::error::The asset probe never finished — it measured nothing."; exit 1; }
+          echo "---- PROBE (website db) ----"
+          grep '^PROBE ' /tmp/allapps-probe.log
+
           # THE REAL VERIFIER, unmodified, under --no-http exactly as
           # build_demo.sh step [5/5] runs it.
-          odoo --db_host=db --db_port=5432 --db_user=odoo --db_password=odoo \
-               --data-dir=/tmp/odoo-data \
-               --addons-path="${GITHUB_WORKSPACE}/addons,${GITHUB_WORKSPACE}/vendor/oca_web,/usr/lib/python3/dist-packages/odoo/addons" \
-               shell -d ci_allapps --no-http --log-level=warn \
+          odoo shell ${ARGS} -d ci_allapps --no-http --log-level=warn \
                < "${GITHUB_WORKSPACE}/scripts/lib/check_launcher.py" 2>&1 | tee /tmp/allapps-launcher.log
 
           echo "---- every CHECK the verifier produced ----"
@@ -1414,20 +1418,30 @@ jobs:
             -i sapian_demo_trader,sapian_theme,web_responsive \
             --without-demo=all --log-level=warn
           echo 'env["res.users"]._sapian_apply_launcher_defaults(dry_run=False); env.cr.commit(); print("SAPIAN-ALLAPPS defaults applied")' \
-            | odoo --db_host=db --db_port=5432 --db_user=odoo --db_password=odoo \
-                   --data-dir=/tmp/odoo-data \
-                   --addons-path="${GITHUB_WORKSPACE}/addons,${GITHUB_WORKSPACE}/vendor/oca_web,/usr/lib/python3/dist-packages/odoo/addons" \
-                   shell -d ci_nowebsite --no-http --log-level=warn 2>&1 | tail -3
-          odoo --db_host=db --db_port=5432 --db_user=odoo --db_password=odoo \
-               --data-dir=/tmp/odoo-data \
-               --addons-path="${GITHUB_WORKSPACE}/addons,${GITHUB_WORKSPACE}/vendor/oca_web,/usr/lib/python3/dist-packages/odoo/addons" \
-               shell -d ci_nowebsite --no-http --log-level=warn \
+            | odoo shell ${ARGS} -d ci_nowebsite --no-http --log-level=warn 2>&1 | tee /tmp/nowebsite-defaults.log
+          grep -q "SAPIAN-ALLAPPS defaults applied" /tmp/nowebsite-defaults.log \
+            || { echo "::error::The CONTROL launcher defaults step never reported — the control is not the shipped tenant either."; exit 1; }
+          odoo shell ${ARGS} -d ci_nowebsite --no-http --log-level=warn \
+               < "${GITHUB_WORKSPACE}/scripts/ci_probe_assets.py" 2>&1 | tee /tmp/nowebsite-probe.log
+          grep -q '^PROBE probe_finished=1' /tmp/nowebsite-probe.log \
+            || { echo "::error::The CONTROL asset probe never finished."; exit 1; }
+          echo "---- PROBE (control db) ----"
+          grep '^PROBE ' /tmp/nowebsite-probe.log
+
+          odoo shell ${ARGS} -d ci_nowebsite --no-http --log-level=warn \
                < "${GITHUB_WORKSPACE}/scripts/lib/check_launcher.py" 2>&1 | tee /tmp/nowebsite-launcher.log
 
           echo "---- CONTROL (no website): every CHECK ----"
           grep -E '^(CHECK|NOTE) ' /tmp/nowebsite-launcher.log || true
 
           echo "---- THE COMPARISON ----"
+          echo "---- THE COMPARISON (asset pipeline, no HTTP) ----"
+          for b in web.assets_web web.assets_backend; do
+            printf 'bundle %-20s website=%-60s control=%s\n' "${b}" \
+              "$(sed -n "s/^PROBE bundle_${b} //p" /tmp/allapps-probe.log | head -1)" \
+              "$(sed -n "s/^PROBE bundle_${b} //p" /tmp/nowebsite-probe.log | head -1)"
+          done
+
           for key in launcher_page_http launcher_page_bytes launcher_backend_js_bundles \
                      launcher_backend_css_bundles launcher_js_modules \
                      launcher_css_web_responsive launcher_css_sapian_theme; do
