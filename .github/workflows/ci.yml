@@ -1330,11 +1330,18 @@ jobs:
     # have measured nothing at all.
     #
     # The existing launcher job installs sapian_demo_trader, sapian_theme and
-    # web_responsive. --all-apps installs 233 modules including `website` and
-    # `website_sale`, which own asset bundles and their own ir.http dispatch. No
-    # job has ever combined the two, so the failure could not have been caught
-    # here. That gap is the reason this job exists, independently of what the
+    # web_responsive. --all-apps installs the whole product catalogue — 38
+    # modules, ~233 with dependencies, including point_of_sale, im_livechat,
+    # mass_mailing, mrp, survey and the website family, several of which own
+    # asset bundles and their own ir.http dispatch. No job has ever combined
+    # them with the launcher, so the failure could not have been caught here.
+    # That gap is the reason this job exists, independently of what the
     # diagnosis turns out to be.
+    #
+    # An earlier revision installed only website and website_sale and came back
+    # green on every check, control-identical. That REFUTED the website
+    # hypothesis; it did not reproduce anything. The list is read from the
+    # catalogue now so the job builds the set the operator actually builds.
     container:
       image: odoo:19.0@sha256:e415f9924395e7521245813135112f264b9222bcde3b1d3c2ee9ff073081540a
       options: --user root
@@ -1365,19 +1372,46 @@ jobs:
 
           odoo ${ARGS} -d ci_allapps -i base --without-demo=all --log-level=warn
 
-          # website and website_sale ALONGSIDE the launcher stack — the
-          # combination build_demo.sh --all-apps produces and nothing else here
-          # does.
           odoo ${ARGS} -d ci_allapps \
-            -i sapian_demo_trader,sapian_theme,web_responsive,website,website_sale \
+            -i sapian_demo_trader,sapian_theme,web_responsive \
             --without-demo=all --log-level=warn
 
-          # Apply the launcher defaults exactly as provisioning does, so this
-          # measures the tenant the operator gets rather than a bare install.
+          # Apply the launcher defaults exactly as provisioning does, and in the
+          # SAME PLACE: build_demo.sh applies them at [4], BEFORE --all-apps
+          # installs the catalogue at [4b]. Applying them afterwards would
+          # measure a tenant no operator has, and would hide any interaction
+          # between a later install and the two per-user settings.
           echo 'env["res.users"]._sapian_apply_launcher_defaults(dry_run=False); env.cr.commit(); print("SAPIAN-ALLAPPS defaults applied")' \
             | odoo shell ${ARGS} -d ci_allapps --no-http --log-level=warn 2>&1 | tee /tmp/allapps-defaults.log
           grep -q "SAPIAN-ALLAPPS defaults applied" /tmp/allapps-defaults.log \
             || { echo "::error::The launcher defaults step never reported — nothing below measures the shipped tenant."; exit 1; }
+
+          # THE REAL --all-apps SET, read from the model rather than retyped.
+          #
+          # The first version of this job installed website and website_sale and
+          # called that "all-apps shaped". It was not, and it came back entirely
+          # green: 1 backend bundle, 16 web_responsive modules, both stylesheets
+          # — identical to the control. Five modules is not 38, so that run
+          # refuted the website hypothesis and reproduced nothing.
+          #
+          # build_demo.sh installs `sapian.module.catalog`'s technical_names,
+          # which are seeded from STANDARD_CATALOG on the model. Reading the
+          # class attribute gives the same list without needing the onboarding
+          # wizard to have run, and it cannot drift from the list the product
+          # actually ships.
+          echo 'print(">> catalog_list=%s" % ",".join(sorted({e[1] for e in env["sapian.module.catalog"].STANDARD_CATALOG})))' \
+            | odoo shell ${ARGS} -d ci_allapps --no-http --log-level=warn 2>&1 | tee /tmp/allapps-catalog.log
+          CATALOG_LIST="$(sed -n 's/^>> catalog_list=//p' /tmp/allapps-catalog.log | tr -d '\r')"
+          CATALOG_COUNT="$(echo "${CATALOG_LIST}" | tr ',' '\n' | grep -c . || echo 0)"
+          echo "catalogue reports ${CATALOG_COUNT} modules"
+          # A FLOOR, because an empty list would install nothing, exit 0, and
+          # hand back the launcher-stack database presented as the all-apps one.
+          if [ "${CATALOG_COUNT}" -lt 30 ]; then
+            echo "::error::The catalogue reported ${CATALOG_COUNT} modules — this is not the all-apps set."
+            exit 1
+          fi
+          odoo ${ARGS} -d ci_allapps -i "${CATALOG_LIST}" \
+            --without-demo=all --log-level=warn
 
           # THE DISCRIMINATOR. check_launcher.py measures the fetch; this asks
           # the asset pipeline directly. Both defects show the same zero in the
@@ -1386,7 +1420,7 @@ jobs:
                < "${GITHUB_WORKSPACE}/scripts/ci_probe_assets.py" 2>&1 | tee /tmp/allapps-probe.log
           grep -q '^PROBE probe_finished=1' /tmp/allapps-probe.log \
             || { echo "::error::The asset probe never finished — it measured nothing."; exit 1; }
-          echo "---- PROBE (website db) ----"
+          echo "---- PROBE (all-apps db) ----"
           grep '^PROBE ' /tmp/allapps-probe.log
 
           # THE REAL VERIFIER, unmodified, under --no-http exactly as
@@ -1409,10 +1443,10 @@ jobs:
           # ---- THE CONTROL, and without it a red above proves nothing -------
           #
           # "Same code, different result" needs the two results side by side. If
-          # this job only built the website database and it came back zero, the
-          # zero could as easily be this job's setup as the website modules. So
-          # the identical verifier runs against an identical database with
-          # website and website_sale LEFT OUT, and the two are printed together.
+          # this job only built the all-apps database and it came back zero, the
+          # zero could as easily be this job's setup as the catalogue. So the
+          # identical verifier runs against an identical database carrying only
+          # the launcher stack, and the two are printed together.
           odoo ${ARGS} -d ci_nowebsite -i base --without-demo=all --log-level=warn
           odoo ${ARGS} -d ci_nowebsite \
             -i sapian_demo_trader,sapian_theme,web_responsive \
@@ -1431,13 +1465,13 @@ jobs:
           odoo shell ${ARGS} -d ci_nowebsite --no-http --log-level=warn \
                < "${GITHUB_WORKSPACE}/scripts/lib/check_launcher.py" 2>&1 | tee /tmp/nowebsite-launcher.log
 
-          echo "---- CONTROL (no website): every CHECK ----"
+          echo "---- CONTROL (launcher stack only): every CHECK ----"
           grep -E '^(CHECK|NOTE) ' /tmp/nowebsite-launcher.log || true
 
           echo "---- THE COMPARISON ----"
           echo "---- THE COMPARISON (asset pipeline, no HTTP) ----"
           for b in web.assets_web web.assets_backend; do
-            printf 'bundle %-20s website=%-60s control=%s\n' "${b}" \
+            printf 'bundle %-20s allapps=%-60s control=%s\n' "${b}" \
               "$(sed -n "s/^PROBE bundle_${b} //p" /tmp/allapps-probe.log | head -1)" \
               "$(sed -n "s/^PROBE bundle_${b} //p" /tmp/nowebsite-probe.log | head -1)"
           done
@@ -1445,7 +1479,7 @@ jobs:
           for key in launcher_page_http launcher_page_bytes launcher_backend_js_bundles \
                      launcher_backend_css_bundles launcher_js_modules \
                      launcher_css_web_responsive launcher_css_sapian_theme; do
-            printf '%-34s website=%-14s control=%s\n' "${key}" \
+            printf '%-34s allapps=%-14s control=%s\n' "${key}" \
               "$(sed -n "s/^CHECK ${key}=//p" /tmp/allapps-launcher.log | head -1)" \
               "$(sed -n "s/^CHECK ${key}=//p" /tmp/nowebsite-launcher.log | head -1)"
           done
