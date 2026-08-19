@@ -536,14 +536,18 @@ class SapianDemoTrader(models.AbstractModel):
         for it, so the cost of sales IS the cost of those goods, and no
         price-difference account is needed.
 
-        The interim account is `230100 Goods in Transit`, which is its proper
-        Odoo role: goods received and not yet billed. That is NOT a return of
-        the defect where 230100 was the company's default EXPENSE account and
-        swallowed every purchase — that remains fixed in l10n_et_base.
+        NO INTERIM ACCOUNTS ARE SET, and that is not an omission. Odoo 19
+        removed `property_stock_account_input_categ_id` and
+        `property_stock_account_output_categ_id` from product.category — a
+        search of the whole 19.0 tree finds no reference to either — and setting
+        them would raise on create. The fields that survive are
+        property_valuation, property_cost_method, property_stock_journal,
+        property_stock_valuation_account_id and
+        property_price_difference_account_id. FIFO needs no price-difference
+        account, because each receipt is valued at what was actually paid.
         """
         category_model = self.env["product.category"]
         valuation = self._account(cat.STOCK_VALUATION_CODE)
-        interim = self._account(cat.STOCK_INTERIM_CODE)
         cogs = self._account(cat.COGS_CODE)
         journal = self.env["account.journal"].search(
             [
@@ -563,8 +567,6 @@ class SapianDemoTrader(models.AbstractModel):
                         "property_cost_method": "fifo",
                         "property_valuation": "real_time",
                         "property_stock_valuation_account_id": valuation.id,
-                        "property_stock_account_input_categ_id": interim.id,
-                        "property_stock_account_output_categ_id": interim.id,
                         "property_stock_journal": journal.id,
                         "property_account_expense_categ_id": cogs.id,
                     }

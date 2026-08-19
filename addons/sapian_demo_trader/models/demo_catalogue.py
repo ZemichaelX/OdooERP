@@ -100,11 +100,9 @@ PRICES = {
 # one carries PERPETUAL valuation so the cost of what was sold lands in the
 # books at the moment it is invoiced.
 #
-# `stock_valuation` and the two interim accounts are named by CODE, resolved
-# against the tenant's own chart, because a demo that hard-codes account ids
-# breaks on the next chart it meets.
+# The accounts are named by CODE, resolved against the tenant's own chart,
+# because a demo that hard-codes account ids breaks on the next chart it meets.
 STOCK_VALUATION_CODE = "235100"  # Stock, asset_current
-STOCK_INTERIM_CODE = "230100"  # Goods in Transit, asset_current
 COGS_CODE = "511100"  # Cost of Goods and Services, expense_direct_cost
 
 # (key, display name, Amharic)
