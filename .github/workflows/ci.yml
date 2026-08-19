@@ -41,6 +41,7 @@ jobs:
   lint-and-fast-tests:
     name: Lint + reference golden tests
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
@@ -134,6 +135,7 @@ jobs:
   integration-tests:
     name: Odoo integration tests
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     # Run inside the same Odoo 19 image production uses, so the suite exercises
     # the real ORM/registry/report stack (A3). A DB failure here fails CI.
     # Images are pinned by DIGEST (R7): the 19.0/16 tags are rebuilt upstream
@@ -278,6 +280,7 @@ jobs:
   calendar-standalone:
     name: Calendar installs, and uninstalls, alone
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     # WHY A SEPARATE JOB.
     #
     # l10n_et_calendar's central claim is that it stands ALONE: a client who
@@ -434,6 +437,7 @@ jobs:
   theme-with-website:
     name: Theme login vs website
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     # WHY A SEPARATE JOB.
     #
     # sapian_theme's login branding is template inheritance on
@@ -648,6 +652,7 @@ jobs:
   rail-render:
     name: App rail rendered in a browser
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     # WHY A SEPARATE JOB — AND WHY IT INSTALLS A BROWSER.
     #
     # The app rail is an OWL component. `/odoo` serves a bootstrap shell, so
@@ -852,6 +857,7 @@ jobs:
   launcher-defaults:
     name: Launcher defaults reach the page
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     # WHY A SEPARATE JOB.
     #
     # sapian_theme defaults two web_responsive fields — is_redirect_home and

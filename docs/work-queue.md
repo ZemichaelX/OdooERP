@@ -30,6 +30,7 @@ block on it, and never guess it into code.
 
 | # | Item | State |
 |---|---|---|
+| 0 | **CI trigger hygiene** — push on master only, `paths-ignore`, concurrency | **DONE** — PR #59 merged |
 | 1 | **TIN on documents** | **DONE** — PR #52 merged |
 | 2 | #51 — re-run, merge if green | **DONE** — merged as `20cbe4a` |
 | 3 | **Account types** — nine accounts, three-digit rules | **DONE** — PR #53 merged |
@@ -40,7 +41,71 @@ block on it, and never guess it into code.
 | 8 | Palette additions | todo |
 | 9 | PR 4 — the four remaining "Powered by Odoo" mails | todo |
 | 10 | Landing slot and grid toggle — Phase A discovery first | todo |
-| 11 | Branch cleanup — 35 remote branches | todo |
+| 11 | Branch cleanup — 35 remote branches | **DONE** — 33 deleted, 7 live branches remain |
+| 12 | **Self-hosted CI runner** | **DONE, then deliberately undone** — see below |
+
+## Items 0 and 12: the runner decision, settled — do not re-litigate
+
+Recorded here so no future session reopens it from first principles.
+
+**What happened.** On 18 August the account's GitHub-hosted Actions minutes hit
+2,000 of 2,000, with a reset on 1 September. CI could not run at all, and CI is
+the only gate this repository has. A self-hosted runner on the operator's own
+machine was registered and all six jobs were pointed at it (item 12, PR #57),
+together with two trigger changes that make a single sequential runner bearable:
+`push` restricted to master, `paths-ignore` for docs, and a concurrency block so
+a superseded run stops sitting in front of the run somebody is waiting on
+(item 0).
+
+Two things had to be built just to make that runner work at all, because the
+bottleneck was the operator's home internet connection rather than CPU or disk:
+git installed into the Odoo container from a persistent local apt cache, and
+Chrome resolved from a local path instead of downloaded per job.
+
+**Why it was undone.** The repository went public on 18 August and Actions
+minutes became unlimited. **Item 0's cost concern is therefore moot** — nothing
+is metered any more. PR #59 put CI back on `ubuntu-latest` and deleted the git
+bootstrap and the browser cache, which existed only to survive a slow domestic
+link and are pure risk on a hosted runner: measured there, Chrome installs in
+**13 seconds**.
+
+**What was kept, and why it was worth keeping.** The concurrency block and the
+`paths-ignore` triggers stayed. They were built for a scarce runner but they are
+good hygiene on an abundant one too — a cancelled superseded run and a skipped
+docs-only run are wins regardless of who is paying. Both are proved, not assumed:
+see "the paths-ignore filter discriminates" below.
+
+**The state now.** CI is hosted. The self-hosted runner stays *registered and
+idle* as a fallback for the next time minutes run out. To switch back, change
+`runs-on: ubuntu-latest` to `runs-on: [self-hosted, linux-x64-docker]` on all six
+jobs — the **custom** label, never bare `self-hosted`, which would also match any
+runner registered later including one without Docker, and every job here needs a
+Docker daemon for its `container:` and `services:` blocks. The git bootstrap and
+browser cache would need to come back with it; they live in PR #57's history
+rather than being carried here as dead weight. `PYTHONDONTWRITEBYTECODE` is
+already in `ci.yml` for exactly that eventuality: inert on hosted, load-bearing
+on self-hosted, so switching back is one edit instead of two.
+
+**Do not re-derive this.** Going self-hosted was right under a hard quota and is
+wrong without one. The trigger changes are keepers either way.
+
+## The paths-ignore filter discriminates
+
+`ci.yml` ignores `docs/**` and `*.md`, then negates `!CLAUDE.md` and
+`!.github/workflows/**`. `CLAUDE.md` is matched by `*.md`, so if the negation
+were ignored, a change to the rulebook would silently skip every test.
+
+Proved on 19 August with two throwaway pull requests, because one alone could not
+settle it — CI running on a `CLAUDE.md` change is equally consistent with the
+filter working and with the filter being inert:
+
+- **PR #60**, changing *only* `CLAUDE.md`: all six jobs **ran**.
+- **PR #61**, changing *only* `docs/work-queue.md`: the six jobs **skipped**.
+
+`gitleaks` was the control in both — `secret-scan.yml` carries no path filter, so
+its presence proves the event fired and that a missing job is suppression rather
+than silence. Both pull requests were closed once the answer was recorded;
+the branches are pending deletion.
 
 **Reordered 18 Aug** so the reporting blocker (register entry 27) clears today.
 The two reports moved up; **#50 moved down because its diagnosis is unbounded** and
