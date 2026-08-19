@@ -204,3 +204,157 @@ template of its own rather than a layout, so the two overrides in this module do
 not reach it, and its button *is* fixed by the colour field. It is a portal
 password reset, not a commercial document, so it did not justify widening this
 PR. It is the obvious next one.
+
+---
+
+# SapianBot — the system's own name in the chatter
+
+`base.partner_root` authors every message no person wrote: "Product created",
+stage changes, tracked-field updates, activity reminders. `base` calls it
+"System"; `mail` renames it to **OdooBot** and gives it Odoo's face. Measured on
+the all-apps demo tenant:
+
+```
+res.partner(2)  name  'OdooBot'
+                email 'odoobot@example.com'
+                image mail/static/src/img/odoobot.png   (0% transparent)
+```
+
+and, concretely, *"OdooBot — Product created"* in the chatter of
+`product.template` 7 (Binding Wire 1.5 mm).
+
+It is now **SapianBot**, from `sapian_theme/vendor.py`. Not the vendor speaking
+and not the client speaking — the system speaking, which is why Odoo names it
+after itself; our system is SapianERP. A constant rather than an
+`ir.config_parameter` for the reason that file already gives: a system parameter
+is writable by `base.group_system`, which on a client's database is the client.
+
+**On the record, because it is a decision and not an oversight:** this partner
+authors tracking messages in chatter, and a portal user sees the chatter on
+their own documents. So the name reaches the client's customers on a portal
+invoice.
+
+## Why this is Python and not a data record
+
+The obvious fix — `<record id="base.partner_root">` in our own data file — does
+not work, and it fails in the silent direction. `orm/models.py:5165`:
+
+```python
+if not (update and d_noupdate):
+    to_update.append(data)
+```
+
+`update` is True when a module is being **upgraded** rather than installed, and
+`d_noupdate` is the flag **stored on the existing `ir_model_data` row** — not
+the flag on our own XML block. `base` creates that row inside
+`<data noupdate="True">`, and `_build_update_xmlids_query`'s `ON CONFLICT DO
+UPDATE` sets only `(model, res_id, write_date)`, so no later module can clear
+it by declaring its own block updateable. Verified on a live database:
+`select noupdate from ir_model_data where module='base' and name='partner_root'`
+→ `t`.
+
+The consequence is not "it reverts". It is that the rename would reach **new
+databases only** — which is every database CI builds and no database a client
+runs — while every check stayed green.
+
+So the identity is a `write()`, from `res.partner._sapian_apply_bot_identity()`,
+called from two places:
+
+| Caller | Reaches |
+|---|---|
+| `post_init_hook` | a database installing the module now |
+| `migrations/19.0.1.3.0/end-bot_identity.py` | a database that already has it |
+
+The manifest version is load-bearing: the migration runs only when the installed
+version is below `19.0.1.3.0`.
+
+**Why it survives `-u mail`:** the same rule pointed the other way — mail's own
+record is blocked by the identical check, so nothing in Odoo rewrites this
+partner after the database is first built. That is an argument, and an argument
+is not a proof, so the `SapianBot survives an upgrade` CI job runs the whole
+sequence: install → `-u mail` → `-u sapian_theme_mail` → **break it on purpose
+and require the identity tests to fail** → rewind the version and require the
+migration to repair it.
+
+## The avatar
+
+`brand/icons/deliver/sapian_core__icon.png`, copied into this module because an
+addon must be self-contained, and byte-compared against the brand original by
+`test_the_avatar_we_ship_is_the_brand_asset` — brand/README.md forbids a redraw
+in those words, and a copy is exactly the thing that drifts into one.
+
+**One file serves both the avatar and the tray icon, and that is a measurement
+rather than a shortcut.** Odoo needs two images because `odoobot.png` is a
+filled purple tile (0% transparent) and only `odoobot_transparent.png` is safe
+over an unknown OS-tray background. Ours is already transparent-backed: 45.5% of
+its pixels are fully transparent and all four corners are alpha 0.
+`test_the_avatar_is_transparent_backed` is that measurement kept as a guard, and
+`test_the_size_the_chatter_renders_is_ours_and_still_transparent` re-checks the
+resized `avatar_128` variant separately, because a resize is where an alpha
+channel gets flattened onto white.
+
+## The four JS strings
+
+| Leak | Where | Fix |
+|---|---|---|
+| "Install Odoo" | `mail/core/web/messaging_menu_patch.js` | patched getter |
+| "Turn on notifications" icon | same file | **no code** — its only leak was the bot avatar |
+| "Odoo will (not) send notifications on this device" | `notification_permission_service.js` | patched service |
+| `odoobot_transparent.png` on desktop push | `out_of_focus_service.js` | intercepted in `sendNotification` |
+
+The product name comes from `session_info`, not a JS literal, so a re-brand is
+one edit in `vendor.py`.
+
+**What a guard can and cannot say here.** A `patch()` adds code to the bundle;
+it never removes the code it patches. `"Install Odoo"` is therefore still a
+string inside the served `web.assets_backend` while the menu renders "Install
+SapianERP", and no assertion of the form "Odoo's string is gone from the bundle"
+can ever pass. So the tests assert what is true instead: ours is *in* the served
+bundle (the failure that actually happens — a module installed but absent from
+the serving process's addons_path delivers zero JS in silence), and the strings
+and paths we intercept are still the ones upstream ships, so a rename turns a
+test red rather than turning an interception into a no-op.
+
+## The sweep
+
+`TestNoNewOdooIdentityAppears` is the same shape as the purple-template sweep
+above, scoped to **two surfaces only** — the bot partner record and the
+messaging menu — and it goes red when the set of Odoo-identity strings **grows**.
+It slices the served bundle by Odoo's own `odoo.define("@mail/core/...")`
+wrappers, so it reads what the browser got rather than what is on disk. It is
+deliberately not "no 'Odoo' anywhere in the bundle": that returns hundreds of
+module paths and framework identifiers, and a guard that cries every week is a
+guard somebody deletes.
+
+## Odoo's own tests that this rename would break
+
+Reported rather than discovered later. **Our CI does not run any of them** — every
+job selects with `/module` tags scoped to our own addons — but a bare
+`--test-enable` would hit these:
+
+| Module | Assertions | Installed on a client tenant? |
+|---|---|---|
+| `im_livechat` | `test_get_discuss_channel.py` ×3 (`"name": "OdooBot"`), `test_chatbot_internals.py` ×2 (a channel named "OdooBot Ernest Employee") | **yes**, if live chat is sold |
+| `test_mail`, `test_mail_full`, `test_discuss_full`, `test_mass_mailing` | ×10, including `email_from '"OdooBot" <odoobot@example.com>'` — so the email change breaks these too | no — Odoo's test-only modules |
+| `mail` JS suites | 8 files under `mail/static/tests/` | no — run only when mail's own tests are selected |
+
+`web`'s `mock_server/mock_models/res_partner.js` defines its own OdooBot and is
+unaffected: it is a mock, not the database.
+
+## What proves the JS patches actually RUN
+
+Named rather than left as accidental protection, because CLAUDE.md is explicit
+that a green figure only means something when you say what it proves.
+
+The bundle assertions above prove our file is *served*. They do not execute it —
+if `super.start(...)` in the notification-permission patch threw, the bundle
+would still contain the string. What executes it is `sapian_theme`'s existing
+`browser_js` suite: those tests load `/odoo` in headless Chrome and fail on any
+console error, so a patch that broke service start-up takes them down with it.
+Measured on a database carrying all three theme modules: **134 tests, 0 failed,
+0 skipped**, Chrome reporting.
+
+That coverage is real but indirect. It says "the webclient still boots"; it does
+not say "the menu item now reads Install SapianERP". The rendered label needs a
+PWA install prompt, which headless Chrome does not raise, so no test here claims
+it — the two inputs are asserted separately and the composition is stated.

@@ -64,3 +64,38 @@ SAPIAN_SUPPORT = "+251 11 668 1234 / support@sapiantech.com"
 # three copies of the domain, not the single home for it, and the two templates
 # are where the other two live.
 SAPIAN_URL = "https://sapiantech.com"
+
+# ---------------------------------------------------------------- the system
+
+# The product name, as a user reads it. Distinct from SAPIAN_COMPANY above:
+# that is the legal entity that signs a copyright line, this is the thing on
+# the screen. Both appear, and confusing them is how a footer ends up saying
+# "Powered by Sapian Technologies PLC".
+SAPIAN_PRODUCT = "SapianERP"
+
+# THE SYSTEM'S OWN NAME IN THE CHATTER.
+#
+# `base.partner_root` is the author of every message no person wrote: "Product
+# created", stage changes, tracked-field updates, the scheduled-activity
+# reminders. `base` calls it "System"; `mail` renames it to "OdooBot" and gives
+# it Odoo's face (mail/data/res_partner_data.xml).
+#
+# It is NOT the vendor speaking and NOT the client speaking — it is the system
+# speaking, which is exactly why Odoo names it after itself. Our system is
+# SapianERP, so the name follows the product, and it lives here rather than in
+# `ir.config_parameter` for the reason this file already gives: a system
+# parameter is writable by `base.group_system`, which on a client's database is
+# the client.
+#
+# ON THE RECORD, because it is a decision and not an oversight: this partner
+# authors tracking messages in the chatter, and a portal user sees the chatter
+# on their own documents. So this name reaches the CLIENT'S CUSTOMERS on a
+# portal invoice. That is accepted — the system is ours in a way the invoice's
+# letterhead is not.
+SAPIAN_BOT = "SapianBot"
+
+# `example.com` deliberately, and it is not laziness — it is RFC 2606's
+# reserved domain, the same choice Odoo made with `odoobot@example.com`. The
+# address must never resolve: it belongs to a record that cannot read replies,
+# and pointing it at a real mailbox would invite mail nobody reads.
+SAPIAN_BOT_EMAIL = "sapianbot@example.com"
