@@ -436,3 +436,5 @@ plan-2026/CLAUDE.md is a reference copy; THIS file is authoritative.
 - Filing: Category A via etax.mor.gov.et, others via regional bureaus; pension via
   POESSA declaration + bank slip within 30 days. MoR beneficiary accounts (future
   payment-instruction printout): pension 1000140034057, VAT/profit tax 1000140046047.
+
+<!-- paths-ignore probe: throwaway, to be reverted. See PR discussion. -->
