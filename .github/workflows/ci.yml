@@ -65,6 +65,16 @@ jobs:
         # through.
         run: ./scripts/check_vendor.sh --self-test
 
+
+      - name: The deploy script's guards still discriminate
+        # scripts/update_local.sh is the one command that deploys master to the
+        # operator's tenant, and every check in it is a claim about a silent
+        # failure. --self-test makes each claim false on purpose and requires
+        # the script to go red for THAT REASON, not merely to exit non-zero.
+        #
+        # It needs no Docker and no database: each case drives the script with a
+        # stub Odoo against a throwaway git repository it builds itself.
+        run: bash scripts/update_local.sh --self-test
       - name: Lint (ruff, black, pylint-odoo)
         # ONE DEFINITION, shared with the pre-push hook: .githooks/pre-push runs
         # this same script. Both the floors ("is there anything to lint at all")
