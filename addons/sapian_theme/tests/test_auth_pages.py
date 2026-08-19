@@ -506,8 +506,29 @@ CONTROL_COLOURS_JS = """
         audit(more, "form-revealed");
     }
 
-    const switcherControls = document.querySelectorAll(
-        ".list-group-item-action, .o_user_switch_btn").length;
+    // COUNTED INSIDE THE SWITCHER'S OWN HOST, and this is not fussiness.
+    // The first version counted `.list-group-item-action` anywhere on the page
+    // and was satisfied by `a.passkey_login_link.list-group-item-action` — a
+    // passkey link that happens to carry the same Bootstrap class. The user
+    // switcher had not rendered at all, and the assertion written to catch
+    // exactly that reported success. Scope it to the component's host element.
+    const switcherHost = document.querySelector("owl-component[name='web.user_switch']");
+    const switcherIn = () => switcherHost
+        ? switcherHost.querySelectorAll(".list-group-item-action, .o_user_switch_btn").length
+        : 0;
+    // "Choose a user" collapses to a single button when only one user is
+    // remembered. Click it — that is `toggleFormDisplay` — so the list rows
+    // render and get audited too, rather than depending on the localStorage
+    // seed winning its race with user.js clearing it.
+    const collapsed = switcherHost && switcherHost.querySelector(".o_user_switch_btn");
+    if (collapsed) {
+        collapsed.click();
+        await sleep(250);
+        const expanded = [...document.querySelectorAll(SELECTOR)].filter(visible)
+            .filter(e => !controls.includes(e));
+        if (expanded.length) audit(expanded, "switcher-expanded");
+    }
+    const switcherControls = switcherIn();
     console.log("SAPIAN-CONTROL-SUMMARY path=" + location.pathname
         + " controls=" + controls.length + " revealed=" + revealed
         + " states=" + stateCount + " foreign=" + foreign.length
@@ -521,8 +542,8 @@ CONTROL_COLOURS_JS = """
     // guard would quietly audit a page missing the very controls it was
     // widened for — a smaller version of the defect it exists to catch.
     if (location.pathname === "/web/login" && switcherControls === 0) {
-        console.error("SAPIAN-CONTROL the stored-user switcher did not render, so its "
-            + "controls were not audited. This run proves nothing about them.");
+        console.error("SAPIAN-CONTROL the stored-user switcher rendered no controls of its "
+            + "own, so 'Choose a user' was not audited. This run proves nothing about it.");
         return;
     }
     if (foreign.length) {
@@ -535,7 +556,7 @@ CONTROL_COLOURS_JS = """
 """
 
 
-@tagged("-standard", "sapian_palette")
+@tagged("post_install", "-at_install", "-standard", "sapian_palette")
 class TestEveryControlIsInThePalette(AuthPageCase):
     """Reads what every control COMPUTES, in every state, and fails on a
     colour that is not ours.
