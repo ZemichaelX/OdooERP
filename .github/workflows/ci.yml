@@ -75,6 +75,23 @@ jobs:
         # It needs no Docker and no database: each case drives the script with a
         # stub Odoo against a throwaway git repository it builds itself.
         run: bash scripts/update_local.sh --self-test
+      - name: The launcher verifier still refuses to report what it did not measure
+        # check_launcher.py emits `launcher_measured=0` and prints NOTHING
+        # downstream when the fetch of /odoo does not reach the backend, and
+        # verify_launcher turns that into ONE "could not measure" error instead
+        # of the six alarms an operator spent an evening on.
+        #
+        # Both halves are proved by making the bad thing happen on purpose: the
+        # Python half execs the real file against a stub client serving the
+        # website login page, the shell half drives verify_launcher with canned
+        # transcripts. Each also proves the guard STAYS OPEN on a real
+        # measurement, because a gate that never opens would pass too. No
+        # Docker, no database.
+        run: |
+          set -euo pipefail
+          python3 scripts/check_launcher_selftest.py
+          bash scripts/check_launcher_guard_selftest.sh
+
       - name: Lint (ruff, black, pylint-odoo)
         # ONE DEFINITION, shared with the pre-push hook: .githooks/pre-push runs
         # this same script. Both the floors ("is there anything to lint at all")
@@ -1467,6 +1484,33 @@ jobs:
 
           echo "---- CONTROL (launcher stack only): every CHECK ----"
           grep -E '^(CHECK|NOTE) ' /tmp/nowebsite-launcher.log || true
+
+          # ---- THE LOGIN COLOURS, on the same two databases -----------------
+          #
+          # The operator's --all-apps run also reported login_primary,
+          # login_disabled and login_focus_rgb as ABSENT. Those come from
+          # check_login_page.py, which reads the COMPILED web.assets_frontend
+          # bundle rather than any fetched page — so unlike the launcher checks
+          # they are not downstream of the wrong-page fetch, and they have to
+          # be measured separately rather than dismissed with it.
+          #
+          # No session is involved, so CI can run the real file unmodified.
+          for db in ci_allapps ci_nowebsite; do
+            odoo shell ${ARGS} -d "${db}" --no-http --log-level=warn \
+                 < "${GITHUB_WORKSPACE}/scripts/lib/check_login_page.py" 2>&1 \
+                 | tee "/tmp/${db}-login.log"
+            grep -q '^CHECK login_http=' "/tmp/${db}-login.log" \
+              || { echo "::error::The login check never reported on ${db} — it measured nothing."; exit 1; }
+          done
+          echo "---- THE COMPARISON (login colours) ----"
+          for key in brand_expected brand_expected_rgb login_primary login_disabled \
+                     login_focus_rgb login_css_bytes login_selector_oe_login_form \
+                     login_selector_o_sapian_auth login_scope_o_sapian_auth_any; do
+            printf '%-32s allapps=%-14s control=%s\n' "${key}" \
+              "$(sed -n "s/^CHECK ${key}=//p" /tmp/ci_allapps-login.log | head -1)" \
+              "$(sed -n "s/^CHECK ${key}=//p" /tmp/ci_nowebsite-login.log | head -1)"
+          done
+          sed -n 's/^CHECK login_actual_rule=/allapps actual rule: /p' /tmp/ci_allapps-login.log | head -1
 
           echo "---- THE COMPARISON ----"
           echo "---- THE COMPARISON (asset pipeline, no HTTP) ----"

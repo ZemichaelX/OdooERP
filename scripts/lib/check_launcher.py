@@ -4,8 +4,8 @@
 ONE DEFINITION, called by build_demo.sh and provision_client.sh through
 `verify_launcher` in preflight.sh — the same arrangement as check_login_page.py.
 
-WHY THIS FILE WAS REWRITTEN
----------------------------
+WHY THIS FILE WAS REWRITTEN, THE FIRST TIME
+-------------------------------------------
 Its first version asked the server which files it *resolves* into the bundle and
 whether a CSS class appeared in a compiled attachment. Every one of those checks
 passed on a demo where NOT ONE LINE of web_responsive's JavaScript reached the
@@ -36,18 +36,38 @@ a fresh container with the correct configuration, while the user's browser is
 served by the long-running container. Two processes, one database, opposite
 answers, and the check believed the wrong one.
 
-WHAT IT DOES NOW
-----------------
-It authenticates as admin, fetches the backend bundle the webclient actually
-loads, and looks in the bytes:
+WHY IT WAS REWRITTEN AGAIN — THE NULL MEASUREMENT
+-------------------------------------------------
+The rewrite above fixed what was measured and left HOW IT FAILS wrong, and that
+cost an operator an evening. On an `--all-apps` demo the fetch below came back
+200 with 9,685 bytes of the WEBSITE LOGIN PAGE:
 
-  * `@web_responsive/components/apps_menu/apps_menu.esm` present BY NAME in the
-    delivered JavaScript — that module IS the launcher, so its absence is the
-    defect and its presence cannot be faked by a stylesheet;
-  * web_responsive's CSS and sapian_theme's CSS asserted SEPARATELY, so neither
-    can stand in for the other;
-  * `web_responsive in registry._init_modules`, the variable that actually
-    decides whether any of the above can happen, reported outright.
+    launcher_served_title=Login | My Website
+    launcher_served_head=<!DOCTYPE html> <html lang="en-US" data-website-id="1"
+
+The session was not authenticated, `/odoo` redirected to `/web/login`, and
+`website` rendered that login through its own layout. The page could not have
+contained a backend bundle under any circumstances. Yet the file went on to
+report, in the same confident tone as a real result:
+
+    launcher_backend_js_bundles=0        launcher_js_modules=0
+    launcher_js_named=False              launcher_css_web_responsive=False
+    launcher_css_sapian_theme=False
+
+Every one of those is arithmetically true of the bytes fetched and evidentially
+worthless. They are not findings about the tenant; they are five restatements
+of "we measured the wrong page", and they read exactly like a broken launcher.
+
+That is this repository's own rule pointed the other way round: a run that
+could not start is not a run that failed. So the failure is now ABORTED rather
+than RED. When the fetch does not reach the backend the file prints what it got
+instead, prints WHY it thinks the session was rejected, emits
+
+    CHECK launcher_measured=0
+
+and RETURNS — none of the downstream checks are printed at all, because a check
+whose input never existed must not produce a value. `verify_launcher` turns the
+marker into a single "could not measure" error instead of six alarming ones.
 
 `werkzeug.test.Client(odoo.http.root)` is the same real-dispatcher technique
 check_login_page.py uses. It is still in-process, which is why
@@ -60,6 +80,7 @@ import re
 import odoo
 from odoo.http import root as http_root
 from odoo.service import security
+from odoo.tools import config
 from werkzeug.test import Client
 
 from odoo.addons.sapian_theme import brand
@@ -72,124 +93,8 @@ WEB_RESPONSIVE_CSS_MARKER = "o_grid_apps_menu"   # web_responsive/apps_menu.scss
 SAPIAN_THEME_CSS_MARKER = "o_sapian_rail"        # sapian_theme/sapian_rail.scss
 MILK_RGB = "#e9e6f9"
 
-# ---- 1. what the database says, and what THIS PROCESS actually loaded -------
-module = env["ir.module.module"].search([("name", "=", "web_responsive")], limit=1)
-print("CHECK launcher_module=%s" % (module.state if module else "missing"))
 
-# The decisive variable. `state = installed` with this False is exactly the
-# defect: the module exists in the database and does not exist to the asset
-# pipeline.
-init_modules = env.registry._init_modules
-print("CHECK launcher_in_init_modules=%s" % ("web_responsive" in init_modules))
-
-# ---- 2. the users this tenant is handed over with --------------------------
-users = env["res.users"].with_context(active_test=False).search([("share", "=", False)])
-print("CHECK launcher_users=%d" % len(users))
-if "is_redirect_home" in env["res.users"]._fields:
-    off = users.filtered(lambda u: not u.is_redirect_home)
-    lilac = users.filtered(lambda u: u.apps_menu_theme != "community")
-    print("CHECK launcher_users_not_redirected=%d" % len(off))
-    print("CHECK launcher_users_not_branded=%d" % len(lilac))
-    if off:
-        print("CHECK launcher_not_redirected_logins=%s" % ", ".join(sorted(off.mapped("login"))))
-    if lilac:
-        print("CHECK launcher_not_branded_logins=%s" % ", ".join(sorted(lilac.mapped("login"))))
-else:
-    # Its own value, so "0 users are missing it" cannot be produced by a
-    # database where the field does not exist at all.
-    print("CHECK launcher_users_not_redirected=NOFIELD")
-    print("CHECK launcher_users_not_branded=NOFIELD")
-
-print("CHECK brand_expected=%s" % brand.brand_primary())
-
-# ---- 3. the artefact the browser is served ---------------------------------
-admin = env.ref("base.user_admin")
-session = http_root.session_store.new()
-session.update(odoo.http.get_default_session(), db=env.cr.dbname)
-session.uid = admin.id
-session.login = admin.login
-session.session_token = security.compute_session_token(session, env)
-session.context = dict(env["res.users"].with_user(admin).context_get())
-http_root.session_store.save(session)
-
-client = Client(http_root)
-client.set_cookie("session_id", session.sid, domain="localhost")
-headers = {"Host": "localhost"}
-
-page = client.get("/odoo", headers=headers, follow_redirects=True)
-html = page.get_data(as_text=True)
-print("CHECK launcher_page_http=%s" % page.status_code)
-print("CHECK launcher_page_bytes=%d" % len(html))
-
-# THE HOME ACTION, READ OFF THE WIRE.
-#
-# `res.users.action_id` decides the landing page before either launcher setting
-# is consulted, by a path that never reaches web_responsive: session_info
-# carries it as `home_action_id`, the action service falls back to it when the
-# URL has no action, `loadState()` then returns true, and
-# `WebClient.loadRouterState` therefore skips `_loadDefaultApp` — the only
-# method web_responsive patches and the only place `is_redirect_home` is read.
-#
-# So this is not "assert the field is empty" restated. It is the byte the
-# client reads to make this exact decision, taken from the page the browser is
-# served — the same standard as everything else in this file. A tenant can show
-# `launcher_users_not_redirected=0` and still navigate away one second after
-# login; only this line notices.
-home = re.search(r'"home_action_id":\s*([^,}\s]+)', html)
-print("CHECK launcher_home_action_on_wire=%s" % (home.group(1) if home else "ABSENT"))
-homed = users.filtered("action_id")
-print("CHECK launcher_users_with_home_action=%d" % len(homed))
-if homed:
-    print(
-        "CHECK launcher_home_action_logins=%s"
-        % ", ".join(sorted("%s -> %s" % (u.login, u.action_id.name) for u in homed))
-    )
-
-js_urls = re.findall(r'src="(/web/assets/[^"]*\.js)"', html)
-css_urls = re.findall(r'(?:href|data-src)="(/web/assets/[^"]*\.css)"', html)
-# The backend bundle, not the frontend one: an unauthenticated page serves
-# web.assets_frontend and would report a confident zero for everything below.
-backend_js = [u for u in js_urls if "assets_web" in u]
-backend_css = [u for u in css_urls if "assets_web.min.css" in u]
-print("CHECK launcher_backend_js_bundles=%d" % len(backend_js))
-print("CHECK launcher_backend_css_bundles=%d" % len(backend_css))
-
-# WHEN THERE ARE NO BACKEND BUNDLES, SAY WHAT WAS SERVED INSTEAD.
-#
-# Without this the verifier reports a confident zero and every check below it
-# is downstream of a measurement that may never have happened — which is the
-# same shape as a success signal produced by doing nothing, pointed the other
-# way. "No backend JS bundle was served" cannot distinguish an empty database
-# from a fetch that landed on the wrong page, and those are different defects
-# with different fixes.
-if not backend_js:
-    print("CHECK launcher_served_frontend=%s" % ("assets_frontend" in html))
-    print("CHECK launcher_served_any_asset_urls=%d" % len(js_urls + css_urls))
-    print("CHECK launcher_served_title=%s" % (
-        (re.search(r"<title>(.*?)</title>", html, re.S) or [None, "ABSENT"])[1].strip()[:80]
-    ))
-    # The first asset URLs actually present, whatever bundle they belong to.
-    for url in (js_urls + css_urls)[:6]:
-        print("CHECK launcher_served_asset=%s" % url)
-    print("CHECK launcher_served_head=%s" % html[:200].replace("\n", " "))
-
-js_body = "".join(client.get(u, headers=headers).get_data(as_text=True) for u in backend_js)
-css_body = "".join(client.get(u, headers=headers).get_data(as_text=True) for u in backend_css)
-print("CHECK launcher_js_bytes=%d" % len(js_body))
-print("CHECK launcher_css_bytes=%d" % len(css_body))
-
-modules = sorted(set(re.findall(r"@web_responsive/[A-Za-z0-9_/.-]+", js_body)))
-print("CHECK launcher_js_modules=%d" % len(modules))
-print("CHECK launcher_js_named=%s" % (LAUNCHER_MODULE in modules))
-if not modules:
-    print("CHECK launcher_js_none_delivered=1")
-
-# Asserted separately, so a green from one cannot be a green for the other.
-print("CHECK launcher_css_web_responsive=%s" % (WEB_RESPONSIVE_CSS_MARKER in css_body))
-print("CHECK launcher_css_sapian_theme=%s" % (SAPIAN_THEME_CSS_MARKER in css_body))
-
-
-def theme_colour(theme):
+def theme_colour(css_body, theme):
     match = re.search(
         r"\.o_grid_apps_menu\[data-theme=.?%s.?\]\{[^}]*linear-gradient\([^)]*?(#[0-9A-Fa-f]{3,8})"
         % theme,
@@ -198,5 +103,176 @@ def theme_colour(theme):
     return match.group(1) if match else "ABSENT"
 
 
-print("CHECK launcher_community_colour=%s" % theme_colour("community").upper())
-print("CHECK launcher_milk_colour=%s" % theme_colour("milk").upper())
+def report_unreachable_backend(html, js_urls, css_urls, first, page, session):
+    """Say what was served instead, and why the session was refused.
+
+    Called ONLY when no backend bundle was served. Everything here is evidence
+    about the FETCH, never about the tenant — the point is to let the next run
+    name the mechanism instead of costing another round trip.
+    """
+    print("CHECK launcher_served_frontend=%s" % ("assets_frontend" in html))
+    print("CHECK launcher_served_any_asset_urls=%d" % len(js_urls + css_urls))
+    print("CHECK launcher_served_title=%s" % (
+        (re.search(r"<title>(.*?)</title>", html, re.S) or [None, "ABSENT"])[1].strip()[:80]
+    ))
+    for url in (js_urls + css_urls)[:6]:
+        print("CHECK launcher_served_asset=%s" % url)
+    print("CHECK launcher_served_head=%s" % html[:200].replace("\n", " "))
+
+    # WHERE THE REQUEST WENT. `/odoo` is auth='user'; an unauthenticated
+    # request raises SessionExpiredException and is redirected to /web/login,
+    # which `website` then renders through its own layout. The first response
+    # and its Location say that outright, where the final page only implies it.
+    print("CHECK launcher_first_status=%s" % first.status_code)
+    print("CHECK launcher_first_location=%s" % (first.headers.get("Location") or "NONE"))
+    print("CHECK launcher_redirects=%d" % len(getattr(page, "history", ()) or ()))
+    print("CHECK launcher_final_path=%s" % getattr(getattr(page, "request", None), "path", "UNKNOWN"))
+
+    # WHY THE SESSION WAS REFUSED. Three independent candidates, each read
+    # rather than guessed:
+    #
+    #  * the session file itself — did the store keep the uid we saved?
+    #  * db_filter — `Request._get_session_and_dbname` logs a session OUT when
+    #    the dbfilter rejects its database, which turns a correct session into
+    #    an anonymous one with only a warning in the log;
+    #  * the token — recomputed and compared, so a stale hash is visible.
+    stored = http_root.session_store.get(session.sid)
+    print("CHECK launcher_session_uid_stored=%s" % (stored.uid if stored else "NOSESSION"))
+    print("CHECK launcher_session_db_stored=%s" % (stored.get("db") if stored else "NOSESSION"))
+    dbname = env.cr.dbname                                              # noqa: F821
+    try:
+        accepted = odoo.http.db_filter([dbname], host="localhost")
+    except Exception as exc:                                            # noqa: BLE001
+        accepted = "ERROR %r" % (exc,)
+    print("CHECK launcher_dbfilter_accepts=%s" % (list(accepted) == [dbname]))
+    print("CHECK launcher_config_dbfilter=%r" % (config["dbfilter"],))
+    print("CHECK launcher_config_db_name=%r" % (config["db_name"],))
+    print("CHECK launcher_config_list_db=%r" % (config["list_db"],))
+    expected = security.compute_session_token(session, env)              # noqa: F821
+    print("CHECK launcher_session_token_matches=%s" % (expected == session.session_token))
+
+
+def main():
+    # ---- 1. what the database says, and what THIS PROCESS actually loaded ---
+    module = env["ir.module.module"].search([("name", "=", "web_responsive")], limit=1)  # noqa: F821
+    print("CHECK launcher_module=%s" % (module.state if module else "missing"))
+
+    # The decisive variable. `state = installed` with this False is exactly the
+    # defect: the module exists in the database and does not exist to the asset
+    # pipeline.
+    init_modules = env.registry._init_modules                            # noqa: F821
+    print("CHECK launcher_in_init_modules=%s" % ("web_responsive" in init_modules))
+
+    # ---- 2. the users this tenant is handed over with -----------------------
+    users = env["res.users"].with_context(active_test=False).search([("share", "=", False)])  # noqa: F821
+    print("CHECK launcher_users=%d" % len(users))
+    if "is_redirect_home" in env["res.users"]._fields:                   # noqa: F821
+        off = users.filtered(lambda u: not u.is_redirect_home)
+        lilac = users.filtered(lambda u: u.apps_menu_theme != "community")
+        print("CHECK launcher_users_not_redirected=%d" % len(off))
+        print("CHECK launcher_users_not_branded=%d" % len(lilac))
+        if off:
+            print("CHECK launcher_not_redirected_logins=%s" % ", ".join(sorted(off.mapped("login"))))
+        if lilac:
+            print("CHECK launcher_not_branded_logins=%s" % ", ".join(sorted(lilac.mapped("login"))))
+    else:
+        # Its own value, so "0 users are missing it" cannot be produced by a
+        # database where the field does not exist at all.
+        print("CHECK launcher_users_not_redirected=NOFIELD")
+        print("CHECK launcher_users_not_branded=NOFIELD")
+
+    print("CHECK brand_expected=%s" % brand.brand_primary())
+
+    # ---- 3. the artefact the browser is served ------------------------------
+    admin = env.ref("base.user_admin")                                   # noqa: F821
+    session = http_root.session_store.new()
+    session.update(odoo.http.get_default_session(), db=env.cr.dbname)    # noqa: F821
+    session.uid = admin.id
+    session.login = admin.login
+    session.session_token = security.compute_session_token(session, env)  # noqa: F821
+    session.context = dict(env["res.users"].with_user(admin).context_get())  # noqa: F821
+    http_root.session_store.save(session)
+
+    client = Client(http_root)
+    client.set_cookie("session_id", session.sid, domain="localhost")
+    headers = {"Host": "localhost"}
+
+    # The un-followed response first: its status and Location name the
+    # redirect, which the final page can only be inferred from.
+    first = client.get("/odoo", headers=headers)
+    page = client.get("/odoo", headers=headers, follow_redirects=True)
+    html = page.get_data(as_text=True)
+    print("CHECK launcher_page_http=%s" % page.status_code)
+    print("CHECK launcher_page_bytes=%d" % len(html))
+
+    js_urls = re.findall(r'src="(/web/assets/[^"]*\.js)"', html)
+    css_urls = re.findall(r'(?:href|data-src)="(/web/assets/[^"]*\.css)"', html)
+    # The backend bundle, not the frontend one: an unauthenticated page serves
+    # web.assets_frontend and would report a confident zero for everything
+    # below.
+    backend_js = [u for u in js_urls if "assets_web" in u]
+    backend_css = [u for u in css_urls if "assets_web.min.css" in u]
+
+    # THE GATE. Everything past this point describes the launcher; none of it
+    # can be measured on a page that is not the backend, so none of it is
+    # printed. See the header: five true-but-worthless conclusions from a null
+    # measurement is what this gate exists to prevent.
+    if not backend_js:
+        report_unreachable_backend(html, js_urls, css_urls, first, page, session)
+        print("CHECK launcher_measured=0")
+        return
+
+    print("CHECK launcher_measured=1")
+    print("CHECK launcher_backend_js_bundles=%d" % len(backend_js))
+    print("CHECK launcher_backend_css_bundles=%d" % len(backend_css))
+
+    # THE HOME ACTION, READ OFF THE WIRE.
+    #
+    # `res.users.action_id` decides the landing page before either launcher
+    # setting is consulted, by a path that never reaches web_responsive:
+    # session_info carries it as `home_action_id`, the action service falls
+    # back to it when the URL has no action, `loadState()` then returns true,
+    # and `WebClient.loadRouterState` therefore skips `_loadDefaultApp` — the
+    # only method web_responsive patches and the only place `is_redirect_home`
+    # is read.
+    #
+    # So this is not "assert the field is empty" restated. It is the byte the
+    # client reads to make this exact decision, taken from the page the browser
+    # is served — the same standard as everything else in this file. A tenant
+    # can show `launcher_users_not_redirected=0` and still navigate away one
+    # second after login; only this line notices.
+    home = re.search(r'"home_action_id":\s*([^,}\s]+)', html)
+    print("CHECK launcher_home_action_on_wire=%s" % (home.group(1) if home else "ABSENT"))
+    homed = users.filtered("action_id")
+    print("CHECK launcher_users_with_home_action=%d" % len(homed))
+    if homed:
+        print(
+            "CHECK launcher_home_action_logins=%s"
+            % ", ".join(sorted("%s -> %s" % (u.login, u.action_id.name) for u in homed))
+        )
+
+    js_body = "".join(client.get(u, headers=headers).get_data(as_text=True) for u in backend_js)
+    css_body = "".join(client.get(u, headers=headers).get_data(as_text=True) for u in backend_css)
+    print("CHECK launcher_js_bytes=%d" % len(js_body))
+    print("CHECK launcher_css_bytes=%d" % len(css_body))
+
+    modules = sorted(set(re.findall(r"@web_responsive/[A-Za-z0-9_/.-]+", js_body)))
+    print("CHECK launcher_js_modules=%d" % len(modules))
+    print("CHECK launcher_js_named=%s" % (LAUNCHER_MODULE in modules))
+    if not modules:
+        print("CHECK launcher_js_none_delivered=1")
+
+    # Asserted separately, so a green from one cannot be a green for the other.
+    print("CHECK launcher_css_web_responsive=%s" % (WEB_RESPONSIVE_CSS_MARKER in css_body))
+    print("CHECK launcher_css_sapian_theme=%s" % (SAPIAN_THEME_CSS_MARKER in css_body))
+
+    print("CHECK launcher_community_colour=%s" % theme_colour(css_body, "community").upper())
+    print("CHECK launcher_milk_colour=%s" % theme_colour(css_body, "milk").upper())
+
+
+# `odoo shell` reading a PIPE execs this file whole (odoo/cli/shell.py: `if not
+# os.isatty(...): exec(sys.stdin.read(), local_vars)`), so a single call with an
+# early return is enough to guarantee nothing downstream is emitted. Written as
+# one function for exactly that reason — a flat script with a `raise` in the
+# middle relies on how the reader is fed.
+main()

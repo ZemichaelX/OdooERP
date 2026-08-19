@@ -73,6 +73,27 @@ print(
     % first(login_rule, r"--btn-focus-shadow-rgb: ([0-9]+, [0-9]+, [0-9]+)")
 )
 
+# WHEN THE RULE IS ABSENT, SAY WHETHER THE BRAND IS MISSING OR THE SELECTOR IS.
+#
+# "ABSENT" for all three above has two completely different causes and they
+# need opposite fixes: the stylesheet genuinely does not brand the button, or
+# this file is grepping for a selector the stylesheet no longer emits. The
+# three values are identical in both cases, so the difference has to be
+# printed rather than inferred — the same reason check_launcher.py reports
+# what it served when it finds no backend bundle.
+#
+# `sapian_frontend.scss` scopes the auth pages with `.o_sapian_auth`; it used
+# to be `.oe_login_form`, which was too narrow by one page
+# (/web/reset_password kept the website palette). Both are reported so a stale
+# grep here is distinguishable from a missing rule there at a glance.
+if login_rule == "ABSENT":
+    print("CHECK login_css_bytes=%d" % len(frontend))
+    print("CHECK login_selector_oe_login_form=%d" % frontend.count(".oe_login_form .btn-primary{"))
+    print("CHECK login_selector_o_sapian_auth=%d" % frontend.count(".o_sapian_auth .btn-primary{"))
+    print("CHECK login_scope_o_sapian_auth_any=%d" % frontend.count(".o_sapian_auth"))
+    actual = first(frontend, r"(\.o_sapian_auth \.btn-primary\{[^}]*\})")
+    print("CHECK login_actual_rule=%s" % actual[:240])
+
 # ---- the page itself, as it comes back on the wire -------------------------
 response = Client(http_root).get("/web/login", headers={"Host": "localhost"})
 html = response.get_data(as_text=True)

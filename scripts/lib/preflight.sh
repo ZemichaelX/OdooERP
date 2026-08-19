@@ -311,9 +311,34 @@ verify_launcher() {
   _launcher_check '^CHECK launcher_in_init_modules=True$' \
     "web_responsive is installed in the DATABASE but was not loaded by this"$'\n'"   process — it is not on its addons path, so ir.asset skips its manifest"$'\n'"   entirely and NONE of its JavaScript or CSS is delivered. No error is"$'\n'"   raised for this. Check addons_path in config/odoo.runtime.conf and the"$'\n'"   ../vendor/oca_web:/mnt/vendor mount in docker/docker-compose.yml, then"$'\n'"   RESTART the serving container — a running server keeps its own path."
 
-  # 2. Did we actually fetch the backend page? An unauthenticated fetch serves
-  #    web.assets_frontend and would report a confident zero for everything
-  #    below it.
+  # 2. DID THE MEASUREMENT HAPPEN AT ALL?
+  #
+  #    This is a precondition, not a check, and it returns early — because the
+  #    checks below it describe the launcher, and on a page that is not the
+  #    backend NONE of them describes anything. On an --all-apps demo the fetch
+  #    came back 200 with the WEBSITE LOGIN PAGE (`Login | My Website`,
+  #    data-website-id="1"): the session was refused, /odoo redirected to
+  #    /web/login, and `website` rendered it. The old code went on to report
+  #    zero bundles, zero JS modules, no launcher component and no stylesheets
+  #    — six conclusions, all arithmetically true of those bytes, none of them
+  #    a fact about the tenant, and between them an evening of an operator's
+  #    time spent on a launcher that was never shown to be broken.
+  #
+  #    A run that could not start is not a run that failed. check_launcher.py
+  #    now emits `launcher_measured=0` and prints NOTHING downstream; this
+  #    turns that into one error that says so.
+  local measured
+  measured="$(printf '%s\n' "${out}" | sed -n 's/^CHECK launcher_measured=//p' | tr -d '\r' | head -1)"
+  if [ "${measured}" != "1" ]; then
+    if [ "${measured}" = "0" ]; then
+      log_error "!! COULD NOT MEASURE the launcher on '${db}'. The fetch of /odoo did not"$'\n'"   reach the web client, so nothing about the launcher was measured — this"$'\n'"   is NOT evidence that the launcher is broken. See the CHECK"$'\n'"   launcher_served_* and launcher_session_* lines above for what came back"$'\n'"   instead and why the session was refused."
+    else
+      log_error "!! The launcher verifier did not report whether it measured anything."$'\n'"   It raised, or it never ran. Full output:"
+      printf '%s\n' "${out}" | tail -20 >&2
+    fi
+    unset -f _launcher_check
+    return 1
+  fi
   _launcher_check '^CHECK launcher_page_http=200$' \
     "The backend page did not return 200, so nothing below was measured on a"$'\n'"   real page."
   local bundles
