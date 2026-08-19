@@ -89,6 +89,51 @@ PRICES = {
 # (key, English name, Amharic suffix, unit, sale price, cost price)
 # `unit` is one of: "bag" (cement, with the quintal pair), "kg", "piece", "m3",
 # "service".
+# --- PRODUCT CATEGORIES -------------------------------------------------------
+# A demo where every product sits in "All" looks unconfigured, and — far worse —
+# "All" carries Odoo's default `property_valuation = periodic`
+# (stock_account/data/stock_account_data.xml), which posts NO cost-of-goods
+# entry. That is why the July profit & loss read revenue 115,300.00 against a
+# cost of sales of 0.00: a trading company that sold materials for nothing.
+#
+# The categories below are what a materials trader would actually keep, and each
+# one carries PERPETUAL valuation so the cost of what was sold lands in the
+# books at the moment it is invoiced.
+#
+# `stock_valuation` and the two interim accounts are named by CODE, resolved
+# against the tenant's own chart, because a demo that hard-codes account ids
+# breaks on the next chart it meets.
+STOCK_VALUATION_CODE = "235100"  # Stock, asset_current
+STOCK_INTERIM_CODE = "230100"  # Goods in Transit, asset_current
+COGS_CODE = "511100"  # Cost of Goods and Services, expense_direct_cost
+
+# (key, display name, Amharic)
+CATEGORIES = [
+    ("cement", "Cement & Binders", "ሲሚንቶ"),
+    ("steel", "Steel & Reinforcement", "ብረት"),
+    ("roofing", "Roofing & Sheets", "ቆርቆሮ"),
+    ("masonry", "Blocks & Aggregates", "ብሎኬትና አሸዋ"),
+    ("services", "Services", "አገልግሎት"),
+]
+
+# Every product key in PRODUCTS must appear here; a test asserts that, because a
+# product quietly falling back to "All" is exactly the defect this fixes and it
+# would do so silently.
+CATEGORY_BY_PRODUCT = {
+    "cement_dangote": "cement",
+    "cement_habesha": "cement",
+    "cement_derba": "cement",
+    "rebar_8": "steel",
+    "rebar_12": "steel",
+    "rebar_16": "steel",
+    "binding_wire": "steel",
+    "sheet_g32": "roofing",
+    "hcb_20": "masonry",
+    "sand": "masonry",
+    "delivery": "services",
+    "software": "services",
+}
+
 PRODUCTS = [
     (
         "cement_dangote",

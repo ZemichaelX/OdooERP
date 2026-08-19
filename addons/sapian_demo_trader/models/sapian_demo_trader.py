@@ -38,6 +38,7 @@ import base64
 import logging
 
 from odoo import Command, api, models
+from odoo.exceptions import UserError
 from odoo.tools import file_open
 
 from . import demo_catalogue as cat
@@ -455,6 +456,7 @@ class SapianDemoTrader(models.AbstractModel):
             "piece": self.env.ref("uom.product_uom_unit"),
             "m3": self.env.ref("uom.product_uom_cubic_meter"),
         }
+        categories = self._create_product_categories()
         product_model = self.env["product.product"]
         products = {}
         for key, name, amharic, unit, sale, cost in cat.PRODUCTS:
@@ -463,6 +465,10 @@ class SapianDemoTrader(models.AbstractModel):
                 "name": label,
                 "list_price": sale,
                 "standard_price": cost,
+                # Never left to fall back on "All": that category carries Odoo's
+                # default periodic valuation, which posts no cost-of-goods entry
+                # at all. See _create_product_categories.
+                "categ_id": categories[cat.CATEGORY_BY_PRODUCT[key]].id,
             }
             if unit == "service":
                 vals["type"] = "service"
@@ -476,6 +482,95 @@ class SapianDemoTrader(models.AbstractModel):
                     vals["uom_id"] = unit_by_key[unit].id
             products[key] = product_model.create(vals)
         return products
+
+    def _account(self, code):
+        """One account of the tenant's own chart, by code, or a clear failure.
+
+        Resolved by CODE rather than xmlid so this works on any chart that
+        carries the code, and so a missing account is a named error instead of
+        a silent False that would later post nowhere.
+        """
+        account = self.env["account.account"].search(
+            [
+                *self.env["account.account"]._check_company_domain(self.env.company),
+                ("code", "=", code),
+            ],
+            limit=1,
+        )
+        if not account:
+            raise UserError(
+                self.env._(
+                    "The demo needs account %(code)s and this company's chart does "
+                    "not carry it. Perpetual stock valuation cannot be configured "
+                    "without it, and without that the profit & loss reports a cost "
+                    "of sales of zero.",
+                    code=code,
+                )
+            )
+        return account
+
+    def _create_product_categories(self):
+        """Categories that actually value stock, which is the whole point.
+
+        WHAT WAS WRONG. No product carried a category, so every one of them sat
+        in "All". `stock_account/data/stock_account_data.xml` sets the system
+        default `property_valuation = 'periodic'` on product.category, and
+        periodic means "the accounting entries are suggested manually in the
+        inventory valuation report" — i.e. none are posted. The gate is
+        `stock_account/models/account_move.py`:
+
+            if not line._eligible_for_stock_account() \
+                    or line.product_id.valuation != 'real_time':
+                continue
+
+        called unconditionally from `_post`. There is no anglo-saxon condition;
+        `real_time` plus the two accounts is the whole requirement. Without it
+        the July profit & loss showed revenue 115,300.00 and cost of sales
+        0.00 — a trader who sold building materials that cost nothing, which is
+        the first thing an accountant disbelieves.
+
+        WHY FIFO. `standard` costing would value the cost of sales at the
+        product's standard price and push any difference against the real
+        purchase price into a price-difference account — a line the demo would
+        then have to explain. FIFO values each receipt at what was actually paid
+        for it, so the cost of sales IS the cost of those goods, and no
+        price-difference account is needed.
+
+        The interim account is `230100 Goods in Transit`, which is its proper
+        Odoo role: goods received and not yet billed. That is NOT a return of
+        the defect where 230100 was the company's default EXPENSE account and
+        swallowed every purchase — that remains fixed in l10n_et_base.
+        """
+        category_model = self.env["product.category"]
+        valuation = self._account(cat.STOCK_VALUATION_CODE)
+        interim = self._account(cat.STOCK_INTERIM_CODE)
+        cogs = self._account(cat.COGS_CODE)
+        journal = self.env["account.journal"].search(
+            [
+                ("company_id", "=", self.env.company.id),
+                ("type", "=", "general"),
+            ],
+            limit=1,
+        )
+        created = {}
+        for key, name, amharic in cat.CATEGORIES:
+            vals = {"name": f"{name} — {amharic}" if amharic else name}
+            if key != "services":
+                # Services hold no stock, so valuation accounts on them would be
+                # configuration a reader has to discount rather than read.
+                vals.update(
+                    {
+                        "property_cost_method": "fifo",
+                        "property_valuation": "real_time",
+                        "property_stock_valuation_account_id": valuation.id,
+                        "property_stock_account_input_categ_id": interim.id,
+                        "property_stock_account_output_categ_id": interim.id,
+                        "property_stock_journal": journal.id,
+                        "property_account_expense_categ_id": cogs.id,
+                    }
+                )
+            created[key] = category_model.create(vals)
+        return created
 
     def _create_partners(self):
         """Customers + the three supplier compliance profiles.
