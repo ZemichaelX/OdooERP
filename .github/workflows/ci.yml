@@ -75,6 +75,23 @@ jobs:
         # It needs no Docker and no database: each case drives the script with a
         # stub Odoo against a throwaway git repository it builds itself.
         run: bash scripts/update_local.sh --self-test
+      - name: The launcher verifier still refuses to report what it did not measure
+        # check_launcher.py emits `launcher_measured=0` and prints NOTHING
+        # downstream when the fetch of /odoo does not reach the backend, and
+        # verify_launcher turns that into ONE "could not measure" error instead
+        # of the six alarms an operator spent an evening on.
+        #
+        # Both halves are proved by making the bad thing happen on purpose: the
+        # Python half execs the real file against a stub client serving the
+        # website login page, the shell half drives verify_launcher with canned
+        # transcripts. Each also proves the guard STAYS OPEN on a real
+        # measurement, because a gate that never opens would pass too. No
+        # Docker, no database.
+        run: |
+          set -euo pipefail
+          python3 scripts/check_launcher_selftest.py
+          bash scripts/check_launcher_guard_selftest.sh
+
       - name: Lint (ruff, black, pylint-odoo)
         # ONE DEFINITION, shared with the pre-push hook: .githooks/pre-push runs
         # this same script. Both the floors ("is there anything to lint at all")
@@ -94,7 +111,7 @@ jobs:
         # reports "12 passed" and exits 0.
         run: |
           set -euo pipefail
-          MIN_FAST_TESTS=100   # 107 at this commit
+          MIN_FAST_TESTS=260   # 269 at this commit
           pytest tests_fast/ -q | tee /tmp/fast-tests.log
           passed=$(grep -oE '[0-9]+ passed' /tmp/fast-tests.log | tail -1 | grep -oE '^[0-9]+' || true)
           passed=${passed:-0}
@@ -1315,3 +1332,203 @@ jobs:
             exit 1
           fi
           echo "All five steps ran and all five passed."
+
+  launcher-with-website:
+    name: The launcher survives an all-apps database
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # THE CONFIGURATION NOTHING HAS EVER TESTED.
+    #
+    # `./scripts/build_demo.sh <db> sapian_demo_trader --all-apps` fails its own
+    # step [5/5] on a fresh database: launcher_backend_js_bundles=0, and every
+    # check below that is downstream of the zero. It reports "No backend JS
+    # bundle was served — the fetch did not reach the web client, so a clean
+    # result here would mean nothing", which is the verifier admitting it may
+    # have measured nothing at all.
+    #
+    # The existing launcher job installs sapian_demo_trader, sapian_theme and
+    # web_responsive. --all-apps installs the whole product catalogue — 38
+    # modules, ~233 with dependencies, including point_of_sale, im_livechat,
+    # mass_mailing, mrp, survey and the website family, several of which own
+    # asset bundles and their own ir.http dispatch. No job has ever combined
+    # them with the launcher, so the failure could not have been caught here.
+    # That gap is the reason this job exists, independently of what the
+    # diagnosis turns out to be.
+    #
+    # An earlier revision installed only website and website_sale and came back
+    # green on every check, control-identical. That REFUTED the website
+    # hypothesis; it did not reproduce anything. The list is read from the
+    # catalogue now so the job builds the set the operator actually builds.
+    container:
+      image: odoo:19.0@sha256:e415f9924395e7521245813135112f264b9222bcde3b1d3c2ee9ff073081540a
+      options: --user root
+    services:
+      db:
+        image: postgres:16@sha256:33f923b05f64ca54ac4401c01126a6b92afe839a0aa0a52bc5aeb5cc958e5f20
+        env:
+          POSTGRES_USER: odoo
+          POSTGRES_PASSWORD: odoo
+          POSTGRES_DB: postgres
+        options: >-
+          --health-cmd "pg_isready -U odoo"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build an all-apps-shaped database and run the real verifier
+        shell: bash
+        run: |
+          set -uo pipefail
+          mkdir -p /tmp/odoo-data
+          ARGS="--db_host=db --db_port=5432 --db_user=odoo --db_password=odoo
+                --data-dir=/tmp/odoo-data
+                --addons-path=${GITHUB_WORKSPACE}/addons,${GITHUB_WORKSPACE}/vendor/oca_web,/usr/lib/python3/dist-packages/odoo/addons
+                --workers=0 --max-cron-threads=0 --stop-after-init"
+
+          odoo ${ARGS} -d ci_allapps -i base --without-demo=all --log-level=warn
+
+          odoo ${ARGS} -d ci_allapps \
+            -i sapian_demo_trader,sapian_theme,web_responsive \
+            --without-demo=all --log-level=warn
+
+          # Apply the launcher defaults exactly as provisioning does, and in the
+          # SAME PLACE: build_demo.sh applies them at [4], BEFORE --all-apps
+          # installs the catalogue at [4b]. Applying them afterwards would
+          # measure a tenant no operator has, and would hide any interaction
+          # between a later install and the two per-user settings.
+          echo 'env["res.users"]._sapian_apply_launcher_defaults(dry_run=False); env.cr.commit(); print("SAPIAN-ALLAPPS defaults applied")' \
+            | odoo shell ${ARGS} -d ci_allapps --no-http --log-level=warn 2>&1 | tee /tmp/allapps-defaults.log
+          grep -q "SAPIAN-ALLAPPS defaults applied" /tmp/allapps-defaults.log \
+            || { echo "::error::The launcher defaults step never reported — nothing below measures the shipped tenant."; exit 1; }
+
+          # THE REAL --all-apps SET, read from the model rather than retyped.
+          #
+          # The first version of this job installed website and website_sale and
+          # called that "all-apps shaped". It was not, and it came back entirely
+          # green: 1 backend bundle, 16 web_responsive modules, both stylesheets
+          # — identical to the control. Five modules is not 38, so that run
+          # refuted the website hypothesis and reproduced nothing.
+          #
+          # build_demo.sh installs `sapian.module.catalog`'s technical_names,
+          # which are seeded from STANDARD_CATALOG on the model. Reading the
+          # class attribute gives the same list without needing the onboarding
+          # wizard to have run, and it cannot drift from the list the product
+          # actually ships.
+          echo 'print(">> catalog_list=%s" % ",".join(sorted({e[1] for e in env["sapian.module.catalog"].STANDARD_CATALOG})))' \
+            | odoo shell ${ARGS} -d ci_allapps --no-http --log-level=warn 2>&1 | tee /tmp/allapps-catalog.log
+          CATALOG_LIST="$(sed -n 's/^>> catalog_list=//p' /tmp/allapps-catalog.log | tr -d '\r')"
+          CATALOG_COUNT="$(echo "${CATALOG_LIST}" | tr ',' '\n' | grep -c . || echo 0)"
+          echo "catalogue reports ${CATALOG_COUNT} modules"
+          # A FLOOR, because an empty list would install nothing, exit 0, and
+          # hand back the launcher-stack database presented as the all-apps one.
+          if [ "${CATALOG_COUNT}" -lt 30 ]; then
+            echo "::error::The catalogue reported ${CATALOG_COUNT} modules — this is not the all-apps set."
+            exit 1
+          fi
+          odoo ${ARGS} -d ci_allapps -i "${CATALOG_LIST}" \
+            --without-demo=all --log-level=warn
+
+          # THE DISCRIMINATOR. check_launcher.py measures the fetch; this asks
+          # the asset pipeline directly. Both defects show the same zero in the
+          # verifier, and only these two readings side by side separate them.
+          odoo shell ${ARGS} -d ci_allapps --no-http --log-level=warn \
+               < "${GITHUB_WORKSPACE}/scripts/ci_probe_assets.py" 2>&1 | tee /tmp/allapps-probe.log
+          grep -q '^PROBE probe_finished=1' /tmp/allapps-probe.log \
+            || { echo "::error::The asset probe never finished — it measured nothing."; exit 1; }
+          echo "---- PROBE (all-apps db) ----"
+          grep '^PROBE ' /tmp/allapps-probe.log
+
+          # THE REAL VERIFIER, unmodified, under --no-http exactly as
+          # build_demo.sh step [5/5] runs it.
+          odoo shell ${ARGS} -d ci_allapps --no-http --log-level=warn \
+               < "${GITHUB_WORKSPACE}/scripts/lib/check_launcher.py" 2>&1 | tee /tmp/allapps-launcher.log
+
+          echo "---- every CHECK the verifier produced ----"
+          grep -E '^(CHECK|NOTE) ' /tmp/allapps-launcher.log || true
+
+          # THIS JOB IS DIAGNOSTIC FIRST. It must not go green by failing to
+          # measure, so the one thing asserted right now is that the verifier
+          # RAN and reported. Whether the bundles are present is the question
+          # under investigation, and the answer is read from the CHECK lines
+          # above rather than asserted before it is known.
+          grep -q '^CHECK launcher_page_http=' /tmp/allapps-launcher.log \
+            || { echo "::error::The verifier never reported a page status — it did not run, so this job measured nothing."; exit 1; }
+          grep -q '^CHECK launcher_backend_js_bundles=' /tmp/allapps-launcher.log \
+            || { echo "::error::The verifier never reported a bundle count."; exit 1; }
+          # ---- THE CONTROL, and without it a red above proves nothing -------
+          #
+          # "Same code, different result" needs the two results side by side. If
+          # this job only built the all-apps database and it came back zero, the
+          # zero could as easily be this job's setup as the catalogue. So the
+          # identical verifier runs against an identical database carrying only
+          # the launcher stack, and the two are printed together.
+          odoo ${ARGS} -d ci_nowebsite -i base --without-demo=all --log-level=warn
+          odoo ${ARGS} -d ci_nowebsite \
+            -i sapian_demo_trader,sapian_theme,web_responsive \
+            --without-demo=all --log-level=warn
+          echo 'env["res.users"]._sapian_apply_launcher_defaults(dry_run=False); env.cr.commit(); print("SAPIAN-ALLAPPS defaults applied")' \
+            | odoo shell ${ARGS} -d ci_nowebsite --no-http --log-level=warn 2>&1 | tee /tmp/nowebsite-defaults.log
+          grep -q "SAPIAN-ALLAPPS defaults applied" /tmp/nowebsite-defaults.log \
+            || { echo "::error::The CONTROL launcher defaults step never reported — the control is not the shipped tenant either."; exit 1; }
+          odoo shell ${ARGS} -d ci_nowebsite --no-http --log-level=warn \
+               < "${GITHUB_WORKSPACE}/scripts/ci_probe_assets.py" 2>&1 | tee /tmp/nowebsite-probe.log
+          grep -q '^PROBE probe_finished=1' /tmp/nowebsite-probe.log \
+            || { echo "::error::The CONTROL asset probe never finished."; exit 1; }
+          echo "---- PROBE (control db) ----"
+          grep '^PROBE ' /tmp/nowebsite-probe.log
+
+          odoo shell ${ARGS} -d ci_nowebsite --no-http --log-level=warn \
+               < "${GITHUB_WORKSPACE}/scripts/lib/check_launcher.py" 2>&1 | tee /tmp/nowebsite-launcher.log
+
+          echo "---- CONTROL (launcher stack only): every CHECK ----"
+          grep -E '^(CHECK|NOTE) ' /tmp/nowebsite-launcher.log || true
+
+          # ---- THE LOGIN COLOURS, on the same two databases -----------------
+          #
+          # The operator's --all-apps run also reported login_primary,
+          # login_disabled and login_focus_rgb as ABSENT. Those come from
+          # check_login_page.py, which reads the COMPILED web.assets_frontend
+          # bundle rather than any fetched page — so unlike the launcher checks
+          # they are not downstream of the wrong-page fetch, and they have to
+          # be measured separately rather than dismissed with it.
+          #
+          # No session is involved, so CI can run the real file unmodified.
+          for db in ci_allapps ci_nowebsite; do
+            odoo shell ${ARGS} -d "${db}" --no-http --log-level=warn \
+                 < "${GITHUB_WORKSPACE}/scripts/lib/check_login_page.py" 2>&1 \
+                 | tee "/tmp/${db}-login.log"
+            grep -q '^CHECK login_http=' "/tmp/${db}-login.log" \
+              || { echo "::error::The login check never reported on ${db} — it measured nothing."; exit 1; }
+          done
+          echo "---- THE COMPARISON (login colours) ----"
+          for key in brand_expected brand_expected_rgb login_rule_scope login_primary login_disabled \
+                     login_focus_rgb login_css_bytes login_selector_oe_login_form \
+                     login_selector_o_sapian_auth login_scope_o_sapian_auth_any; do
+            printf '%-32s allapps=%-14s control=%s\n' "${key}" \
+              "$(sed -n "s/^CHECK ${key}=//p" /tmp/ci_allapps-login.log | head -1)" \
+              "$(sed -n "s/^CHECK ${key}=//p" /tmp/ci_nowebsite-login.log | head -1)"
+          done
+          sed -n 's/^CHECK login_actual_rule=/allapps actual rule: /p' /tmp/ci_allapps-login.log | head -1
+
+          echo "---- THE COMPARISON ----"
+          echo "---- THE COMPARISON (asset pipeline, no HTTP) ----"
+          for b in web.assets_web web.assets_backend; do
+            printf 'bundle %-20s allapps=%-60s control=%s\n' "${b}" \
+              "$(sed -n "s/^PROBE bundle_${b} //p" /tmp/allapps-probe.log | head -1)" \
+              "$(sed -n "s/^PROBE bundle_${b} //p" /tmp/nowebsite-probe.log | head -1)"
+          done
+
+          for key in launcher_page_http launcher_page_bytes launcher_backend_js_bundles \
+                     launcher_backend_css_bundles launcher_js_modules \
+                     launcher_css_web_responsive launcher_css_sapian_theme; do
+            printf '%-34s allapps=%-14s control=%s\n' "${key}" \
+              "$(sed -n "s/^CHECK ${key}=//p" /tmp/allapps-launcher.log | head -1)" \
+              "$(sed -n "s/^CHECK ${key}=//p" /tmp/nowebsite-launcher.log | head -1)"
+          done
+
+          grep -q '^CHECK launcher_backend_js_bundles=' /tmp/nowebsite-launcher.log \
+            || { echo "::error::The CONTROL verifier never reported, so the comparison is void."; exit 1; }
+          echo "OK — both verifiers ran and reported; read the comparison above."
+
