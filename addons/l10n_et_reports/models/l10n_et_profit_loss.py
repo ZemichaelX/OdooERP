@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 """Profit and loss statement, grouped by ACCOUNT TYPE.
 
-Odoo Community ships no profit & loss statement (defect register entry 27), and
+Odoo Community ships no profit & loss statement (entry 27 of the internal
+defect register), and
 neither does any OCA repository we surveyed — `account_financial_report` has a
 general ledger and a trial balance but no P&L or balance sheet, and `mis_builder`
 ships an engine with zero templates. A client cannot see whether the business

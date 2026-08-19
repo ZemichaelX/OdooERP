@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 """Balance sheet: assets, liabilities and equity as at a closing date.
 
-The other half of defect register entry 27. Odoo Community ships no balance
+The other half of the reporting blocker (entry 27 of the internal defect
+register). Odoo Community ships no balance
 sheet and no OCA repository supplies one, so an Ethiopian PLC had nothing to
 hand its bank or to attach to its annual business-profit return.
 

@@ -27,7 +27,7 @@ markers — nothing re-declared here.
   repository we surveyed (`account_financial_report` has a general ledger and a
   trial balance but no P&L or balance sheet; `mis_builder` is an engine with
   zero templates). Until this existed a client could not see whether the
-  business made money — defect register entry 27.
+  business made money. Recorded as entry 27 of the internal defect register.
 
   **The section grouping is not in this module.** Which account belongs on which
   line is decided by the account's `account_type`, set once in the chart by

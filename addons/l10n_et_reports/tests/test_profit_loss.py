@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 """The profit & loss statement, and the two checks that make it trustworthy.
 
-Odoo Community ships no P&L (defect register entry 27) and no OCA repository
+Odoo Community ships no P&L (entry 27 of the internal defect register) and no
+OCA repository
 supplies one, so until this model existed a client could not see whether the
 business made money. A statement nobody can check is worse than no statement,
 because it invites trust it has not earned — so half of these tests exist to
@@ -12,8 +13,10 @@ Goldens for the July-2026 fixture in ``common.py``, hand-computed:
 * revenue          10,000.00 — the single 10,000 sale invoice
 * cost of sales    73,000.00 — the 50,000 + 15,000 + 8,000 vendor bills, which
   land in ``511100 Cost of Goods and Services`` because ``l10n_et_base`` moved
-  the company's default expense account off ``230100 Goods in Transit`` (entry
-  26) and typed 511100 ``expense_direct_cost`` (entry 27's chart half).
+  the company's default expense account off ``230100 Goods in Transit``, which
+  is a current asset and swallowed every purchase, and typed 511100 as
+  ``expense_direct_cost`` so it lands above the gross-profit line. Those two
+  fixes are entries 26 and 27 of the internal defect register.
 * gross profit    −63,000.00
 * net profit      −63,000.00 — no operating-expense or depreciation movement
 
