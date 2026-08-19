@@ -190,7 +190,11 @@ STUB
   mkdir -p "${FIX}/repo/vendor/oca_web/web_responsive" "${FIX}/repo/config"
   printf '{"name": "web_responsive"}\n' \
     > "${FIX}/repo/vendor/oca_web/web_responsive/__manifest__.py"
-  printf '[options]\naddons_path = /mnt/extra-addons,/mnt/vendor\nadmin_passwd = selftest-not-a-real-secret\n' \
+  # addons_path ONLY. No admin_passwd line: assert_addons_path does not read
+  # one, and a credential-shaped literal in a tracked file is exactly what
+  # .gitleaks.toml's odoo-admin-passwd rule exists to catch — it caught this
+  # one, correctly, on the first push.
+  printf '[options]\naddons_path = /mnt/extra-addons,/mnt/vendor\n' \
     > "${FIX}/repo/config/odoo.runtime.conf"
   git -C "${FIX}/repo" add -A
   git -C "${FIX}/repo" commit -q -m "self-test fixture"
