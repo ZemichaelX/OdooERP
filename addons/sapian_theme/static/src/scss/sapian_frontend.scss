@@ -155,6 +155,64 @@
         --btn-disabled-color: #{$white};
     }
 
+    // ---- THE CONTROLS THE VARIABLES ABOVE CANNOT REACH ---------------------
+    //
+    // Everything above works by overriding a CSS CUSTOM PROPERTY, which is why
+    // it is short. That technique has a hard boundary: Bootstrap compiles the
+    // form-control focus ring from `$input-focus-border-color` and
+    // `$input-btn-focus-color` AT BUILD TIME. They are Sass variables, not CSS
+    // variables — there is nothing to override at runtime, and the frontend
+    // bundle keeps whatever `$primary` it was built with.
+    //
+    // Which, on a tenant with `website` installed, is not ours: `html_editor`
+    // is auto_install with website and rebuilds `$theme-colors` from the
+    // website editor palette, so `$o-brand-primary` never reaches this bundle.
+    //
+    // MEASURED, on sapian_theme + auth_signup + website + website_sale, by
+    // tests/test_auth_pages.py::TestEveryControlIsInThePalette — 11 controls,
+    // 119 control-states, one of them foreign:
+    //
+    //   /web/reset_password  input#login.form-control  border-*-color  #b8a5b3
+    //                                                  box-shadow      #714b67
+    //
+    // #714b67 is Odoo's own purple and #b8a5b3 is its tint. An operator saw it
+    // as a purple outline the instant the page opened, because that input
+    // carries `autofocus` and the ring is painted before anyone clicks.
+    //
+    // So these are real declarations rather than variable overrides. There is
+    // no variable to set.
+    .form-control:focus,
+    .form-select:focus,
+    .form-check-input:focus {
+        border-color: $sapian-brand-hover;
+        box-shadow: 0 0 0 0.25rem rgba($sapian-brand, 0.25);
+    }
+
+    // PROPHYLACTIC, and said so rather than implied: no checkbox or radio is
+    // rendered on either auth page today, so nothing above measured these and
+    // a green run afterwards proves only that nothing broke. They are here
+    // because the same build-time boundary applies the moment one appears.
+    .form-check-input:checked {
+        background-color: $sapian-brand;
+        border-color: $sapian-brand;
+    }
+
+    // Every button's focus ring, not just .btn-primary's. `--btn-focus-shadow-rgb`
+    // IS a CSS variable, but Bootstrap sets it per VARIANT — so the eye-toggle
+    // button on both pages (`.btn.btn-sm.border`, no variant class) falls
+    // through to the compiled default. Set once on the base class and every
+    // variant inherits it.
+    .btn {
+        --btn-focus-shadow-rgb: #{to-rgb($sapian-brand)};
+    }
+
+    // The keyboard outline itself. Chrome paints `outline` on :focus-visible
+    // from its own accent unless told otherwise, and it is the one thing a
+    // keyboard user sees on every control here.
+    :focus-visible {
+        outline-color: $sapian-brand;
+    }
+
     // `a { color: … }` USED TO BE HERE and is deliberately gone: the four
     // variables above reach anchors and every .btn-* variant that derives from
     // them, so an element rule would now be a second, narrower source of truth

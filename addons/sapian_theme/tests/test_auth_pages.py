@@ -379,6 +379,20 @@ CONTROL_COLOURS_JS = """
     const PROPS = ["color", "background-color", "border-top-color", "border-right-color",
                    "border-bottom-color", "border-left-color", "outline-color",
                    "box-shadow", "accent-color", "caret-color", "text-decoration-color"];
+    // SHORTHANDS, for the STYLESHEET scan only. getComputedStyle resolves
+    // `border-color: X` into the four longhands, so reading longhands off a
+    // computed style is complete. Reading them off a CSSStyleRule is NOT:
+    // `rule.style.getPropertyValue("border-top-color")` returns "" when the
+    // author wrote the shorthand, which is what Bootstrap writes.
+    //
+    // Measured: the purple focus ring was found on /web/reset_password, whose
+    // email input carries `autofocus` so the ring is in the COMPUTED style at
+    // rest — and missed on /web/login, where the identical input is not
+    // focused and only the rule scan could have seen it. Same defect, same
+    // stylesheet, found on one page and not the other, entirely because of
+    // this list.
+    const RULE_PROPS = PROPS.concat(
+        ["border", "border-color", "outline", "background", "box-shadow"]);
     const resolveVars = (value, el, depth) => {
         if (depth > 3 || !value || value.indexOf("var(") === -1) return value;
         const out = value.replace(/var\(\s*(--[A-Za-z0-9_-]+)\s*(?:,([^()]*))?\)/g, (m, name, fb) => {
@@ -400,10 +414,18 @@ CONTROL_COLOURS_JS = """
         }
         const hexRe = /#([0-9a-fA-F]{6})\b/g;
         while ((m = hexRe.exec(text))) found.push("#" + m[1].toLowerCase());
-        // A bare "R, G, B" triple, which is how Bootstrap carries focus rings.
-        const tripleRe = /(?:^|[^\d])(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})(?![\d,])/g;
-        while ((m = tripleRe.exec(text))) {
-            if ([m[1], m[2], m[3]].every(n => +n >= 0 && +n <= 255)) found.push(hexOf(m[1], m[2], m[3]));
+        // A bare "R, G, B" triple, which is how Bootstrap carries focus rings
+        // (`--btn-focus-shadow-rgb: 20, 69, 79`). ONLY when the whole value is
+        // that triple.
+        //
+        // The first version scanned for the pattern anywhere in the value and
+        // reported #4b6700 — a colour that is on no page. It had matched
+        // "75, 103, 0" out of the tail of `rgba(113, 75, 103, 0.25)`, whose
+        // real colour rgbRe had already collected correctly. A guard that
+        // invents colours gets ignored inside a month.
+        const bare = text.trim().match(/^(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})$/);
+        if (bare && [bare[1], bare[2], bare[3]].every(n => +n <= 255)) {
+            found.push(hexOf(bare[1], bare[2], bare[3]));
         }
         return found.map(h => h.toLowerCase());
     };
@@ -441,7 +463,7 @@ CONTROL_COLOURS_JS = """
                 let hit = false;
                 try { hit = el.matches(bare); } catch (e) { continue; }
                 if (!hit) continue;
-                for (const prop of PROPS) {
+                for (const prop of RULE_PROPS) {
                     const v = rule.style.getPropertyValue(prop);
                     if (v) out.push([prop, v]);
                 }
@@ -596,6 +618,24 @@ class TestEveryControlIsInThePalette(AuthPageCase):
     )
 
     def test_no_control_computes_a_colour_outside_the_palette(self):
+        """Audit EVERY auth route, then fail once with all of them.
+
+        `browser_js` raises on the first `console.error`, so failing per route
+        meant the second page was audited only when the first was clean. The
+        run that found the purple input reached /web/reset_password purely
+        because /web/login happened to pass; had login been red, the page the
+        defect was reported on would never have been visited. Collect, then
+        assert.
+        """
         code = CONTROL_COLOURS_JS % {"brand": json.dumps(self.palette())}
+        failures = []
         for route in self.auth_routes():
-            self.browser_js(route, code, self.SEED_AND_READY)
+            try:
+                self.browser_js(route, code, self.SEED_AND_READY)
+            except Exception as exc:  # noqa: BLE001 - every route is reported
+                failures.append("%s -> %s" % (route, exc))
+        self.assertFalse(
+            failures,
+            "controls outside the palette on %d of %d auth page(s):\n%s"
+            % (len(failures), len(self.auth_routes()), "\n".join(failures)),
+        )
