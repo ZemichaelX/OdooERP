@@ -877,8 +877,17 @@ class SapianDemoTrader(models.AbstractModel):
                     "product_id": products[key].id,
                     "location_id": warehouse.lot_stock_id.id,
                     "inventory_quantity": quantity,
+                    # DATED, and this is not cosmetic. _apply_inventory stamps
+                    # its accounting entry with fields.Date.context_today unless
+                    # told otherwise, so on a database built in August the
+                    # opening stock landed in AUGUST while July's deliveries
+                    # relieved it in July. The 31 July balance sheet then showed
+                    # 235100 Stock at -670,000.00: goods sold out of a warehouse
+                    # they had never been received into. `accounting_date` is
+                    # what stock_account reads into force_period_date.
+                    "accounting_date": cat.OPENING_DATE,
                 }
-            )._apply_inventory()
+            )._apply_inventory(date=cat.OPENING_DATE)
         self._create_opening_cash()
 
     def _create_opening_cash(self):
@@ -899,7 +908,7 @@ class SapianDemoTrader(models.AbstractModel):
         entry = self.env["account.move"].create(
             {
                 "move_type": "entry",
-                "date": "2026-06-30",
+                "date": cat.OPENING_DATE,
                 "ref": self.env._("Opening balance — capital introduced"),
                 "journal_id": journal.id,
                 "line_ids": [
@@ -1035,6 +1044,34 @@ class SapianDemoTrader(models.AbstractModel):
             )
         return journal
 
+    def _settled_bank_journal(self):
+        """The bank journal, configured so a payment reaches the BANK.
+
+        By default Odoo routes a registered payment through an outstanding
+        account — 211003 Outstanding Receipts, 211004 Outstanding Payments —
+        where it waits to be matched against a bank statement. Measured on the
+        first green run: 1,053,239.00 sitting in receipts and 561,486.00 in
+        payments, while the demo claimed the invoices were settled. That is
+        correct Odoo behaviour and the wrong story for a demo, which has no
+        bank feed and nobody to reconcile it.
+
+        Pointing the payment methods at the journal's own account makes a
+        payment do what the demo says it does: money leaves the customer and
+        arrives in the bank. It is also how a small trader who does not
+        reconcile actually keeps books.
+        """
+        journal = self._bank_journal()
+        account = journal.default_account_id
+        if account:
+            lines = (
+                journal.inbound_payment_method_line_ids
+                | journal.outbound_payment_method_line_ids
+            )
+            lines.filtered(lambda line: line.payment_account_id != account).write(
+                {"payment_account_id": account.id}
+            )
+        return journal
+
     def _bank_journal(self):
         """The company's bank journal, or a clear failure.
 
@@ -1069,7 +1106,7 @@ class SapianDemoTrader(models.AbstractModel):
         receivables of zero would be as unrealistic as receivables of
         everything, and a demo month should end with somebody still owing.
         """
-        journal = self._bank_journal()
+        journal = self._settled_bank_journal()
         paid = self.env["account.move"].browse()
         for move in moves.filtered(lambda m: m.state == "posted"):
             amount = move.amount_residual

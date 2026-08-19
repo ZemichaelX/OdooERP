@@ -119,6 +119,11 @@ OPENING_EQUITY_CODE = "401000"  # Share capital / equity
 # the bank and the balance sheet still balances.
 OPENING_CASH = 1_500_000.0
 
+# The day the business opens its July. Everything that belongs to the opening
+# position — stock and cash — carries this date, so a statement drawn at
+# 31 July sees the goods that July sold as having been there to sell.
+OPENING_DATE = "2026-06-30"
+
 # (key, display name, Amharic)
 CATEGORIES = [
     ("cement", "Cement & Binders", "ሲሚንቶ"),

@@ -164,6 +164,39 @@ class TestDemoTraderBooks(TransactionCase):
             "Bank and Cash is not positive: the company has no money anywhere, "
             "yet its invoices are settled.",
         )
+        # And the money must be IN the bank rather than parked in an
+        # outstanding account waiting for a reconciliation nobody will do.
+        for code in ("211003", "211004"):
+            account = self.env["account.account"].search(
+                [
+                    *self.env["account.account"]._check_company_domain(self.company),
+                    ("code", "=", code),
+                ],
+                limit=1,
+            )
+            if not account:
+                continue
+            lines = self.env["account.move.line"].search(
+                [
+                    ("account_id", "=", account.id),
+                    ("company_id", "=", self.company.id),
+                    ("parent_state", "=", "posted"),
+                ]
+            )
+            outstanding = sum(lines.mapped("debit")) - sum(lines.mapped("credit"))
+            _logger.info(
+                "SAPIAN-BOOKS OUTSTANDING %s %s = %.2f",
+                code,
+                account.name,
+                outstanding,
+            )
+            self.assertAlmostEqual(
+                outstanding,
+                0.0,
+                2,
+                msg="%s %s holds %.2f: the payments were registered but never "
+                "reached the bank." % (code, account.name, outstanding),
+            )
 
     def test_goods_in_transit_does_not_carry_the_months_purchases(self):
         """230100 is a current asset, not a bucket for every vendor bill line."""
@@ -311,6 +344,28 @@ class TestDemoTraderBooks(TransactionCase):
             "Stock has quantities but no value: the opening inventory posted "
             "no accounting entry, so the balance sheet cannot agree with the "
             "warehouse.",
+        )
+        # TWO MEASUREMENTS OF ONE ACCOUNT MUST AGREE, and the first green run
+        # showed them disagreeing in sign as well as size: the statement said
+        # 235100 = -670,000.00 while the account itself said +217,200.00. The
+        # difference was exactly the opening stock, which had been dated on the
+        # day the database was built rather than in the demo month, so July's
+        # deliveries relieved a warehouse nothing had ever been received into.
+        # Asserting the equality is what stops that returning quietly.
+        statement_stock = None
+        for section in data["sections"]:
+            for row in section["accounts"]:
+                if row["code"] == "235100":
+                    statement_stock = row["amount"]
+        self.assertIsNotNone(statement_stock, "235100 is on no line of the statement")
+        self.assertAlmostEqual(
+            statement_stock,
+            balance,
+            2,
+            msg="The balance sheet reports 235100 Stock as %.2f while the "
+            "account itself holds %.2f. One of them is wrong, and a statement "
+            "that disagrees with its own ledger is worse than either figure."
+            % (statement_stock, balance),
         )
 
     # ---- 5. products are configured ----------------------------------------
