@@ -170,14 +170,20 @@
     //
     // MEASURED, on sapian_theme + auth_signup + website + website_sale, by
     // tests/test_auth_pages.py::TestEveryControlIsInThePalette — 11 controls,
-    // 119 control-states, one of them foreign:
+    // 119 control-states, one of them foreign: the email input on
+    // /web/reset_password wore Odoo's own purple in its box-shadow and a tint
+    // of that purple on all four borders.
     //
-    //   /web/reset_password  input#login.form-control  border-*-color  #b8a5b3
-    //                                                  box-shadow      #714b67
+    // The two values are deliberately NOT written here, for the reason stated
+    // higher up this file and enforced by test_no_raw_hex_outside_palette,
+    // which scans every line of every non-test file INCLUDING COMMENTS: a hex
+    // in a comment goes stale the first time a colour moves, and a stale
+    // comment naming a colour is worse than no comment. The guard prints both
+    // values on every run.
     //
-    // #714b67 is Odoo's own purple and #b8a5b3 is its tint. An operator saw it
-    // as a purple outline the instant the page opened, because that input
-    // carries `autofocus` and the ring is painted before anyone clicks.
+    // An operator saw it as a purple outline the instant the page opened,
+    // because that input carries `autofocus` and the ring is painted before
+    // anyone clicks.
     //
     // So these are real declarations rather than variable overrides. There is
     // no variable to set.
