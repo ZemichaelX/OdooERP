@@ -1333,6 +1333,170 @@ jobs:
           fi
           echo "All five steps ran and all five passed."
 
+  verification-crosses-a-dbfilter:
+    name: Verification reaches the database it just built
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # THE DEFECT NO CI JOB COULD HAVE CAUGHT, because every job here runs with
+    # no dbfilter at all.
+    #
+    # The operator's config/odoo.runtime.conf pins `dbfilter = demo_allapps`.
+    # build_demo.sh then built `demo_v4`. Odoo's Request._get_session_and_dbname
+    # runs db_filter([session.db]) on every request and LOGS THE SESSION OUT
+    # when the filter rejects it, so the verifier's authenticated fetch of
+    # /odoo arrived anonymous, was redirected to /web/login, and `website`
+    # rendered that login page. Every launcher check was then read off a page
+    # that could not contain a launcher.
+    #
+    # This job drives the REAL verify_launcher and verify_login_page from
+    # preflight.sh — not a copy — against a database the configured dbfilter
+    # deliberately does not match, through a stub that stands in for
+    # `docker compose run`. Two phases, and the first one is the point:
+    #
+    #   RED   the fix stripped out: launcher_measured=0 is REQUIRED. If the
+    #         defect cannot be reproduced here, this job is decoration.
+    #   GREEN the fix in place: launcher_measured=1 and a real reading.
+    #
+    # Asserting the red phase is what stops this becoming another check that
+    # passes by doing nothing.
+    container:
+      image: odoo:19.0@sha256:e415f9924395e7521245813135112f264b9222bcde3b1d3c2ee9ff073081540a
+      options: --user root
+    services:
+      db:
+        image: postgres:16@sha256:33f923b05f64ca54ac4401c01126a6b92afe839a0aa0a52bc5aeb5cc958e5f20
+        env:
+          POSTGRES_USER: odoo
+          POSTGRES_PASSWORD: odoo
+          POSTGRES_DB: postgres
+        options: >-
+          --health-cmd "pg_isready -U odoo"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: A pinned dbfilter that does not match the database under test
+        shell: bash
+        run: |
+          set -uo pipefail
+          mkdir -p /tmp/odoo-data
+          ARGS="--db_host=db --db_port=5432 --db_user=odoo --db_password=odoo
+                --data-dir=/tmp/odoo-data
+                --addons-path=${GITHUB_WORKSPACE}/addons,${GITHUB_WORKSPACE}/vendor/oca_web,/usr/lib/python3/dist-packages/odoo/addons
+                --workers=0 --max-cron-threads=0"
+
+          # The tenant. Named so the filter below cannot match it by accident.
+          odoo ${ARGS} --stop-after-init -d ci_pinned -i base --without-demo=all --log-level=warn
+          odoo ${ARGS} --stop-after-init -d ci_pinned \
+            -i sapian_demo_trader,sapian_theme,web_responsive \
+            --without-demo=all --log-level=warn
+          echo 'env["res.users"]._sapian_apply_launcher_defaults(dry_run=False); env.cr.commit(); print("SAPIAN-PIN defaults applied")' \
+            | odoo shell ${ARGS} --stop-after-init -d ci_pinned --no-http --log-level=warn 2>&1 | tee /tmp/pin-defaults.log
+          grep -q "SAPIAN-PIN defaults applied" /tmp/pin-defaults.log \
+            || { echo "::error::The defaults step never reported; this job measured nothing."; exit 1; }
+
+          # THE OPERATOR'S CONFIGURATION, in the file preflight.sh reads and in
+          # the file Odoo reads. `demo_allapps` is a database that does not
+          # exist here, exactly as on his machine.
+          mkdir -p "${GITHUB_WORKSPACE}/config"
+          printf '[options]\ndbfilter = demo_allapps\n' \
+            > "${GITHUB_WORKSPACE}/config/odoo.runtime.conf"
+          printf '[options]\ndbfilter = demo_allapps\n' > /tmp/pinned.conf
+
+          # THE STUB FOR `docker compose run --rm -T odoo`. preflight.sh calls
+          # `${compose} run --rm -T odoo odoo shell ...`; this drops those four
+          # tokens, runs the rest, and adds the pinned config plus the database
+          # connection. stdin passes straight through, which is how the checker
+          # scripts are fed.
+          cat > /tmp/compose-stub <<STUB
+          #!/usr/bin/env bash
+          shift 4
+          exec "\$@" -c /tmp/pinned.conf --db_host=db --db_port=5432 --db_user=odoo \
+               --db_password=odoo --data-dir=/tmp/odoo-data \
+               --addons-path=${GITHUB_WORKSPACE}/addons,${GITHUB_WORKSPACE}/vendor/oca_web,/usr/lib/python3/dist-packages/odoo/addons \
+               --workers=0 --max-cron-threads=0 --log-level=warn
+          STUB
+          chmod +x /tmp/compose-stub
+
+          # ---- PHASE 1: RED. The fix removed, the defect required. ----------
+          cp scripts/lib/preflight.sh /tmp/preflight.orig
+          python3 - <<'PYEOF'
+          import re
+          path = "scripts/lib/preflight.sh"
+          source = open(path).read()
+          # Strip the override exactly: the flags variable becomes empty.
+          patched = source.replace(
+              'dbfilter_args="$(verifying_dbfilter_args "${db}" "${repo_root}")"',
+              'dbfilter_args=""',
+          )
+          assert patched != source, "the override is not where this job thinks it is"
+          open(path, "w").write(patched)
+          PYEOF
+
+          set +e
+          bash -c '. scripts/lib/preflight.sh; verify_launcher /tmp/compose-stub ci_pinned "${GITHUB_WORKSPACE}"' \
+            > /tmp/red.log 2>&1
+          RED_RC=$?
+          set -e
+          echo "---- RED phase (fix removed) ----"
+          grep -E '^CHECK |COULD NOT MEASURE' /tmp/red.log || true
+          echo "red rc=${RED_RC}"
+          grep -q '^CHECK launcher_measured=0' /tmp/red.log \
+            || { echo "::error::RED phase did not reproduce the defect — no launcher_measured=0. Without the defect reproducing, the green phase below proves nothing."; cat /tmp/red.log; exit 1; }
+          grep -q 'COULD NOT MEASURE the launcher' /tmp/red.log \
+            || { echo "::error::RED phase produced launcher_measured=0 but verify_launcher did not report it as unmeasurable."; exit 1; }
+          [ "${RED_RC}" -ne 0 ] \
+            || { echo "::error::RED phase exited 0 — a verification that could not measure must fail."; exit 1; }
+
+          # ---- PHASE 2: GREEN. The fix restored, a real reading required. ---
+          cp /tmp/preflight.orig scripts/lib/preflight.sh
+          set +e
+          bash -c '. scripts/lib/preflight.sh; verify_launcher /tmp/compose-stub ci_pinned "${GITHUB_WORKSPACE}"' \
+            > /tmp/green.log 2>&1
+          GREEN_RC=$?
+          bash -c '. scripts/lib/preflight.sh; verify_login_page /tmp/compose-stub ci_pinned "${GITHUB_WORKSPACE}"' \
+            > /tmp/green-login.log 2>&1
+          GREEN_LOGIN_RC=$?
+          set -e
+          echo "---- GREEN phase (fix in place) ----"
+          grep -E '^CHECK |^>> NOTE' /tmp/green.log || true
+          echo "launcher rc=${GREEN_RC}"
+          echo "---- GREEN phase, login page ----"
+          grep -E '^CHECK ' /tmp/green-login.log || true
+          echo "login rc=${GREEN_LOGIN_RC}"
+
+          grep -q '^CHECK launcher_measured=1' /tmp/green.log \
+            || { echo "::error::The verification still could not reach ci_pinned through the pinned dbfilter."; cat /tmp/green.log; exit 1; }
+          # A REAL READING, not merely "it measured". The whole point is that
+          # the fetch reached the backend and found the launcher there.
+          grep -q '^CHECK launcher_js_named=True' /tmp/green.log \
+            || { echo "::error::The fetch reached the backend but the launcher component is not in the served JS."; exit 1; }
+          grep -q '^CHECK launcher_backend_js_bundles=1' /tmp/green.log \
+            || { echo "::error::No backend JS bundle in the green phase."; exit 1; }
+          grep -q '^CHECK launcher_css_sapian_theme=True' /tmp/green.log \
+            || { echo "::error::sapian_theme CSS missing in the green phase."; exit 1; }
+          [ "${GREEN_RC}" -eq 0 ] \
+            || { echo "::error::verify_launcher still failed with the fix in place."; cat /tmp/green.log; exit 1; }
+
+          # The login page had the SAME hole: its fetch is anonymous, so with a
+          # non-matching dbfilter Odoo resolves no database for the request at
+          # all. 200 with the real page is the proof it crosses the pin too.
+          grep -q '^CHECK login_http=200' /tmp/green-login.log \
+            || { echo "::error::The login-page verification did not reach ci_pinned through the pinned dbfilter."; cat /tmp/green-login.log; exit 1; }
+          grep -q '^CHECK login_primary=#14454F' /tmp/green-login.log \
+            || { echo "::error::The login page was reached but is not brand-coloured."; exit 1; }
+
+          # The operator is TOLD about the conflict, on stderr, without the
+          # config or the running server being touched.
+          grep -q 'pins dbfilter = demo_allapps, which does NOT match' /tmp/green.log \
+            || { echo "::error::The dbfilter conflict was overridden silently — the operator would never learn their config disagrees with what they built."; exit 1; }
+          grep -q '^dbfilter = demo_allapps$' "${GITHUB_WORKSPACE}/config/odoo.runtime.conf" \
+            || { echo "::error::The operator's config file was modified. The override must apply to one process, not to their configuration."; exit 1; }
+
+          echo "OK — the defect reproduces without the fix and the verification crosses the pin with it."
+
   launcher-with-website:
     name: The launcher survives an all-apps database
     runs-on: ubuntu-latest

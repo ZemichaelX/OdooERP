@@ -169,6 +169,102 @@ ensure_runtime_conf() {
   return 0
 }
 
+# ---------------------------------------------------------------------------
+# verifying_dbfilter_args <db-name> [repo-root]
+#
+# The flags that make a VERIFYING process able to reach the database we just
+# built, whatever `dbfilter` the operator's config pins.
+#
+# THE DEFECT THIS EXISTS FOR, found on an operator's machine and not
+# reproducible in CI. `config/odoo.runtime.conf` pinned
+#
+#     dbfilter = demo_allapps
+#
+# — an entirely reasonable thing for an operator to have, and what the template
+# tells them to do — and build_demo.sh then built `demo_v4`. Odoo's
+# `Request._get_session_and_dbname` runs `db_filter([session.db])` on every
+# request and LOGS THE SESSION OUT when the filter rejects it
+# (odoo/http.py: "Logged into database %r, but dbfilter rejects it"). So the
+# verifier's authenticated fetch of /odoo arrived anonymous, was redirected to
+# /web/login, and `website` rendered that login page. Measured, from the
+# verifier's own abort path:
+#
+#     launcher_first_status=303
+#     launcher_first_location=/web/login?redirect=%2Fodoo%3F
+#     launcher_session_uid_stored=NOSESSION
+#     launcher_dbfilter_accepts=False
+#     launcher_config_dbfilter='demo_allapps'
+#     launcher_config_db_name=['demo_v4']
+#
+# CI never had a dbfilter, which is exactly why five CI runs could not
+# reproduce it.
+#
+# OVERRIDE, NOT REFUSE — and the choice matters.
+#
+# Refusing would be defensible and useless. The operator's pin is CORRECT for
+# the serving container: it is what stops a multi-database host offering a
+# database selector. Refusing to build a demo because production is configured
+# properly leaves them one obvious workaround — edit the config by hand, build,
+# and forget to put it back — which is strictly worse than what we have now.
+#
+# The override is safe precisely because of WHERE it applies. These flags go on
+# ONE `docker compose run --rm` command: a short-lived container that exits
+# when the check does. It does not touch config/odoo.runtime.conf, and it does
+# not touch the long-running server, which keeps the configuration it started
+# with. Nothing the operator can see afterwards has changed.
+#
+# `--db-filter` is anchored to this database alone rather than cleared, so the
+# verifying process cannot reach any OTHER database either — an override that
+# opened the host up would be a worse thing to ship than the bug.
+#
+# The conflict is REPORTED when it is detected, because an operator whose
+# config disagrees with what they just built should learn that from us rather
+# than from a failure three weeks later. Reported, not acted on: we say it and
+# carry on.
+verifying_dbfilter_args() {
+  local db="$1" repo_root="${2:-}" runtime filter
+  # Escaped so a database name containing regex metacharacters still anchors to
+  # itself. `.` is the realistic one — Odoo permits it in a database name.
+  local escaped
+  escaped="$(printf '%s' "${db}" | sed 's/[][\.^$*+?(){}|]/\\&/g')"
+
+  # THE NOTES GO TO STDERR AND THE FLAGS GO TO STDOUT, and getting that wrong
+  # is not cosmetic: callers use `$(verifying_dbfilter_args ...)` and splice the
+  # result onto an `odoo shell` command line unquoted. A note on stdout would be
+  # word-split into arguments and handed to Odoo as flags. Caught by running the
+  # helper before wiring it up — the first version printed the note into the
+  # variable.
+  if [ -n "${repo_root}" ]; then
+    runtime="${repo_root}/config/odoo.runtime.conf"
+    if [ -f "${runtime}" ]; then
+      filter="$(sed -n 's/^[[:space:]]*dbfilter[[:space:]]*=[[:space:]]*//p' "${runtime}" \
+                | tail -1 | tr -d '\r' | sed 's/[[:space:]]*$//')"
+      if [ -n "${filter}" ]; then
+        case "${filter}" in
+          *%h*|*%d*)
+            # %h/%d are substituted from the request Host, so the effective
+            # pattern cannot be evaluated here. Say so rather than guess.
+            log_line ">> NOTE ${runtime} pins dbfilter = ${filter}, which depends on the request"
+            log_line ">>      host and cannot be evaluated here. The verification below overrides"
+            log_line ">>      it for its own process only." >&2
+            ;;
+          *)
+            if ! printf '%s' "${db}" | grep -qE "${filter}" 2>/dev/null; then
+              log_line ">> NOTE ${runtime} pins dbfilter = ${filter}, which does NOT match"
+              log_line ">>      '${db}'. Your SERVER will refuse this database — open it in a"
+              log_line ">>      browser and you will be logged straight out. The verification"
+              log_line ">>      below overrides the filter for its own short-lived process, and"
+              log_line ">>      changes neither the config file nor the running server."
+            fi
+            ;;
+        esac
+      fi
+    fi
+  fi >&2
+
+  printf -- '--db-filter=^%s$' "${escaped}"
+}
+
 # verify_login_page <compose-command> <db-name> <repo-root>
 #
 # Assert that the login page THIS DATABASE serves is ours: branded button in
@@ -186,7 +282,12 @@ verify_login_page() {
   local compose="$1" db="$2" repo_root="$3"
   local out failed=0
 
-  out="$(${compose} run --rm -T odoo odoo shell -d "${db}" --no-http --stop-after-init \
+  # See verifying_dbfilter_args: without this the anonymous fetch below cannot
+  # resolve a database at all when the operator's config pins a dbfilter that
+  # does not match, and every check reads a page that is not this tenant's.
+  local dbfilter_args
+  dbfilter_args="$(verifying_dbfilter_args "${db}" "${repo_root}")"
+  out="$(${compose} run --rm -T odoo odoo shell -d "${db}" --no-http ${dbfilter_args} --stop-after-init \
          < "${repo_root}/scripts/lib/check_login_page.py" 2>&1 || true)"
   printf '%s\n' "${out}" | grep -E '^(CHECK|NOTE) ' || true
 
@@ -291,7 +392,13 @@ verify_launcher() {
   local compose="$1" db="$2" repo_root="$3"
   local out failed=0
 
-  out="$(${compose} run --rm -T odoo odoo shell -d "${db}" --no-http --stop-after-init \
+  # See verifying_dbfilter_args. This is the call that found the defect: the
+  # authenticated fetch of /odoo was arriving anonymous because the config's
+  # dbfilter rejected the database, and every launcher check below it was being
+  # read off the website login page.
+  local dbfilter_args
+  dbfilter_args="$(verifying_dbfilter_args "${db}" "${repo_root}")"
+  out="$(${compose} run --rm -T odoo odoo shell -d "${db}" --no-http ${dbfilter_args} --stop-after-init \
          < "${repo_root}/scripts/lib/check_launcher.py" 2>&1 || true)"
   printf '%s\n' "${out}" | grep -E '^CHECK ' || true
 
