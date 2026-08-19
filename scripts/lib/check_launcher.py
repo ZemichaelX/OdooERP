@@ -154,6 +154,25 @@ backend_css = [u for u in css_urls if "assets_web.min.css" in u]
 print("CHECK launcher_backend_js_bundles=%d" % len(backend_js))
 print("CHECK launcher_backend_css_bundles=%d" % len(backend_css))
 
+# WHEN THERE ARE NO BACKEND BUNDLES, SAY WHAT WAS SERVED INSTEAD.
+#
+# Without this the verifier reports a confident zero and every check below it
+# is downstream of a measurement that may never have happened — which is the
+# same shape as a success signal produced by doing nothing, pointed the other
+# way. "No backend JS bundle was served" cannot distinguish an empty database
+# from a fetch that landed on the wrong page, and those are different defects
+# with different fixes.
+if not backend_js:
+    print("CHECK launcher_served_frontend=%s" % ("assets_frontend" in html))
+    print("CHECK launcher_served_any_asset_urls=%d" % len(js_urls + css_urls))
+    print("CHECK launcher_served_title=%s" % (
+        (re.search(r"<title>(.*?)</title>", html, re.S) or [None, "ABSENT"])[1].strip()[:80]
+    ))
+    # The first asset URLs actually present, whatever bundle they belong to.
+    for url in (js_urls + css_urls)[:6]:
+        print("CHECK launcher_served_asset=%s" % url)
+    print("CHECK launcher_served_head=%s" % html[:200].replace("\n", " "))
+
 js_body = "".join(client.get(u, headers=headers).get_data(as_text=True) for u in backend_js)
 css_body = "".join(client.get(u, headers=headers).get_data(as_text=True) for u in backend_css)
 print("CHECK launcher_js_bytes=%d" % len(js_body))

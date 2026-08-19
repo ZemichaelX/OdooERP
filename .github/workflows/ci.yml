@@ -1315,3 +1315,128 @@ jobs:
             exit 1
           fi
           echo "All five steps ran and all five passed."
+
+  launcher-with-website:
+    name: The launcher survives an all-apps database
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # THE CONFIGURATION NOTHING HAS EVER TESTED.
+    #
+    # `./scripts/build_demo.sh <db> sapian_demo_trader --all-apps` fails its own
+    # step [5/5] on a fresh database: launcher_backend_js_bundles=0, and every
+    # check below that is downstream of the zero. It reports "No backend JS
+    # bundle was served — the fetch did not reach the web client, so a clean
+    # result here would mean nothing", which is the verifier admitting it may
+    # have measured nothing at all.
+    #
+    # The existing launcher job installs sapian_demo_trader, sapian_theme and
+    # web_responsive. --all-apps installs 233 modules including `website` and
+    # `website_sale`, which own asset bundles and their own ir.http dispatch. No
+    # job has ever combined the two, so the failure could not have been caught
+    # here. That gap is the reason this job exists, independently of what the
+    # diagnosis turns out to be.
+    container:
+      image: odoo:19.0@sha256:e415f9924395e7521245813135112f264b9222bcde3b1d3c2ee9ff073081540a
+      options: --user root
+    services:
+      db:
+        image: postgres:16@sha256:33f923b05f64ca54ac4401c01126a6b92afe839a0aa0a52bc5aeb5cc958e5f20
+        env:
+          POSTGRES_USER: odoo
+          POSTGRES_PASSWORD: odoo
+          POSTGRES_DB: postgres
+        options: >-
+          --health-cmd "pg_isready -U odoo"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build an all-apps-shaped database and run the real verifier
+        shell: bash
+        run: |
+          set -uo pipefail
+          mkdir -p /tmp/odoo-data
+          ARGS="--db_host=db --db_port=5432 --db_user=odoo --db_password=odoo
+                --data-dir=/tmp/odoo-data
+                --addons-path=${GITHUB_WORKSPACE}/addons,${GITHUB_WORKSPACE}/vendor/oca_web,/usr/lib/python3/dist-packages/odoo/addons
+                --workers=0 --max-cron-threads=0 --stop-after-init"
+
+          odoo ${ARGS} -d ci_allapps -i base --without-demo=all --log-level=warn
+
+          # website and website_sale ALONGSIDE the launcher stack — the
+          # combination build_demo.sh --all-apps produces and nothing else here
+          # does.
+          odoo ${ARGS} -d ci_allapps \
+            -i sapian_demo_trader,sapian_theme,web_responsive,website,website_sale \
+            --without-demo=all --log-level=warn
+
+          # Apply the launcher defaults exactly as provisioning does, so this
+          # measures the tenant the operator gets rather than a bare install.
+          echo 'env["res.users"]._sapian_apply_launcher_defaults(dry_run=False); env.cr.commit(); print("SAPIAN-ALLAPPS defaults applied")' \
+            | odoo --db_host=db --db_port=5432 --db_user=odoo --db_password=odoo \
+                   --data-dir=/tmp/odoo-data \
+                   --addons-path="${GITHUB_WORKSPACE}/addons,${GITHUB_WORKSPACE}/vendor/oca_web,/usr/lib/python3/dist-packages/odoo/addons" \
+                   shell -d ci_allapps --no-http --log-level=warn 2>&1 | tee /tmp/allapps-defaults.log
+          grep -q "SAPIAN-ALLAPPS defaults applied" /tmp/allapps-defaults.log \
+            || { echo "::error::The launcher defaults step never reported — nothing below measures the shipped tenant."; exit 1; }
+
+          # THE REAL VERIFIER, unmodified, under --no-http exactly as
+          # build_demo.sh step [5/5] runs it.
+          odoo --db_host=db --db_port=5432 --db_user=odoo --db_password=odoo \
+               --data-dir=/tmp/odoo-data \
+               --addons-path="${GITHUB_WORKSPACE}/addons,${GITHUB_WORKSPACE}/vendor/oca_web,/usr/lib/python3/dist-packages/odoo/addons" \
+               shell -d ci_allapps --no-http --log-level=warn \
+               < "${GITHUB_WORKSPACE}/scripts/lib/check_launcher.py" 2>&1 | tee /tmp/allapps-launcher.log
+
+          echo "---- every CHECK the verifier produced ----"
+          grep -E '^(CHECK|NOTE) ' /tmp/allapps-launcher.log || true
+
+          # THIS JOB IS DIAGNOSTIC FIRST. It must not go green by failing to
+          # measure, so the one thing asserted right now is that the verifier
+          # RAN and reported. Whether the bundles are present is the question
+          # under investigation, and the answer is read from the CHECK lines
+          # above rather than asserted before it is known.
+          grep -q '^CHECK launcher_page_http=' /tmp/allapps-launcher.log \
+            || { echo "::error::The verifier never reported a page status — it did not run, so this job measured nothing."; exit 1; }
+          grep -q '^CHECK launcher_backend_js_bundles=' /tmp/allapps-launcher.log \
+            || { echo "::error::The verifier never reported a bundle count."; exit 1; }
+          # ---- THE CONTROL, and without it a red above proves nothing -------
+          #
+          # "Same code, different result" needs the two results side by side. If
+          # this job only built the website database and it came back zero, the
+          # zero could as easily be this job's setup as the website modules. So
+          # the identical verifier runs against an identical database with
+          # website and website_sale LEFT OUT, and the two are printed together.
+          odoo ${ARGS} -d ci_nowebsite -i base --without-demo=all --log-level=warn
+          odoo ${ARGS} -d ci_nowebsite \
+            -i sapian_demo_trader,sapian_theme,web_responsive \
+            --without-demo=all --log-level=warn
+          echo 'env["res.users"]._sapian_apply_launcher_defaults(dry_run=False); env.cr.commit(); print("SAPIAN-ALLAPPS defaults applied")' \
+            | odoo --db_host=db --db_port=5432 --db_user=odoo --db_password=odoo \
+                   --data-dir=/tmp/odoo-data \
+                   --addons-path="${GITHUB_WORKSPACE}/addons,${GITHUB_WORKSPACE}/vendor/oca_web,/usr/lib/python3/dist-packages/odoo/addons" \
+                   shell -d ci_nowebsite --no-http --log-level=warn 2>&1 | tail -3
+          odoo --db_host=db --db_port=5432 --db_user=odoo --db_password=odoo \
+               --data-dir=/tmp/odoo-data \
+               --addons-path="${GITHUB_WORKSPACE}/addons,${GITHUB_WORKSPACE}/vendor/oca_web,/usr/lib/python3/dist-packages/odoo/addons" \
+               shell -d ci_nowebsite --no-http --log-level=warn \
+               < "${GITHUB_WORKSPACE}/scripts/lib/check_launcher.py" 2>&1 | tee /tmp/nowebsite-launcher.log
+
+          echo "---- CONTROL (no website): every CHECK ----"
+          grep -E '^(CHECK|NOTE) ' /tmp/nowebsite-launcher.log || true
+
+          echo "---- THE COMPARISON ----"
+          for key in launcher_page_http launcher_page_bytes launcher_backend_js_bundles \
+                     launcher_backend_css_bundles launcher_js_modules \
+                     launcher_css_web_responsive launcher_css_sapian_theme; do
+            printf '%-34s website=%-14s control=%s\n' "${key}" \
+              "$(sed -n "s/^CHECK ${key}=//p" /tmp/allapps-launcher.log | head -1)" \
+              "$(sed -n "s/^CHECK ${key}=//p" /tmp/nowebsite-launcher.log | head -1)"
+          done
+
+          grep -q '^CHECK launcher_backend_js_bundles=' /tmp/nowebsite-launcher.log \
+            || { echo "::error::The CONTROL verifier never reported, so the comparison is void."; exit 1; }
+          echo "OK — both verifiers ran and reported; read the comparison above."
+
