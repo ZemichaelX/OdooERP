@@ -87,9 +87,15 @@
     // an ELEMENT. Measured on the upgraded demo tenant, the two controls sitting
     // one under the other on /web/login:
     //
-    //   "Reset Password"  <a class="btn btn-link btn-sm">       -> #376169, ours
+    //   "Reset Password"  <a class="btn btn-link btn-sm">       -> our hover teal
     //   "Choose a user"   <button class="o_user_switch_btn
     //                              btn btn-sm btn-link">        -> the palette's
+
+    // The literal is deliberately NOT written here. `test_no_raw_hex_outside_palette`
+    // scans every line of every non-test file, comments included, and it is
+    // right to: a hex in a comment goes stale the first time the brand moves,
+    // and a stale comment naming a colour is worse than no comment. The value
+    // lives in the palette; test_login_page.py asserts what the page serves.
     //
     // Same Bootstrap class, same size, adjacent in the DOM; one is an <a> and one
     // is a <button>, so the element rule reached one and missed the other. Every
