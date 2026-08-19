@@ -273,10 +273,21 @@ class TestDemoTraderBooks(TransactionCase):
         """Quantities without value would pass every quantity check and still
         leave the balance sheet wrong."""
         data = self._statement("l10n.et.balance.sheet")._get_report_data()
-        _logger.info(
-            "SAPIAN-BOOKS STOCK current_assets=%.2f",
-            self._section_total(data, "current_assets"),
-        )
+        # NAME THE ACCOUNTS, do not just report the total. The first green run
+        # measured current_assets = -102,377.00, and a negative current-assets
+        # line is the kind of thing an accountant spots in five seconds. A total
+        # on its own cannot say which account made it negative, and guessing
+        # from the chart would be a story rather than a measurement.
+        for section in data["sections"]:
+            if section.get("key") == "current_assets":
+                _logger.info("SAPIAN-BOOKS STOCK current_assets=%.2f", section["total"])
+                for row in section["accounts"]:
+                    _logger.info(
+                        "SAPIAN-BOOKS CURRENT_ASSET %s %s = %.2f",
+                        row["code"],
+                        row["name"],
+                        row["amount"],
+                    )
         account = self.env["account.account"].search(
             [
                 *self.env["account.account"]._check_company_domain(self.company),
