@@ -36,6 +36,7 @@ we wrote and what the browser was handed. The stylesheet is fetched from the
 asserting against a file nobody loads.
 """
 
+import json
 import re
 
 from odoo.tests import HttpCase, tagged
@@ -298,73 +299,282 @@ class TestAuthScopeDoesNotLeak(AuthPageCase):
 
 # THE PROPERTY GUARD, run in a browser because "computes" is a browser word.
 #
-# It enumerates every interactive control on the page and reads the colour each
-# one COMPUTES, then reports the set. Nothing here names a selector we styled:
-# that is the point. `.o_sapian_auth a` reached "Reset Password" (an `<a>`) and
-# missed "Choose a user" (a `<button class="btn-link">`) sitting directly beneath
-# it, and no assertion could notice because no assertion knew that button
-# existed. A control type Odoo introduces in 20.0 is covered the day it appears.
+# WHAT THE PREVIOUS VERSION OF THIS FILE MISSED, and it missed it three ways.
 #
-# GREYS AND BLACKS ARE ALLOWED and that is deliberate. Body text, muted help text
-# and disabled states are not brand decisions; demanding the brand for them would
-# make this cry every week, and a guard that cries every week gets deleted. The
-# test is "no control wears a colour that belongs to somebody else's palette",
-# not "everything is teal".
+# An operator reported a PURPLE FOCUS OUTLINE on the email input of
+# /web/reset_password while this file's other checks reported the page clean:
+# login_primary, login_disabled and login_focus_rgb were all at the brand,
+# because they measure the sign-in BUTTON. A check that passes on the thing it
+# looks at, while the page beside it is wrong.
+#
+#   1. IT LOOKED AT THE WRONG ELEMENTS. The enumeration was
+#      `a, button, .btn, input[type=submit], [role=button], summary` — a plain
+#      `<input type="email">` is in none of those, so the control that was
+#      actually purple was never collected.
+#   2. IT LOOKED AT THE WRONG PROPERTIES. `color` and `background-color` only.
+#      A focus ring is `box-shadow` and `border-color`; an outline is
+#      `outline-color`. None was read, so the defect had no way to appear.
+#   3. IT ASSERTED NOTHING. The JS built a report, logged it, and logged
+#      "test successful" unconditionally. There was no failing condition in it
+#      at all — a reporter wearing a test's clothes.
+#
+# And a fourth, which is why nobody noticed the first three: the class was
+# tagged `-standard` and selected by the bare `sapian_palette` tag, and NOTHING
+# SELECTED THAT TAG. Not CI, not a script — `grep -rn sapian_palette` outside
+# this file returned nothing. Its own docstring claimed "the CI job greps for
+# that line, so a skipped run cannot pass"; that CI job did not exist. The
+# guard had never run once.
+#
+# WHAT IT DOES NOW. It enumerates every interactive control on each auth page
+# and, for each, resolves the colours it wears in EVERY state — rest, hover,
+# focus, active, disabled, checked. Rest and focus are read from the browser
+# (focus by actually focusing the element); hover, active, disabled and checked
+# are resolved out of the stylesheet, because a rule that would apply on hover
+# is a fact about the page whether or not a pointer is over it. `var(--x)`
+# indirections are resolved against the element, so a variable pointing at
+# somebody else's palette is caught rather than reported as "var(--link-color)".
+#
+# GREYS AND BLACKS ARE ALLOWED and that is deliberate. Body text, muted help
+# text and disabled states are not brand decisions; demanding the brand for
+# them would make this cry every week, and a guard that cries every week gets
+# deleted. The test is "no control wears a colour that belongs to somebody
+# else's palette", not "everything is teal".
 CONTROL_COLOURS_JS = """
-    const ctrls = [...document.querySelectorAll(
-        'a, button, .btn, input[type=submit], [role=button], summary')]
-        .filter(e => { const b = e.getBoundingClientRect();
-                       return b.width > 2 && b.height > 2 &&
-                              getComputedStyle(e).visibility !== 'hidden'; });
-    const norm = (c) => {
-        const m = c.match(/rgba?\\((\\d+),\\s*(\\d+),\\s*(\\d+)/);
-        if (!m) return c;
-        return '#' + [1,2,3].map(i => (+m[i]).toString(16).padStart(2,'0')).join('');
+(async () => {
+    const BRAND = %(brand)s;
+
+    // ---- 1. THE STORED USER LIST ------------------------------------------
+    // "Choose a user" is `web.login_user_switch`, an OWL component mounted by
+    // the public-interaction service from <owl-component name="web.user_switch">.
+    // It renders nothing unless localStorage carries more than one remembered
+    // user, and `setup()` reads that list once, at mount — so seeding it after
+    // the page has settled is too late. The seed is written by this test's
+    // `ready` expression instead, which the browser evaluates from before the
+    // page is interactive; by the time the interaction service starts, the
+    // value is there. `switcher_controls` in the summary line is what proves it
+    // worked, and the login page fails below if it did not.
+    //
+    // When the switcher does render, `setup()` puts `d-none` on the login form,
+    // which would hide the email and password inputs from this enumeration. The
+    // second pass takes that class off — the same thing "Use another user"
+    // does — so both sets of controls are measured on the page that carries
+    // both.
+    const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+    await sleep(300);
+
+    // ---- 2. THE CONTROLS ---------------------------------------------------
+    const SELECTOR = [
+        "input:not([type=hidden])", "select", "textarea", "button", "a[href]",
+        ".btn", "[role=button]", "summary", ".form-check-input",
+        ".list-group-item-action", ".o_user_switch_btn",
+    ].join(", ");
+    const visible = (e) => {
+        const b = e.getBoundingClientRect();
+        const cs = getComputedStyle(e);
+        return b.width > 2 && b.height > 2 && cs.visibility !== "hidden" && cs.display !== "none";
     };
-    // A neutral is a colour whose channels are within 12 of each other: greys,
-    // black, white. Computed by value rather than listed, so a different grey
-    // does not need adding here.
+    const controls = [...document.querySelectorAll(SELECTOR)].filter(visible);
+
+    // ---- 3. COLOURS, INCLUDING THE ONES BEHIND A VARIABLE -------------------
+    const PROPS = ["color", "background-color", "border-top-color", "border-right-color",
+                   "border-bottom-color", "border-left-color", "outline-color",
+                   "box-shadow", "accent-color", "caret-color", "text-decoration-color"];
+    const resolveVars = (value, el, depth) => {
+        if (depth > 3 || !value || value.indexOf("var(") === -1) return value;
+        const out = value.replace(/var\(\s*(--[A-Za-z0-9_-]+)\s*(?:,([^()]*))?\)/g, (m, name, fb) => {
+            const v = getComputedStyle(el).getPropertyValue(name).trim();
+            return v || (fb || "").trim();
+        });
+        return resolveVars(out, el, depth + 1);
+    };
+    const hexOf = (r, g, b) => "#" + [r, g, b].map(n => (+n).toString(16).padStart(2, "0")).join("");
+    const coloursIn = (value, el) => {
+        const found = [];
+        if (!value) return found;
+        const text = resolveVars(String(value), el, 0);
+        const rgbRe = /rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)\s*(?:[,/]\s*([0-9.]+))?\s*\)/g;
+        let m;
+        while ((m = rgbRe.exec(text))) {
+            if (m[4] !== undefined && parseFloat(m[4]) === 0) continue;
+            found.push(hexOf(m[1], m[2], m[3]));
+        }
+        const hexRe = /#([0-9a-fA-F]{6})\b/g;
+        while ((m = hexRe.exec(text))) found.push("#" + m[1].toLowerCase());
+        // A bare "R, G, B" triple, which is how Bootstrap carries focus rings.
+        const tripleRe = /(?:^|[^\d])(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})(?![\d,])/g;
+        while ((m = tripleRe.exec(text))) {
+            if ([m[1], m[2], m[3]].every(n => +n >= 0 && +n <= 255)) found.push(hexOf(m[1], m[2], m[3]));
+        }
+        return found.map(h => h.toLowerCase());
+    };
     const neutral = (hex) => {
-        const p = [1,3,5].map(i => parseInt(hex.slice(i, i+2), 16));
+        const p = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
         return (Math.max(...p) - Math.min(...p)) <= 12;
     };
-    const seen = {};
-    for (const e of ctrls) {
-        const cs = getComputedStyle(e);
-        for (const [prop, val] of [['color', cs.color], ['background-color', cs.backgroundColor]]) {
-            const hex = norm(val);
-            if (!hex.startsWith('#') || neutral(hex)) continue;
-            if (val === 'rgba(0, 0, 0, 0)') continue;
-            const key = hex.toLowerCase();
-            (seen[key] = seen[key] || []).push(
-                e.tagName.toLowerCase() + '.' + (e.className||'').toString().trim().split(/\\s+/).join('.')
-                + '[' + prop + ']');
+    const allowed = (hex) => neutral(hex) || BRAND.includes(hex);
+
+    // ---- 4. STATES ---------------------------------------------------------
+    // Rest and focus come from the browser. Hover, active, disabled and checked
+    // are resolved from the stylesheet: a rule that WOULD apply on hover is a
+    // property of this page whether or not a pointer is over it, and driving a
+    // real hover in a headless browser is far less reliable than reading the
+    // rule that governs it.
+    const PSEUDO = [":hover", ":active", ":disabled", ":checked", ":focus-visible", ":focus"];
+    const styleRules = [];
+    const collect = (rules) => {
+        for (const rule of rules) {
+            if (rule.cssRules) { collect(rule.cssRules); continue; }
+            if (rule.selectorText && rule.style) styleRules.push(rule);
         }
+    };
+    for (const sheet of document.styleSheets) {
+        try { collect(sheet.cssRules); } catch (e) { /* cross-origin: nothing to read */ }
     }
-    const report = Object.entries(seen)
-        .map(([hex, who]) => hex + ' <- ' + who.slice(0, 3).join(' , ') + (who.length > 3 ? ' ...' : ''))
-        .join(' || ');
-    console.log('SAPIAN-PALETTE controls=' + ctrls.length + ' colours=' + report);
-    console.log('test successful');
+    const declaredFor = (el, pseudo) => {
+        const out = [];
+        for (const rule of styleRules) {
+            if (rule.selectorText.indexOf(pseudo) === -1) continue;
+            for (const part of rule.selectorText.split(",")) {
+                if (part.indexOf(pseudo) === -1) continue;
+                const bare = part.split(pseudo).join("").trim();
+                if (!bare) continue;
+                let hit = false;
+                try { hit = el.matches(bare); } catch (e) { continue; }
+                if (!hit) continue;
+                for (const prop of PROPS) {
+                    const v = rule.style.getPropertyValue(prop);
+                    if (v) out.push([prop, v]);
+                }
+                // The custom properties Bootstrap composes its colours from.
+                for (let i = 0; i < rule.style.length; i++) {
+                    const name = rule.style[i];
+                    if (name.startsWith("--")) out.push([name, rule.style.getPropertyValue(name)]);
+                }
+            }
+        }
+        return out;
+    };
+
+    const describe = (el) => el.tagName.toLowerCase()
+        + (el.id ? "#" + el.id : "")
+        + (el.className ? "." + String(el.className).trim().split(/\s+/).slice(0, 3).join(".") : "")
+        + (el.type ? "[" + el.type + "]" : "");
+
+    const foreign = [];
+    let stateCount = 0;
+    const audit = (controls, pass) => {
+      for (const el of controls) {
+        const name = describe(el);
+        const states = {};
+        const cs = getComputedStyle(el);
+        states.rest = PROPS.map(p => [p, cs.getPropertyValue(p)]);
+        try {
+            el.focus({preventScroll: true});
+            const fs = getComputedStyle(el);
+            states.focus = PROPS.map(p => [p, fs.getPropertyValue(p)]);
+            el.blur();
+        } catch (e) { states.focus = []; }
+        for (const pseudo of PSEUDO) states[pseudo.slice(1)] = declaredFor(el, pseudo);
+        for (const [state, decls] of Object.entries(states)) {
+            stateCount += 1;
+            const bad = [];
+            for (const [prop, value] of decls) {
+                for (const hex of coloursIn(value, el)) {
+                    if (!allowed(hex)) bad.push(hex + " via " + prop);
+                }
+            }
+            const verdict = bad.length ? "FOREIGN " + [...new Set(bad)].join(" ; ") : "ok";
+            console.log("SAPIAN-CONTROL " + location.pathname + " [" + pass + "] | "
+                + name + " | " + state + " | " + verdict);
+            if (bad.length) foreign.push(pass + " " + name + " @" + state + ": " + [...new Set(bad)].join(" ; "));
+        }
+      }
+    };
+    audit(controls, "as-rendered");
+
+    // The login form is hidden behind the user switcher when the switcher
+    // renders. Reveal it — this is what "Use another user" does — and audit the
+    // controls that were behind it.
+    const hidden = document.querySelector("form.oe_login_form.d-none");
+    let revealed = 0;
+    if (hidden) {
+        hidden.classList.remove("d-none");
+        await sleep(100);
+        const more = [...document.querySelectorAll(SELECTOR)].filter(visible)
+            .filter(e => !controls.includes(e));
+        revealed = more.length;
+        audit(more, "form-revealed");
+    }
+
+    const switcherControls = document.querySelectorAll(
+        ".list-group-item-action, .o_user_switch_btn").length;
+    console.log("SAPIAN-CONTROL-SUMMARY path=" + location.pathname
+        + " controls=" + controls.length + " revealed=" + revealed
+        + " states=" + stateCount + " foreign=" + foreign.length
+        + " switcher_controls=" + switcherControls);
+    if (!controls.length) {
+        console.error("SAPIAN-CONTROL no interactive controls were enumerated at all");
+        return;
+    }
+    // THE COVERAGE ASSERTION. The operator's build shows "Choose a user", so
+    // that control exists and must be covered. If the seed did not take, this
+    // guard would quietly audit a page missing the very controls it was
+    // widened for — a smaller version of the defect it exists to catch.
+    if (location.pathname === "/web/login" && switcherControls === 0) {
+        console.error("SAPIAN-CONTROL the stored-user switcher did not render, so its "
+            + "controls were not audited. This run proves nothing about them.");
+        return;
+    }
+    if (foreign.length) {
+        console.error("SAPIAN-CONTROL " + foreign.length
+            + " control state(s) wear a colour outside the palette: " + foreign.join(" || "));
+        return;
+    }
+    console.log("test successful");
+})();
 """
 
 
 @tagged("-standard", "sapian_palette")
 class TestEveryControlIsInThePalette(AuthPageCase):
-    """Reads what controls COMPUTE, and fails on a colour that is not ours.
+    """Reads what every control COMPUTES, in every state, and fails on a
+    colour that is not ours.
 
-    Tagged out of `standard` and selected by the bare `sapian_palette` tag for
-    the same reason the launcher tests are: `browser_js` raises `SkipTest` when
-    no Chrome is present, and a skip is a success signal produced by doing
-    nothing. Either the browser job selects this and Chrome reports the
-    `SAPIAN-PALETTE` line, or nothing runs it — the CI job greps for that line,
-    so a skipped run cannot pass.
+    Tagged out of `standard` and selected by the bare `sapian_palette` tag
+    because `browser_js` raises `SkipTest` when no Chrome is present, and a
+    skip is a success signal produced by doing nothing. The
+    `auth-controls-palette` CI job selects this tag AND greps for the
+    `SAPIAN-CONTROL-SUMMARY` line, so a skipped run cannot pass — which is
+    exactly what was missing before: the tag existed and nothing selected it.
     """
 
+    def palette(self):
+        """Every colour a control is allowed to wear, from the palette file."""
+        primary = brand.brand_primary()
+        return [
+            primary.lower(),
+            brand.brand_secondary().lower(),
+            brand.tint(primary, 0.9).lower(),
+        ]
+
+    # SEEDING HAPPENS IN `ready`, WHICH IS NOT A TRICK BUT THE ONLY MOMENT.
+    #
+    # `browser_js` builds a fresh Chrome per call, so a previous call cannot
+    # leave anything in localStorage, and `UserSwitch.setup()` reads the list
+    # once at mount — after which writing it changes nothing. `ready` is polled
+    # from before the page is interactive, so the write lands first and the
+    # component mounts with two users. The expression still reports readiness;
+    # the comma operator keeps both halves.
+    SEED_AND_READY = (
+        "(window.localStorage.setItem('web.lastConnectedUser', JSON.stringify(["
+        "{login:'admin',name:'Mitchell Admin',partnerId:3,"
+        "partnerWriteDate:'2026-01-01 00:00:00',userId:2},"
+        "{login:'demo',name:'Marc Demo',partnerId:4,"
+        "partnerWriteDate:'2026-01-01 00:00:00',userId:6}])), "
+        "!!document.querySelector('form button[type=submit]'))"
+    )
+
     def test_no_control_computes_a_colour_outside_the_palette(self):
+        code = CONTROL_COLOURS_JS % {"brand": json.dumps(self.palette())}
         for route in self.auth_routes():
-            self.browser_js(
-                route,
-                CONTROL_COLOURS_JS,
-                "!!document.querySelector('form button[type=submit]')",
-            )
+            self.browser_js(route, code, self.SEED_AND_READY)
