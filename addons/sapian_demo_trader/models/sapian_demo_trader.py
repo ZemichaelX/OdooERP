@@ -823,6 +823,31 @@ class SapianDemoTrader(models.AbstractModel):
         warehouse = self.env["stock.warehouse"].search(
             [("company_id", "=", self.env.company.id)], limit=1
         )
+        # WITHOUT THIS THE OPENING STOCK HAS QUANTITY AND NO VALUE.
+        #
+        # Odoo 19 values the ordinary buy/sell path through the BILL and the
+        # INVOICE, not the picking — which is why a delivery does not relieve
+        # stock a second time after the invoice has posted its cost of sales.
+        # An inventory adjustment has no document, so `stock_move.py`'s gate
+        #
+        #     and (self.location_dest_id.valuation_account_id
+        #          or self.location_id.valuation_account_id)
+        #
+        # is never satisfied and no entry is written at all. Nothing in Odoo's
+        # own data sets that field on any location.
+        #
+        # The counterpart is EQUITY, not an expense: stock the owner put into
+        # the business at the start of the month is capital contributed, and
+        # routing it through the profit & loss would report a month that spent
+        # 887,200 on nothing.
+        adjustment_location = self.env["stock.location"].search(
+            [("usage", "=", "inventory"), ("company_id", "in", (False, self.env.company.id))],
+            limit=1,
+        )
+        if adjustment_location:
+            adjustment_location.sudo().valuation_account_id = self._account(
+                cat.OPENING_EQUITY_CODE
+            ).id
         # Sized for a month at the real trading volume (see _run_sales_flow).
         # hcb_20 is DELIBERATELY short of what July sells: 4,000 opening against
         # 8,800 sold, with 6,000 bought in during the month. That is what makes
@@ -837,6 +862,51 @@ class SapianDemoTrader(models.AbstractModel):
                     "inventory_quantity": quantity,
                 }
             )._apply_inventory()
+        self._create_opening_cash()
+
+    def _create_opening_cash(self):
+        """Money in the bank on day one, from the same capital contribution.
+
+        A trader who buys 540,736 of stock and meets a payroll needs a float to
+        do it with. Without one every payment in this demo would overdraw an
+        account that started at nothing, and a negative bank balance is exactly
+        as unbelievable as the zero it replaces.
+        """
+        journal = self._bank_journal()
+        bank_account = journal.default_account_id
+        equity = self._account(cat.OPENING_EQUITY_CODE)
+        if not bank_account:
+            raise UserError(
+                self.env._("The bank journal has no account, so opening cash cannot be placed.")
+            )
+        entry = self.env["account.move"].create(
+            {
+                "move_type": "entry",
+                "date": "2026-06-30",
+                "ref": self.env._("Opening balance — capital introduced"),
+                "journal_id": journal.id,
+                "line_ids": [
+                    Command.create(
+                        {
+                            "account_id": bank_account.id,
+                            "debit": cat.OPENING_CASH,
+                            "credit": 0.0,
+                            "name": self.env._("Opening cash"),
+                        }
+                    ),
+                    Command.create(
+                        {
+                            "account_id": equity.id,
+                            "debit": 0.0,
+                            "credit": cat.OPENING_CASH,
+                            "name": self.env._("Capital introduced"),
+                        }
+                    ),
+                ],
+            }
+        )
+        entry.action_post()
+        return entry
 
     def _run_sales_flow(self, partners, products):
         """Two quotation -> delivery -> invoice flows with 15% VAT.
@@ -919,6 +989,70 @@ class SapianDemoTrader(models.AbstractModel):
             # producing a due-before-issued document.
             invoices.write({"invoice_date": "2026-07-10", "invoice_date_due": "2026-08-09"})
             invoices.action_post()
+            # Mebrat settles in full on the 20th; Abyssinia pays 60% and still
+            # owes the rest at month end, so trade debtors is a real figure
+            # rather than either everything or nothing.
+            if order == order_mebrat:
+                self._pay(invoices, "2026-07-20")
+            else:
+                self._pay(invoices, "2026-07-24", partial_ratio=0.6)
+
+    def _bank_journal(self):
+        """The company's bank journal, or a clear failure.
+
+        The chart template creates one; if it ever stops doing so, a demo that
+        silently skipped every payment would look exactly like a demo whose
+        customers had not paid, which is the confusion this whole pass exists
+        to remove.
+        """
+        journal = self.env["account.journal"].search(
+            [("company_id", "=", self.env.company.id), ("type", "=", "bank")],
+            limit=1,
+        )
+        if not journal:
+            raise UserError(
+                self.env._(
+                    "This company has no bank journal, so no payment can be "
+                    "recorded and the demo's cash would stay at zero."
+                )
+            )
+        return journal
+
+    def _pay(self, moves, when, partial_ratio=None):
+        """Settle posted invoices or bills through the bank, on a real date.
+
+        MONEY THAT NEVER ARRIVES IS THE DEFECT THIS FIXES. The demo posted six
+        invoices and three bills and never paid any of them, so Bank and Cash
+        read 0.00 on the balance sheet while trade debtors carried the lot. A
+        company with no money anywhere is the second thing an accountant
+        disbelieves, after one whose goods cost nothing.
+
+        `partial_ratio` leaves part of an invoice outstanding on purpose:
+        receivables of zero would be as unrealistic as receivables of
+        everything, and a demo month should end with somebody still owing.
+        """
+        journal = self._bank_journal()
+        paid = self.env["account.move"].browse()
+        for move in moves.filtered(lambda m: m.state == "posted"):
+            amount = move.amount_residual
+            if partial_ratio is not None:
+                amount = move.currency_id.round(amount * partial_ratio)
+            if move.currency_id.is_zero(amount):
+                continue
+            wizard = (
+                self.env["account.payment.register"]
+                .with_context(active_model="account.move", active_ids=move.ids)
+                .create(
+                    {
+                        "journal_id": journal.id,
+                        "amount": amount,
+                        "payment_date": when,
+                    }
+                )
+            )
+            wizard._create_payments()
+            paid |= move
+        return paid
 
     def _run_purchase_flow(self, partners, products):
         """PO -> receipt -> vendor bill from the COMPLIANT supplier.
@@ -980,6 +1114,9 @@ class SapianDemoTrader(models.AbstractModel):
         bill = order.invoice_ids
         bill.write({"invoice_date": "2026-07-15"})
         bill.action_post()
+        # The supplier is paid, so the money leaves the bank and 230100 stops
+        # being where the month's purchases live.
+        self._pay(bill, "2026-07-28")
 
     def _create_direct_bills(self, partners, products):
         """Two direct vendor bills: the punitive-WHT and foreign-digital paths.
@@ -989,6 +1126,7 @@ class SapianDemoTrader(models.AbstractModel):
         Amounts unchanged; only who is billed and for what.
         """
         move_model = self.env["account.move"]
+        bills = move_model.browse()
         for partner, product, price, date in (
             (partners["yonas"], products["delivery"], 15000, "2026-07-18"),
             (partners["buildsoft"], products["software"], 8000, "2026-07-20"),
@@ -1011,6 +1149,11 @@ class SapianDemoTrader(models.AbstractModel):
                 }
             )
             bill.action_post()
+            bills |= bill
+        # Paid, like the goods bill. A payables balance made only of bills
+        # nobody ever settled is the same defect as debtors made only of
+        # invoices nobody ever paid.
+        self._pay(bills, "2026-07-30")
 
     def _run_payroll(self, employees):
         """July 2026 payroll: one payslip per PAYE band, posted + bank file.
@@ -1054,6 +1197,76 @@ class SapianDemoTrader(models.AbstractModel):
         )
         run.action_confirm()
         run.action_export_bank_file()
+        self._pay_net_wages(run)
+        return run
+
+    def _pay_net_wages(self, run):
+        """Actually pay the staff, instead of only writing the bank file.
+
+        The run posted its journal entry and exported a transfer file, and then
+        nothing happened: the net wages account kept the whole month's salaries
+        as a payable for ever. A demo that runs payroll and never pays it tells
+        an accountant that the bank file was never sent.
+
+        The amount is read off the LEDGER rather than from run.total_net, so it
+        is whatever the account actually still owes — if the two ever disagree,
+        the ledger is the one that matters and a hard-coded figure would hide
+        the disagreement.
+        """
+        company = self.env.company
+        account = company.sudo().l10n_et_net_wages_account_id
+        if not account:
+            return self.env["account.move"].browse()
+        lines = (
+            self.env["account.move.line"]
+            .sudo()
+            .search(
+                [
+                    ("account_id", "=", account.id),
+                    ("company_id", "=", company.id),
+                    ("parent_state", "=", "posted"),
+                ]
+            )
+        )
+        outstanding = sum(lines.mapped("credit")) - sum(lines.mapped("debit"))
+        if company.currency_id.is_zero(outstanding):
+            return self.env["account.move"].browse()
+        journal = self._bank_journal()
+        entry = self.env["account.move"].create(
+            {
+                "move_type": "entry",
+                "date": "2026-07-31",
+                "ref": self.env._("July 2026 salaries paid"),
+                "journal_id": journal.id,
+                "line_ids": [
+                    Command.create(
+                        {
+                            "account_id": account.id,
+                            "debit": outstanding,
+                            "credit": 0.0,
+                            "name": self.env._("Net wages paid"),
+                        }
+                    ),
+                    Command.create(
+                        {
+                            "account_id": journal.default_account_id.id,
+                            "debit": 0.0,
+                            "credit": outstanding,
+                            "name": self.env._("Salary transfer"),
+                        }
+                    ),
+                ],
+            }
+        )
+        entry.action_post()
+        # Reconcile, so the payable is CLEARED rather than merely offset by a
+        # second entry that happens to net to zero.
+        to_reconcile = (lines | entry.line_ids).filtered(
+            lambda line: line.account_id == account and not line.reconciled
+        )
+        if len(to_reconcile) > 1:
+            to_reconcile.reconcile()
+        return entry
         return run
 
     def _create_report_periods(self):

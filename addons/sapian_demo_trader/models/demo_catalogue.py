@@ -111,6 +111,13 @@ COGS_CODE = "511100"  # Cost of Goods and Services, expense_direct_cost
 # not the cost of the goods sold, and routing them through cost of sales would
 # understate gross profit.
 SERVICE_EXPENSE_CODE = "625100"  # Contracted professional services, expense
+OPENING_EQUITY_CODE = "401000"  # Share capital / equity
+
+# The float the month is run on. A builders' merchant turning over ~1.27m birr
+# a month holds this kind of balance; it is capital introduced, posted against
+# equity on 30 June alongside the opening stock, so July starts with money in
+# the bank and the balance sheet still balances.
+OPENING_CASH = 1_500_000.0
 
 # (key, display name, Amharic)
 CATEGORIES = [
