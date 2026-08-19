@@ -1,0 +1,141 @@
+# -*- coding: utf-8 -*-
+"""The system's own name in the chatter.
+
+WHAT WAS WRONG
+--------------
+`base.partner_root` is the author of every message no person wrote — "Product
+created", stage changes, tracked-field updates, activity reminders. `base`
+calls it "System". `mail` renames it to "OdooBot" and gives it Odoo's face
+(mail/data/res_partner_data.xml), and that is what a client reads at the bottom
+of every record they open. Measured on the all-apps demo tenant:
+
+    res.partner(2)  name  'OdooBot'
+                    email 'odoobot@example.com'
+                    image mail/static/src/img/odoobot.png
+
+and, concretely, "OdooBot — Product created" in the chatter of
+product.template 7 (Binding Wire 1.5 mm).
+
+WHY THIS IS PYTHON AND NOT A DATA RECORD — THE WHOLE POINT OF THIS FILE
+-----------------------------------------------------------------------
+The obvious fix is `<record id="base.partner_root">` in our own data file. It
+does not work, and it fails in the silent direction: it applies at install and
+is SKIPPED on every upgrade thereafter.
+
+`orm/models.py:5165`, in `_load_records`:
+
+    if not (update and d_noupdate):
+        to_update.append(data)
+
+`update` is True when a module is being UPGRADED rather than installed, and
+`d_noupdate` is the flag STORED on the existing `ir_model_data` row — not the
+flag on our own XML block. `base` creates that row inside `<data
+noupdate="True">`, so the stored flag is True from the first install, and
+`_build_update_xmlids_query`'s `ON CONFLICT DO UPDATE` sets only
+`(model, res_id, write_date)` — it never rewrites `noupdate`. So no later
+module can clear it by declaring its own block updateable.
+
+The consequence is not "it reverts". It is worse: on every tenant that ALREADY
+has `sapian_theme_mail` installed — which is all of them — the new data file's
+first opportunity is an upgrade, so it would never run at all, and the bot
+would keep Odoo's name forever while CI (which builds fresh databases, where
+install mode applies) reported green. That is precisely a success signal
+produced by doing nothing.
+
+A `write()` is subject to none of that. `ir_model_data.noupdate` gates the data
+LOADER; it has no opinion about ordinary ORM writes.
+
+WHY IT SURVIVES `-u mail`
+-------------------------
+The same rule, pointed the other way, and this is the part worth keeping in
+mind: `mail`'s own record is blocked by the identical check. `d_noupdate` is
+True, so on `-u mail` — an upgrade — mail's "OdooBot" is skipped too. Nothing
+in Odoo rewrites this partner after the database is first built.
+
+That is an argument, and an argument is not a proof, so CI runs the sequence:
+install, `-u mail`, `-u sapian_theme_mail`, asserting the identity after each.
+
+CALLED FROM TWO PLACES, one implementation:
+  * `post_init_hook` — a database installing the module now;
+  * `migrations/19.0.1.3.0/end-bot_identity.py` — a database that has it
+    already, which is the case the data record could not reach.
+
+Idempotent, and it reports what it changed rather than assuming.
+"""
+
+import base64
+import logging
+
+from odoo import api, models
+from odoo.tools import file_open
+
+from odoo.addons.sapian_theme import vendor
+
+_logger = logging.getLogger(__name__)
+
+# Shipped inside this module rather than read from `brand/`: an addon has to be
+# self-contained, and `file_open` resolves within the addons path. It is a
+# byte-for-byte copy of `brand/icons/deliver/sapian_core__icon.png`, and
+# `test_the_avatar_we_ship_is_the_brand_asset` compares the two so the copy
+# cannot drift into a redraw — which brand/README.md forbids in those words.
+BOT_AVATAR = "sapian_theme_mail/static/src/img/sapian_bot.png"
+
+
+class ResPartner(models.Model):
+    _inherit = "res.partner"
+
+    @api.model
+    def _sapian_apply_bot_identity(self):
+        """Give the system partner our name, address and mark.
+
+        Unconditional, not "only if it still says OdooBot". The bot's identity
+        is a product constant in the same sense as the backend footer — see
+        `sapian_theme/vendor.py` — so there is no client choice here to
+        preserve, and a conditional write would mean a tenant that had renamed
+        it once could never be brought back into line by an upgrade.
+
+        Returns True when something actually changed, so the caller can log a
+        fact instead of an intention.
+        """
+        bot = self.env.ref("base.partner_root", raise_if_not_found=False)
+        if not bot:
+            # Not a silent return: `base.partner_root` is created by `base`
+            # itself and its absence means something is very wrong with the
+            # database, not that this module has nothing to do.
+            _logger.error(
+                "sapian_theme_mail: base.partner_root does not exist; the "
+                "system partner keeps whatever name it has"
+            )
+            return False
+
+        with file_open(BOT_AVATAR, "rb") as handle:
+            avatar = base64.b64encode(handle.read())
+
+        # `active_test=False` and sudo: partner_root ships archived
+        # (`base/data/res_partner_data.xml` sets active=False), so a plain
+        # browse of it is fine but a search would not find it — noted because
+        # the obvious "search for the partner" rewrite of this method silently
+        # finds nothing.
+        bot = bot.sudo().with_context(active_test=False)
+        vals = {}
+        if bot.name != vendor.SAPIAN_BOT:
+            vals["name"] = vendor.SAPIAN_BOT
+        if bot.email != vendor.SAPIAN_BOT_EMAIL:
+            vals["email"] = vendor.SAPIAN_BOT_EMAIL
+        if bot.image_1920 != avatar:
+            vals["image_1920"] = avatar
+        if not vals:
+            return False
+        bot.write(vals)
+        # WHAT WAS WRITTEN, not what was intended. The previous version of this
+        # line printed the two constants unconditionally, so it read
+        # "system partner is now 'SapianBot' <sapianbot@example.com>" on a run
+        # where `vals` held only the avatar and the name never moved. That is a
+        # success signal producible by doing nothing, in a log line — and it is
+        # what made a CI failure unreadable for two runs.
+        _logger.info(
+            "sapian_theme_mail: system partner written: %s (fields=%s)",
+            {k: (("<%d bytes>" % len(v)) if k == "image_1920" else v) for k, v in vals.items()},
+            ",".join(sorted(vals)),
+        )
+        return True

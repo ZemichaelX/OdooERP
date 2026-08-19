@@ -236,11 +236,14 @@ jobs:
           # 365 -> 371 when its Settings-UI tests took it to 21, and
           # 371 -> 385 when sapian_theme_auth_signup landed with 14, and
           # 385 -> 400 when the profit & loss statement landed with 15 in
-          # l10n_et_reports (27 -> 42), and 400 -> 418 when the balance sheet
-          # took it to 60. The floor
+          # l10n_et_reports (27 -> 42), 400 -> 418 when the balance sheet took
+          # it to 60, and 418 -> 454 when the SapianBot rename took
+          # sapian_theme_mail to 68. The floor
           # is what stops a module's suite going missing quietly, so it has to
-          # move with the suite.
-          MIN_EXPECTED_TESTS=418
+          # move with the suite. Measured, not guessed: run 32232939918 summed
+          # 632 across its module stats lines, of which sapian_theme_mail is 68
+          # — a floor left at 418 would not have noticed that module vanishing.
+          MIN_EXPECTED_TESTS=454
           EXECUTED=$(grep -oE "odoo\.tests\.stats: [A-Za-z0-9_]+: [0-9]+ tests" /tmp/odoo-test.log \
                      | awk '$4 == "tests" { total += $3 } END { print total + 0 }')
           echo "Executed ${EXECUTED} tests (floor ${MIN_EXPECTED_TESTS}):"
@@ -262,12 +265,19 @@ jobs:
           # invisible from inside the product, and both of these modules exist
           # because it stayed invisible for months.
           #
-          # The floors are deliberately well under the measured figures — 33 and
+          # The floors are deliberately well under the measured figures — 68 and
           # 22 on a database with website and account installed. A floor is here
           # to notice a suite GOING MISSING, not to track its size, and one set
           # a test or two below today's count is a floor that has to be edited
           # every time somebody adds a case.
-          for pair in "sapian_theme_mail:20" "sapian_theme_auth_signup:12"; do
+          #
+          # sapian_theme_mail's floor moves 20 -> 40 with this version. It was
+          # set when the module had 33 tests; the SapianBot rename takes it to
+          # 68, and a floor left at 20 would sit at under a third of the suite —
+          # far enough under to let most of it disappear and still report OK,
+          # which is the failure the floor exists to prevent rather than a
+          # tolerance it is meant to allow.
+          for pair in "sapian_theme_mail:40" "sapian_theme_auth_signup:12"; do
             MODULE="${pair%%:*}"; FLOOR="${pair##*:}"
             RAN=$(grep -oE "odoo\.tests\.stats: ${MODULE}: [0-9]+ tests" /tmp/odoo-test.log \
                   | grep -oE "[0-9]+ tests" | grep -oE "^[0-9]+" || echo 0)
@@ -1049,3 +1059,248 @@ jobs:
           grep -q "odoo\.tests\.stats: web_responsive: " /tmp/upstream.log \
             || { echo "::error::No web_responsive tests ran at all, so this step proved nothing."; exit 1; }
           echo "Upstream's remaining tests pass against our defaults."
+
+  bot-rename-survives-upgrade:
+    name: SapianBot survives an upgrade
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # WHY A SEPARATE JOB, and it is the only job here that exists to disprove a
+    # specific wrong implementation rather than to test a feature.
+    #
+    # `sapian_theme_mail` renames `base.partner_root` from OdooBot to
+    # SapianBot. The obvious way to do that is a data record, and it does not
+    # work — `orm/models.py:5165` skips a record whose ir_model_data row
+    # carries `noupdate` when the module is being UPGRADED rather than
+    # installed, and `base` sets that flag on this xmlid at the first install.
+    # `_build_update_xmlids_query` never rewrites the flag, so no later module
+    # can clear it by declaring its own block updateable.
+    #
+    # The consequence is not a visible revert. It is that the rename would
+    # reach NEW databases only — which is every database CI builds and no
+    # database a client runs — while every check stayed green. So the module
+    # writes the record from Python (a hook at install, a migration on
+    # upgrade), and this job is the proof, because the argument above is an
+    # argument and CLAUDE.md is explicit that a guard nobody has watched go red
+    # is another thing that passes by doing nothing.
+    #
+    # Four steps, and step 4 is the one that matters: it puts Odoo's identity
+    # back WITHOUT rewinding the module version, so no migration runs, and
+    # REQUIRES the identity tests to fail. If they pass there, every other step
+    # in this job is decoration.
+    container:
+      image: odoo:19.0@sha256:e415f9924395e7521245813135112f264b9222bcde3b1d3c2ee9ff073081540a
+      options: --user root
+    services:
+      db:
+        image: postgres:16@sha256:33f923b05f64ca54ac4401c01126a6b92afe839a0aa0a52bc5aeb5cc958e5f20
+        env:
+          POSTGRES_USER: odoo
+          POSTGRES_PASSWORD: odoo
+          POSTGRES_DB: postgres
+        options: >-
+          --health-cmd "pg_isready -U odoo"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: The rename holds through -u mail and -u sapian_theme_mail
+        shell: bash
+        run: |
+          # `set +e` EXPLICITLY, and then ACCUMULATE. Both halves are needed.
+          #
+          # Actions runs `shell: bash` as `bash --noprofile --norc -eo pipefail
+          # {0}`, so the `-e` comes from the RUNNER before this script starts and
+          # a bare `set -uo pipefail` here does not remove it. Measured: step 1's
+          # tests failed, bash exited on the spot, and steps 2 to 5 — the
+          # `-u mail` check, the red proof and the migration proof — never ran,
+          # while the job reported one failure as though it had checked five.
+          #
+          # But `set +e` ALONE creates the mirror-image defect: a later step
+          # fails, nothing exits, and the job goes GREEN. So every check calls
+          # `fail <label>` instead of `exit 1`, FAILURES accumulates, and the
+          # last line of the step is the only thing that decides the job. A
+          # deliberate failure injected into step 4 must turn the job red and
+          # name step 4 — `SAPIAN_INJECT_FAILURE=4` does exactly that, and it is
+          # how this accumulation is proved rather than asserted.
+          set +e
+          set -uo pipefail
+          FAILURES=""
+          fail () {   # $1 = label, rest = detail lines
+            FAILURES="${FAILURES}${FAILURES:+, }$1"
+            echo "::error::$1"
+            shift
+            [ $# -gt 0 ] && printf '     %s\n' "$@" >&2
+            return 0
+          }
+          mkdir -p /tmp/odoo-data
+          ARGS="--db_host=db --db_port=5432 --db_user=odoo --db_password=odoo
+                --data-dir=/tmp/odoo-data
+                --addons-path=${GITHUB_WORKSPACE}/addons,${GITHUB_WORKSPACE}/vendor/oca_web,/usr/lib/python3/dist-packages/odoo/addons
+                --workers=0 --max-cron-threads=0 --stop-after-init"
+          # The real assertions, re-run after every step rather than a shell
+          # reimplementation of them: a second copy of "is it called SapianBot"
+          # is a second thing to keep true.
+          IDENTITY='/sapian_theme_mail:TestTheSystemPartnerIsOurs,/sapian_theme_mail:TestTheBotSignsTheChatter'
+          # TestTheSystemPartnerIsOurs is 7 tests at this commit (the two DISK-ONLY
+          # ones moved to TestTheFilesWeShip, which this selector deliberately
+          # does NOT include: a file comparison is not evidence about the row) and
+          # TestTheBotSignsTheChatter 1. The floor is what stops a mistyped
+          # selector reporting "0 failed" and passing.
+          MIN_IDENTITY_TESTS=7
+
+          green () {   # $1 = label, $2 = log
+            grep -q "odoo\.tests\.result:" "$2" \
+              || { echo "::error::$1: the test runner never reported — nothing ran."; exit 1; }
+            if grep -qE "tests\.result: ([1-9][0-9]* failed|0 failed, [1-9][0-9]* error)" "$2"; then
+              fail "$1: the system partner no longer carries our identity."
+              grep -E "(FAIL|ERROR): Test" "$2" | head -20
+              return 0
+            fi
+            RAN=$(grep -oE "odoo\.tests\.stats: sapian_theme_mail: [0-9]+ tests" "$2" \
+                  | grep -oE "[0-9]+ tests" | grep -oE "^[0-9]+" || echo 0)
+            if [ "${RAN}" -lt "${MIN_IDENTITY_TESTS}" ]; then
+              fail "$1: only ${RAN} identity tests ran (floor ${MIN_IDENTITY_TESTS}); the selection is broken, so green means nothing."
+              return 0
+            fi
+            echo "OK — $1: ${RAN} identity tests, all passing."
+          }
+
+          probe () {   # prints SAPIAN-BOT name=<name> from the live database
+            echo 'p = env.ref("base.partner_root").sudo().with_context(active_test=False); print("SAPIAN-BOT name=%s email=%s" % (p.name, p.email))' \
+              | odoo shell ${ARGS} -d ci_bot --log-level=warn 2>&1 | grep -o "SAPIAN-BOT name=[^ ]* email=[^ ]*"
+          }
+
+          # H3 / H4 DIAGNOSTICS. These exist because this job failed once with a
+          # combination that could not be explained from its own log: the three
+          # name/email assertions failed while all four record-reading avatar
+          # assertions passed on the same database. Two candidate causes were
+          # "CI is not testing the tree we think" and "a different module set",
+          # and neither could be ruled out because the job never printed either.
+          echo "SAPIAN-H3 head=$(git -C "${GITHUB_WORKSPACE}" rev-parse HEAD)"
+          echo "SAPIAN-H3 head-subject=$(git -C "${GITHUB_WORKSPACE}" log -1 --format=%s)"
+          echo "SAPIAN-H3 manifest-version=$(grep -oE '19\.0\.[0-9.]+' "${GITHUB_WORKSPACE}/addons/sapian_theme_mail/__manifest__.py" | head -1)"
+          echo "SAPIAN-H3 post_init_hook-in-manifest=$(grep -c 'post_init_hook' "${GITHUB_WORKSPACE}/addons/sapian_theme_mail/__manifest__.py")"
+          echo "SAPIAN-H3 hook-call-in-init=$(grep -c '_sapian_apply_bot_identity' "${GITHUB_WORKSPACE}/addons/sapian_theme_mail/__init__.py")"
+          echo "SAPIAN-H3 migrations=$(ls "${GITHUB_WORKSPACE}/addons/sapian_theme_mail/migrations" 2>&1)"
+
+          # 1. A database, then the module.
+          odoo ${ARGS} -d ci_bot -i base --without-demo=all --log-level=warn \
+            || { fail "base install failed; nothing below ran."; }
+          odoo ${ARGS} -d ci_bot -i sapian_theme_mail --without-demo=all \
+            --test-enable --test-tags "${IDENTITY}" --log-level=test 2>&1 | tee /tmp/bot-install.log
+          # H4: the module SET, not just a count. 186 queries in CI against 189
+          # locally was the only hint the hook had not run, and three queries is
+          # far too thin a thread to hang a conclusion on.
+          echo "SAPIAN-H4 $(grep -oE '[0-9]+ modules loaded' /tmp/bot-install.log | tail -1)"
+          grep -oE "Loading module [a-z_0-9]+ \(" /tmp/bot-install.log | sed 's/Loading module //; s/ (//' | sort | tr '\n' ' ' | sed 's/^/SAPIAN-H4 set: /'
+          echo
+          echo "SAPIAN-H4 hook-lines=$(grep -cE 'system partner is now|email button colour applied' /tmp/bot-install.log)"
+          grep -E "system partner is now|email button colour applied" /tmp/bot-install.log | sed 's/^/     /' || true
+          green "after install" /tmp/bot-install.log
+          probe
+
+          # 2. `-u mail`. This is the question the whole mechanism turns on:
+          #    does Odoo put OdooBot back? (It cannot — mail's own record is
+          #    blocked by the same noupdate flag — but that is the argument,
+          #    and this is the measurement.)
+          odoo ${ARGS} -d ci_bot -u mail \
+            --test-enable --test-tags "${IDENTITY}" --log-level=test 2>&1 | tee /tmp/bot-umail.log
+          green "after -u mail" /tmp/bot-umail.log
+
+          # 2b. THE LOAD ORDER, DELIBERATELY AGAINST US.
+          #
+          #     Everything above loads our module last, which is the case that
+          #     was already passing. The defect was the other order: this module
+          #     and `mail_bot` are both auto_install on `mail`, so the graph
+          #     treated them as siblings and visited them in an arbitrary order.
+          #     Across identical runs this module moved between 26/30 and 27/30
+          #     and the bot's name moved with it.
+          #
+          #     `mail_bot` is now a declared dependency, so the order is total.
+          #     This step proves that claim rather than restating it: `mail_bot`
+          #     must come BEFORE `sapian_theme_mail`, every run, or the fix is
+          #     back to being a coin toss.
+          #
+          #     Measured from THE LOADER'S OWN OUTPUT, not from a proxy.
+          #     `ir_module_module.id` is DISCOVERY order (an alphabetical scan
+          #     of the addons path), not load order, so ordering by it would
+          #     answer a different question and would look right most of the
+          #     time. Odoo prints "Loading module <name> (n/N)" as it goes, and
+          #     those are the very numbers the defect was reported in.
+          #
+          #     scripts/ci_assert_load_order.py is proved to discriminate: it
+          #     goes red on a reversed order, on a missing module, and on a log
+          #     with no loader lines at all.
+          python3 "${GITHUB_WORKSPACE}/scripts/ci_assert_load_order.py" \
+            /tmp/bot-install.log mail mail_bot sapian_theme_mail \
+            || fail "step 2b: mail_bot does not load before sapian_theme_mail, so the sibling ambiguity is back"
+
+          #     And the adversary itself: re-run mail_bot's install AFTER ours,
+          #     which is the sequence the old code lost to. The identity must
+          #     still be ours afterwards.
+          odoo ${ARGS} -d ci_bot -u mail_bot --log-level=warn 2>&1 | tee /tmp/bot-umailbot.log
+          odoo ${ARGS} -d ci_bot -u sapian_theme_mail \
+            --test-enable --test-tags "${IDENTITY}" --log-level=test 2>&1 | tee /tmp/bot-after-adversary.log
+          green "after -u mail_bot ran last" /tmp/bot-after-adversary.log
+          probe
+
+          # 3. `-u sapian_theme_mail`, the ordinary upgrade of our own module.
+          odoo ${ARGS} -d ci_bot -u sapian_theme_mail \
+            --test-enable --test-tags "${IDENTITY}" --log-level=test 2>&1 | tee /tmp/bot-uself.log
+          green "after -u sapian_theme_mail" /tmp/bot-uself.log
+          probe
+
+          # 4. THE RED PROOF, and the reason this job is not decoration.
+          #    Put Odoo's identity back, leaving the module version alone so no
+          #    migration runs, then upgrade. Nothing should repair it, and the
+          #    identity tests MUST fail. A pass here would mean they cannot
+          #    detect the defect they exist for.
+          echo 'p = env.ref("base.partner_root").sudo().with_context(active_test=False); p.write({"name": "OdooBot", "email": "odoobot@example.com"}); env.cr.commit(); print("SAPIAN-BOT-BROKEN name=%s" % p.name)' \
+            | odoo shell ${ARGS} -d ci_bot --log-level=warn 2>&1 | tee /tmp/bot-break.log
+          grep -q "SAPIAN-BOT-BROKEN name=OdooBot" /tmp/bot-break.log \
+            || { fail "The break did not land, so the red proof below would be measuring nothing."; }
+
+          odoo ${ARGS} -d ci_bot -u sapian_theme_mail \
+            --test-enable --test-tags "${IDENTITY}" --log-level=test 2>&1 | tee /tmp/bot-red.log
+          grep -q "odoo\.tests\.result:" /tmp/bot-red.log \
+            || { fail "The red proof did not run at all — that is ABORTED, not red."; }
+          if ! grep -qE "tests\.result: ([1-9][0-9]* failed|0 failed, [1-9][0-9]* error)" /tmp/bot-red.log; then
+            fail "The identity tests PASSED on a database whose bot is called OdooBot. They cannot detect the defect they exist for, so every green above is meaningless."
+          fi
+          echo "OK — red proof: the identity tests fail when the bot is OdooBot."
+
+          # THE PROOF THAT THIS ACCUMULATION WORKS. Injected on demand, in
+          # step 4 rather than step 1, because a failure in step 1 proves nothing
+          # about whether a LATER failure is noticed.
+          if [ "${SAPIAN_INJECT_FAILURE:-}" = "4" ]; then
+            fail "step 4: deliberate injected failure (SAPIAN_INJECT_FAILURE=4)"
+          fi
+
+          # 5. THE MIGRATION, which is the half a data record could never do.
+          #    Rewind the recorded version so Odoo sees an upgrade across
+          #    19.0.1.3.0 — exactly the state of a tenant that installed this
+          #    module before the rename existed — and require the migration to
+          #    repair what step 4 broke.
+          echo 'env.cr.execute("UPDATE ir_module_module SET latest_version = %s WHERE name = %s", ("19.0.1.1.0", "sapian_theme_mail")); env.cr.commit(); print("SAPIAN-BOT-REWOUND")' \
+            | odoo shell ${ARGS} -d ci_bot --log-level=warn 2>&1 | tee /tmp/bot-rewind.log
+          grep -q "SAPIAN-BOT-REWOUND" /tmp/bot-rewind.log \
+            || { fail "Could not rewind the module version; the migration proof did not run."; }
+
+          odoo ${ARGS} -d ci_bot -u sapian_theme_mail \
+            --test-enable --test-tags "${IDENTITY}" --log-level=test 2>&1 | tee /tmp/bot-migrate.log
+          grep -q "sapian_theme_mail migration" /tmp/bot-migrate.log \
+            || { fail "The migration script never ran, so whatever fixed the record was not the thing being tested."; }
+          green "after the migration reached an existing tenant" /tmp/bot-migrate.log
+          probe
+
+          # THE ONLY THING THAT DECIDES THIS JOB. Every check above records and
+          # carries on, so this line is what turns an accumulated failure into a
+          # red job — and a job whose last statement is `true` is a job that
+          # cannot fail.
+          if [ -n "${FAILURES}" ]; then
+            echo "::error::This job failed: ${FAILURES}"
+            exit 1
+          fi
+          echo "All five steps ran and all five passed."

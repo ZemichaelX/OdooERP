@@ -81,6 +81,56 @@
 //   :disabled/.disabled  --btn-disabled-*   ← the loading state
 //   :focus-visible       --btn-focus-shadow-rgb
 .o_sapian_auth {
+    // THE VARIABLES, NOT A RULE PER CONTROL — and that is the whole change.
+    //
+    // The rule this replaces was `.o_sapian_auth a { color: … }`, which styled
+    // an ELEMENT. Measured on the upgraded demo tenant, the two controls sitting
+    // one under the other on /web/login:
+    //
+    //   "Reset Password"  <a class="btn btn-link btn-sm">       -> our hover teal
+    //   "Choose a user"   <button class="o_user_switch_btn
+    //                              btn btn-sm btn-link">        -> the palette's
+
+    // The literal is deliberately NOT written here. `test_no_raw_hex_outside_palette`
+    // scans every line of every non-test file, comments included, and it is
+    // right to: a hex in a comment goes stale the first time the brand moves,
+    // and a stale comment naming a colour is worse than no comment. The value
+    // lives in the palette; test_login_page.py asserts what the page serves.
+    //
+    // Same Bootstrap class, same size, adjacent in the DOM; one is an <a> and one
+    // is a <button>, so the element rule reached one and missed the other. Every
+    // control Odoo renders as something other than an anchor escapes that shape,
+    // and chasing them one at a time is a list that is never finished.
+    //
+    // WHICH VARIABLES, read out of the SERVED bundle rather than from Bootstrap's
+    // documentation — Odoo builds Bootstrap with `$prefix: ""`, so these are
+    // UNPREFIXED and `--bs-link-color` does not exist here:
+    //
+    //   a          { color: rgba(var(--link-color-rgb), var(--link-opacity, 1)) }
+    //   .btn-link  { --btn-color: var(--link-color);
+    //                --btn-hover-color: var(--link-hover-color); … }
+    //   .nav       { --nav-link-color: var(--link-color); … }
+    //
+    // So the RGB triple is required as well as the hex: a bare anchor reads only
+    // the triple, and setting `--link-color` alone would fix every `.btn-link`
+    // and leave plain links on the palette. Both are set, and `.nav` links come
+    // along for free.
+    //
+    // WHAT STILL BEATS THIS, stated here rather than only in a report: the
+    // website colour-combination rules set `color` DIRECTLY —
+    // `.o_cc1 .btn-link { color: … }`, `.o_cc2 …` and so on — and a direct
+    // declaration beats a variable indirection. They do not apply to the auth
+    // pages, whose body is `bg-100 o_sapian_auth` with no `o_cc*` wrapper
+    // anywhere in the card; measured. They WOULD apply if a client's website
+    // chrome ever wrapped these pages, and the guard in
+    // sapian_theme/tests/test_auth_pages.py::TestEveryControlIsInThePalette is
+    // what would notice, because it reads computed colour per control rather
+    // than checking that this rule exists.
+    --link-color: #{$sapian-brand-hover};
+    --link-hover-color: #{$sapian-brand};
+    --link-color-rgb: #{to-rgb($sapian-brand-hover)};
+    --link-hover-color-rgb: #{to-rgb($sapian-brand)};
+
     .btn-primary {
         --btn-bg: #{$sapian-brand};
         --btn-border-color: #{$sapian-brand};
@@ -105,9 +155,10 @@
         --btn-disabled-color: #{$white};
     }
 
-    a {
-        color: $sapian-brand-hover;
-    }
+    // `a { color: … }` USED TO BE HERE and is deliberately gone: the four
+    // variables above reach anchors and every .btn-* variant that derives from
+    // them, so an element rule would now be a second, narrower source of truth
+    // for the same colour.
 }
 
 // The "Powered by SapianERP" line that replaces Odoo's.

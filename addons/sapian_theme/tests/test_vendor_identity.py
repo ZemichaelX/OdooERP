@@ -72,6 +72,27 @@ class TestVendorFooterIsNotTheTenants(HttpCase):
             "the footer still signs itself with the tenant's company name",
         )
 
+    def test_the_payload_carries_the_product_name(self):
+        """The fourth vendor key, added for `sapian_theme_mail`.
+
+        Odoo's messaging menu offers "Install Odoo"; the bridge renames it, and
+        it reads the product name from here rather than from a JS literal so a
+        re-brand stays one edit in vendor.py. Asserted in THIS module because
+        this is where the key is produced — a test living only in the bridge
+        would leave the producer untested on a database without it.
+
+        The tenant half matters as much as the value: this is the vendor's
+        product name, and a client renaming their company must not touch it.
+        """
+        self.assertEqual(self._session_info()["sapian_vendor_product"], vendor.SAPIAN_PRODUCT)
+        self.env.company.name = "Golbon Trading PLC"
+        self.env.flush_all()
+        self.assertEqual(
+            self._session_info()["sapian_vendor_product"],
+            vendor.SAPIAN_PRODUCT,
+            "renaming the tenant's company moved the product name",
+        )
+
     def test_renaming_the_company_does_not_move_the_footer(self):
         """THE DISCRIMINATION PROOF for the company half.
 

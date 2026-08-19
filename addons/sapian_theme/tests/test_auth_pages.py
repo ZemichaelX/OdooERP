@@ -294,3 +294,77 @@ class TestAuthScopeDoesNotLeak(AuthPageCase):
             "the auth scope is on the backend page too, so it is not being set "
             "by the auth layout — it would reach the client's website as well",
         )
+
+
+# THE PROPERTY GUARD, run in a browser because "computes" is a browser word.
+#
+# It enumerates every interactive control on the page and reads the colour each
+# one COMPUTES, then reports the set. Nothing here names a selector we styled:
+# that is the point. `.o_sapian_auth a` reached "Reset Password" (an `<a>`) and
+# missed "Choose a user" (a `<button class="btn-link">`) sitting directly beneath
+# it, and no assertion could notice because no assertion knew that button
+# existed. A control type Odoo introduces in 20.0 is covered the day it appears.
+#
+# GREYS AND BLACKS ARE ALLOWED and that is deliberate. Body text, muted help text
+# and disabled states are not brand decisions; demanding the brand for them would
+# make this cry every week, and a guard that cries every week gets deleted. The
+# test is "no control wears a colour that belongs to somebody else's palette",
+# not "everything is teal".
+CONTROL_COLOURS_JS = """
+    const ctrls = [...document.querySelectorAll(
+        'a, button, .btn, input[type=submit], [role=button], summary')]
+        .filter(e => { const b = e.getBoundingClientRect();
+                       return b.width > 2 && b.height > 2 &&
+                              getComputedStyle(e).visibility !== 'hidden'; });
+    const norm = (c) => {
+        const m = c.match(/rgba?\\((\\d+),\\s*(\\d+),\\s*(\\d+)/);
+        if (!m) return c;
+        return '#' + [1,2,3].map(i => (+m[i]).toString(16).padStart(2,'0')).join('');
+    };
+    // A neutral is a colour whose channels are within 12 of each other: greys,
+    // black, white. Computed by value rather than listed, so a different grey
+    // does not need adding here.
+    const neutral = (hex) => {
+        const p = [1,3,5].map(i => parseInt(hex.slice(i, i+2), 16));
+        return (Math.max(...p) - Math.min(...p)) <= 12;
+    };
+    const seen = {};
+    for (const e of ctrls) {
+        const cs = getComputedStyle(e);
+        for (const [prop, val] of [['color', cs.color], ['background-color', cs.backgroundColor]]) {
+            const hex = norm(val);
+            if (!hex.startsWith('#') || neutral(hex)) continue;
+            if (val === 'rgba(0, 0, 0, 0)') continue;
+            const key = hex.toLowerCase();
+            (seen[key] = seen[key] || []).push(
+                e.tagName.toLowerCase() + '.' + (e.className||'').toString().trim().split(/\\s+/).join('.')
+                + '[' + prop + ']');
+        }
+    }
+    const report = Object.entries(seen)
+        .map(([hex, who]) => hex + ' <- ' + who.slice(0, 3).join(' , ') + (who.length > 3 ? ' ...' : ''))
+        .join(' || ');
+    console.log('SAPIAN-PALETTE controls=' + ctrls.length + ' colours=' + report);
+    console.log('test successful');
+"""
+
+
+@tagged("-standard", "sapian_palette")
+class TestEveryControlIsInThePalette(AuthPageCase):
+    """Reads what controls COMPUTE, and fails on a colour that is not ours.
+
+    Tagged out of `standard` and selected by the bare `sapian_palette` tag for
+    the same reason the launcher tests are: `browser_js` raises `SkipTest` when
+    no Chrome is present, and a skip is a success signal produced by doing
+    nothing. Either the browser job selects this and Chrome reports the
+    `SAPIAN-PALETTE` line, or nothing runs it — the CI job greps for that line,
+    so a skipped run cannot pass.
+    """
+
+    def test_no_control_computes_a_colour_outside_the_palette(self):
+        for route in self.auth_routes():
+            self.browser_js(
+                route,
+                CONTROL_COLOURS_JS,
+                "!!document.querySelector('form button[type=submit]')",
+            )

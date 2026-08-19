@@ -44,4 +44,11 @@ class IrHttp(models.AbstractModel):
         info["sapian_vendor_company"] = vendor.SAPIAN_COMPANY
         info["sapian_vendor_support"] = vendor.SAPIAN_SUPPORT
         info["sapian_vendor_url"] = vendor.SAPIAN_URL
+        # The PRODUCT name, for backend JS that has to name the thing the user
+        # is looking at — `sapian_theme_mail` renames Odoo's "Install Odoo"
+        # prompt with it. Delivered the same way and for the same reason as the
+        # three above: the backend is an OWL application, so a constant reaches
+        # it through the session or not at all, and a JS literal would be a
+        # fourth copy of a name that has to move in one edit at a re-brand.
+        info["sapian_vendor_product"] = vendor.SAPIAN_PRODUCT
         return info
