@@ -64,8 +64,28 @@ print("CHECK theme=%s" % (theme.state if theme else "missing"))
 # moment it was clicked: login.js adds `disabled` on submit, and an unset
 # --btn-disabled-bg falls through to Odoo's colour. The focus ring is the same
 # shape of miss.
+# THE SCOPE THE STYLESHEET ACTUALLY EMITS, in one place.
+#
+# It was `.oe_login_form` and it is `.o_sapian_auth` — PR #47 widened the scope
+# from the login form to every auth page, because /web/reset_password was
+# keeping the website's palette. This file was not updated with it, so for
+# every run since then the grep below matched nothing and login_primary,
+# login_disabled and login_focus_rgb all reported ABSENT while the button was
+# correctly branded. Measured on both a 233-module and a launcher-only
+# database:
+#
+#     login_selector_oe_login_form=0     login_selector_o_sapian_auth=1
+#     .o_sapian_auth .btn-primary{--btn-bg: #14454F; ... --btn-disabled-bg: #14454F; ...}
+#
+# An operator read those three ABSENTs as a branding failure and spent an
+# evening on it. `tests_fast/test_login_check_matches_the_stylesheet.py` now
+# ties this constant to sapian_frontend.scss, so the next rename fails a test
+# here rather than turning this check into a permanent false alarm.
+LOGIN_RULE_SCOPE = ".o_sapian_auth"
+
 frontend = bundle_css("web.assets_frontend")
-login_rule = first(frontend, r"(\.oe_login_form \.btn-primary\{[^}]*\})")
+login_rule = first(frontend, r"(%s \.btn-primary\{[^}]*\})" % re.escape(LOGIN_RULE_SCOPE))
+print("CHECK login_rule_scope=%s" % LOGIN_RULE_SCOPE)
 print("CHECK login_primary=%s" % first(login_rule, r"--btn-bg: (#[0-9A-Fa-f]{6})"))
 print("CHECK login_disabled=%s" % first(login_rule, r"--btn-disabled-bg: (#[0-9A-Fa-f]{6})"))
 print(
@@ -91,8 +111,7 @@ if login_rule == "ABSENT":
     print("CHECK login_selector_oe_login_form=%d" % frontend.count(".oe_login_form .btn-primary{"))
     print("CHECK login_selector_o_sapian_auth=%d" % frontend.count(".o_sapian_auth .btn-primary{"))
     print("CHECK login_scope_o_sapian_auth_any=%d" % frontend.count(".o_sapian_auth"))
-    actual = first(frontend, r"(\.o_sapian_auth \.btn-primary\{[^}]*\})")
-    print("CHECK login_actual_rule=%s" % actual[:240])
+    print("CHECK login_btn_primary_rules=%d" % frontend.count(".btn-primary{"))
 
 # ---- the page itself, as it comes back on the wire -------------------------
 response = Client(http_root).get("/web/login", headers={"Host": "localhost"})

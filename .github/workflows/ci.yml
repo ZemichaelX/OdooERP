@@ -111,7 +111,7 @@ jobs:
         # reports "12 passed" and exits 0.
         run: |
           set -euo pipefail
-          MIN_FAST_TESTS=100   # 107 at this commit
+          MIN_FAST_TESTS=260   # 269 at this commit
           pytest tests_fast/ -q | tee /tmp/fast-tests.log
           passed=$(grep -oE '[0-9]+ passed' /tmp/fast-tests.log | tail -1 | grep -oE '^[0-9]+' || true)
           passed=${passed:-0}
@@ -1503,7 +1503,7 @@ jobs:
               || { echo "::error::The login check never reported on ${db} — it measured nothing."; exit 1; }
           done
           echo "---- THE COMPARISON (login colours) ----"
-          for key in brand_expected brand_expected_rgb login_primary login_disabled \
+          for key in brand_expected brand_expected_rgb login_rule_scope login_primary login_disabled \
                      login_focus_rgb login_css_bytes login_selector_oe_login_form \
                      login_selector_o_sapian_auth login_scope_o_sapian_auth_any; do
             printf '%-32s allapps=%-14s control=%s\n' "${key}" \
