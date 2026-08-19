@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 """Profit and loss statement, grouped by ACCOUNT TYPE.
 
-Odoo Community ships no profit & loss statement (defect register entry 27), and
+Odoo Community ships no profit & loss statement (entry 27 of the internal
+defect register), and
 neither does any OCA repository we surveyed — `account_financial_report` has a
 general ledger and a trial balance but no P&L or balance sheet, and `mis_builder`
 ships an engine with zero templates. A client cannot see whether the business
@@ -35,19 +36,18 @@ unclassified on every printing until the accountants classify it.
 
 from odoo import api, fields, models
 
-from odoo.addons.l10n_et_base.models.template_et import ACCOUNTS_AWAITING_CLASSIFICATION
-
-# Account types Odoo puts in the profit & loss (``internal_group`` income or
-# expense). Named here so a type Odoo adds in a future version is caught by the
-# classification check rather than silently ignored.
-PL_INTERNAL_GROUPS = ("income", "expense")
-
 
 class L10nEtProfitLoss(models.Model):
     _name = "l10n.et.profit.loss"
     _description = "Ethiopian Profit and Loss Statement"
-    _inherit = ["l10n.et.report.period.mixin"]
+    _inherit = ["l10n.et.statement.mixin"]
     _order = "date_from desc, id desc"
+
+    # Odoo's own classification of what belongs in a profit & loss. Read from
+    # `internal_group` rather than from `_statement_sections` below, so a type no
+    # section claims is reported instead of silently ignored.
+    _statement_internal_groups = ("income", "expense")
+    _statement_account_label = "income or expense accounts"
 
     name = fields.Char(compute="_compute_name", store=True)
     gross_profit = fields.Monetary(
@@ -86,7 +86,7 @@ class L10nEtProfitLoss(models.Model):
 
     # ---- the face of the statement --------------------------------------
 
-    def _pl_sections(self):
+    def _statement_sections(self):
         """Which ACCOUNT TYPE prints on which LINE, in statement order.
 
         One reviewable table, and the only mapping this module owns. Everything
@@ -132,133 +132,31 @@ class L10nEtProfitLoss(models.Model):
             },
         ]
 
-    def _pl_accounts(self):
-        """Every profit & loss account in this company's chart.
-
-        Selected by Odoo's own ``internal_group``, DELIBERATELY not by the type
-        lists in ``_pl_sections``. If the two disagree the classification check
-        reports the difference; were both sides read from the same table the
-        check could not fail.
-        """
-        self.ensure_one()
-        account_model = self.env["account.account"]
-        return account_model.search(
-            [
-                *account_model._check_company_domain(self.company_id),
-                ("internal_group", "in", PL_INTERNAL_GROUPS),
-            ]
-        )
-
-    def _account_period_movement(self, accounts):
-        """Period movement per account, as ``{account: balance}`` (signed).
-
-        One grouped read for the whole statement; the tie-out deliberately runs
-        its own separate query so the two figures come from different paths.
-        """
-        self.ensure_one()
-        if not accounts:
-            return {}
-        groups = self.env["account.move.line"]._read_group(
-            self._period_line_domain() + [("account_id", "in", accounts.ids)],
-            groupby=["account_id"],
-            aggregates=["balance:sum"],
-        )
-        return {account: balance for account, balance in groups}
-
-    def _section_rows(self, accounts, balances, credit_positive):
-        """Account rows of one section: report-positive amounts, movement only.
-
-        Accounts with no movement in the period are left off the face of the
-        statement — they are still counted by the classification check, which is
-        what keeps an unclassified dormant account visible.
-        """
-        rounding = self.currency_id.round
-        sign = -1 if credit_positive else 1
-        rows = []
-        for account in accounts:
-            balance = balances.get(account, 0.0)
-            amount = rounding(sign * balance)
-            if not self.currency_id.is_zero(amount):
-                rows.append(
-                    {
-                        "code": account.with_company(self.company_id).code,
-                        "name": account.name,
-                        "amount": amount,
-                    }
-                )
-        rows.sort(key=lambda row: row["code"] or "")
-        return rows
-
-    def _awaiting_classification_accounts(self, accounts):
-        """Chart accounts held back from a section pending an accountant's answer.
-
-        Keyed by code from ``l10n_et_base`` — company-dependent, hence
-        ``with_company``. These are shown in their own section, included in the
-        totals so the ledger still ties, and counted as UNCLASSIFIED by the
-        check, every printing, until somebody classifies them.
-        """
-        self.ensure_one()
-        by_code = {account.with_company(self.company_id).code: account for account in accounts}
-        return [
-            (by_code[code], reason)
-            for code, reason in sorted(ACCOUNTS_AWAITING_CLASSIFICATION.items())
-            if code in by_code
-        ]
-
     def _get_report_data(self):
         """Full statement dataset for rendering, export and tests."""
         self.ensure_one()
         rounding = self.currency_id.round
-        accounts = self._pl_accounts()
-        balances = self._account_period_movement(accounts)
+        accounts = self._statement_accounts()
+        balances = self._account_balances(accounts)
         awaiting = self._awaiting_classification_accounts(accounts)
-        held_back = self.env["account.account"].union(*(a for a, _reason in awaiting))
+        sections, placed, held_back = self._build_sections(accounts, balances, awaiting)
 
-        sections = []
-        placed = self.env["account.account"]
+        # Net profit is accumulated from the SECTION TOTALS, never from a raw sum
+        # over the accounts: the tie-out below sums the ledger independently, and
+        # if both sides came from the same figure it could not disagree.
         net_profit = 0.0
         gross_profit = 0.0
-        for spec in self._pl_sections():
-            members = (
-                accounts.filtered(lambda a, types=spec["types"]: a.account_type in types)
-                - held_back
-            )
-            placed |= members
-            rows = self._section_rows(members, balances, spec["credit_positive"])
-            total = rounding(sum(row["amount"] for row in rows))
-            net_profit += total if spec["credit_positive"] else -total
-            section = dict(spec, accounts=rows, total=total)
-            if spec.get("subtotal"):
+        for section in sections:
+            if section["key"] == "awaiting_classification":
+                # Each held-back account carries its own sign — an unclassified
+                # income account is not an expense.
+                for row in section["accounts"]:
+                    net_profit += row["amount"] if row["credit_positive"] else -row["amount"]
+                continue
+            net_profit += section["total"] if section["credit_positive"] else -section["total"]
+            if section.get("subtotal"):
                 gross_profit = rounding(net_profit)
                 section["subtotal_amount"] = gross_profit
-            sections.append(section)
-
-        if awaiting:
-            # Expenses debit, income credits: sign each held-back account by its
-            # own group so the ledger still ties while the name stays visible.
-            rows = []
-            for account, reason in awaiting:
-                credit_positive = account.internal_group == "income"
-                row = self._section_rows(account, balances, credit_positive)
-                amount = row[0]["amount"] if row else 0.0
-                net_profit += amount if credit_positive else -amount
-                rows.append(
-                    {
-                        "code": account.with_company(self.company_id).code,
-                        "name": account.name,
-                        "amount": amount,
-                        "reason": reason,
-                    }
-                )
-            sections.append(
-                {
-                    "key": "awaiting_classification",
-                    "label": self.env._("Awaiting Classification"),
-                    "credit_positive": False,
-                    "accounts": rows,
-                    "total": rounding(sum(row["amount"] for row in rows)),
-                }
-            )
         net_profit = rounding(net_profit)
 
         classification = self._classification_check(accounts, placed, held_back)
@@ -281,75 +179,6 @@ class L10nEtProfitLoss(models.Model):
             "tie_out": tie_out,
             "tie_out_ok": all(row["ok"] for row in tie_out) and classification["ok"],
             "warnings": warnings,
-        }
-
-    def _classification_check(self, accounts, placed, held_back):
-        """`61 of 62 accounts classified` — and the shortfall BY NAME.
-
-        Three ways to fail, and each is a real defect rather than a formatting
-        nit:
-
-        * an account held back pending classification (`592100` today);
-        * an account whose type no section claims — a chart error, and its
-          movement is left out of the totals so the ledger check goes red too;
-        * a chart with no income or expense accounts at all, which would
-          otherwise produce a statement of zeros that reconciles perfectly.
-        """
-        self.ensure_one()
-        unplaced = accounts - placed - held_back
-        unclassified = [
-            {
-                "code": account.with_company(self.company_id).code,
-                "name": account.name,
-                "reason": self.env._(
-                    "type %(account_type)s is on no line of this statement",
-                    account_type=account.account_type,
-                ),
-            }
-            for account in unplaced
-        ] + [
-            {
-                "code": account.with_company(self.company_id).code,
-                "name": account.name,
-                "reason": reason,
-            }
-            for account, reason in self._awaiting_classification_accounts(accounts)
-        ]
-        unclassified.sort(key=lambda row: row["code"] or "")
-        total = len(accounts)
-        classified = total - len(unclassified)
-        if not total:
-            message = self.env._(
-                "This company's chart of accounts contains no income or expense "
-                "accounts, so this statement is empty. Load a chart of accounts "
-                "before relying on it."
-            )
-        elif unclassified:
-            message = self.env._(
-                "%(count)s of %(total)s accounts classified. Unclassified: " "%(names)s",
-                count=classified,
-                total=total,
-                names="; ".join(
-                    "%s %s (%s)" % (row["code"], row["name"], row["reason"])
-                    for row in unclassified
-                ),
-            )
-        else:
-            message = self.env._(
-                "%(total)s of %(total)s accounts classified, unclassified: none",
-                total=total,
-            )
-        return {
-            "classified": classified,
-            "total": total,
-            "unclassified": unclassified,
-            "ok": bool(total) and not unclassified,
-            "message": message,
-            "summary": self.env._(
-                "%(count)s of %(total)s accounts classified",
-                count=classified,
-                total=total,
-            ),
         }
 
     # ---- outputs ---------------------------------------------------------
@@ -380,15 +209,6 @@ class L10nEtProfitLoss(models.Model):
             rows.append([])
             rows.append(["WARNING", warning])
         rows.extend(self._csv_tie_out_rows(data["tie_out"]))
-        classification = data["classification"]
-        rows.append(
-            [
-                "Accounts classified",
-                "",
-                f"{classification['classified']}",
-                f"{classification['total']}",
-                "OK" if classification["ok"] else classification["message"],
-            ]
-        )
+        rows.append(self._csv_classification_row(data["classification"]))
         self._store_csv(rows, "profit_loss")
         return True

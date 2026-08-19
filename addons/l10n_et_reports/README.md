@@ -27,7 +27,7 @@ markers — nothing re-declared here.
   repository we surveyed (`account_financial_report` has a general ledger and a
   trial balance but no P&L or balance sheet; `mis_builder` is an engine with
   zero templates). Until this existed a client could not see whether the
-  business made money — defect register entry 27.
+  business made money. Recorded as entry 27 of the internal defect register.
 
   **The section grouping is not in this module.** Which account belongs on which
   line is decided by the account's `account_type`, set once in the chart by
@@ -56,6 +56,36 @@ markers — nothing re-declared here.
   visible section and counted as unclassified **on every printing** until the
   accountants answer. That is why a clean tenant reads `61 of 62`, not `62 of
   62` — the shortfall is the open question, not a bug.
+- **Balance Sheet** (`l10n.et.balance.sheet`): assets, liabilities and equity as
+  at a closing date, with retained earnings brought forward and the result for
+  the period shown separately, PDF and CSV.
+
+  **A position, not a flow.** The P&L reads movement inside its period; this
+  reads every posted line up to and including `date_to`, which is one overridden
+  method (`_statement_line_domain`). `date_from` still matters: it splits the
+  accumulated result into *brought forward* and *result for the period*, and
+  that is what lets the two statements be tied to each other.
+
+  **Three checks print on the face of it:**
+
+  1. *Total assets vs total liabilities and equity.* Different accounts,
+     different queries — the left side from the asset sections, the right from
+     the liability and equity sections plus the result summed off the income and
+     expense accounts. An account that falls out of either side moves one and
+     not the other.
+  2. *Result for the period vs the profit & loss statement.* This statement sums
+     it straight off the ledger; the P&L builds the same figure up from its
+     section totals. **This is the check that makes the two statements one set of
+     books rather than two opinions**, and it is deliberately independent of
+     check 1 — breaking the P&L makes check 2 red and leaves check 1 green.
+  3. *Accounts classified*, as on the P&L. Off-balance-sheet accounts are
+     excluded **by definition**, and their count is reported so they never become
+     invisible.
+
+  Not built, deliberately: **trial balance and general ledger**. OCA's
+  `account_financial_report` has both, and neither has any Ethiopian character
+  worth owning.
+
 
 ## Design
 - Reports read LIVE from posted journal items — a record is a period window
@@ -95,10 +125,23 @@ cost-of-sales figure nor the gross-profit line existed before register entries
 26 and 27 were fixed — every bill posted to a current asset, and every expense
 account carried the same type.
 
-**Half of the P&L tests prove the checks GO RED**, because a statement whose
+Balance sheet goldens as at 2026-07-31 over the same fixture: receivables
+11,500.00, input VAT 10,950.00, **total assets 22,450.00**, liabilities
+85,450.00, result for the period −63,000.00, **total liabilities and equity
+22,450.00** — the identity, both sides.
+
+**Half of the statement tests prove the checks GO RED**, because a statement whose
 self-check cannot fail invites trust it has not earned:
 dropping a section's account type makes the ledger check differ by exactly the
 amount that fell out; flipping a section's sign makes it differ while coverage
 stays clean (so the two checks are not the same check twice); an account whose
 type no section claims is named; and a company with no income or expense
 accounts is refused rather than reported as reconciling perfectly.
+
+For the balance sheet: dropping the receivables section unbalances it by exactly
+11,500.00 while leaving its agreement with the P&L intact, and breaking the P&L
+instead makes the two statements disagree by 10,000.00 while the balance sheet
+still balances — each check failing on what the other cannot see. An asset
+raised before `date_from` must still appear, which is the guard against reading
+a period and calling it a position: that mistake would drop every opening
+balance and still reconcile, because both sides would lose the same lines.

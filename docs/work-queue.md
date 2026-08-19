@@ -35,7 +35,7 @@ block on it, and never guess it into code.
 | 2 | #51 — re-run, merge if green | **DONE** — merged as `20cbe4a` |
 | 3 | **Account types** — nine accounts, three-digit rules | **DONE** — PR #53 merged |
 | 4 | **Profit and loss** | **DONE** — merged, both checks proved red |
-| 5 | **Balance sheet** | todo |
+| 5 | **Balance sheet** | **DONE** — both new checks proved red |
 | 6 | #50 — diagnose before fixing | todo |
 | 7 | #49 — write-tripwire out, fix order-independent | todo |
 | 8 | Palette additions | todo |
@@ -223,6 +223,54 @@ which also ties the two statements to each other.
 
 After 4 and 5 the reporting blocker is cleared.
 **Trial balance and general ledger are deliberately NOT in this queue.**
+
+**DONE, 18 Aug.** `l10n.et.balance.sheet`, `l10n_et_reports` 42 -> 60 tests,
+CI floor 400 -> 418.
+
+**Bigger than its queue line, on purpose.** Written naively it would have copied
+~150 lines of section and coverage machinery out of the P&L, and two copies of
+one check drift apart quietly — one gets a fix, the other keeps the bug, both
+green. So the PR is two commits: extract `l10n.et.statement.mixin` and prove the
+P&L suite runs UNCHANGED (42 tests, 0 failed, 0 skipped, not one assertion or
+golden moved), then add the balance sheet on top. Two commits so a red CI has
+one suspect.
+
+**Three checks, not two.** The identity; the **cross-statement** check (result
+for the period vs what the P&L reports for the same dates); and coverage.
+
+**Re-measured 19 Aug after the rebase, in CI.** The figures previously recorded
+here came from a hand-built `scratch_readiness` database that no longer exists
+and cannot be reproduced, so they are replaced by the goldens the suite actually
+asserts on the July-2026 fixture — which are reproducible on every run:
+**total assets 22,450.00 = total liabilities and equity 22,450.00**, difference
+**0.00**, with the result for the period **-63,000.00** equal to the profit &
+loss's net profit to the cent. Coverage: every balance-sheet account classified,
+`unclassified: none`, with off-balance accounts excluded from the denominator
+and counted separately on the statement.
+
+**Red proofs, re-run 19 Aug on the rebased branch, one throwaway branch each so
+the two breaks could not contaminate one another.** Counts and names written
+down before running:
+
+| Break | Predicted | Observed |
+|---|---|---|
+| C — current liabilities removed from the shipped section table | 9 failures, named | **9 failed, 0 errors, of 432** — an EXACT set match |
+| D — cross-statement check made to consult itself instead of the P&L | 1 failure, named | **1 failed, 0 errors, of 432** — the one named |
+
+D's single failure is a strict subset of C's nine. `l10n_et_reports` ran **60
+tests** in both. **Skips: 16 in the whole run, 0 in `l10n_et_reports`** — the 16
+are `sapian_theme` app-rail and backend-footer tests skipping on
+`websocket-client module is not installed`, they skip identically in the green
+run, and they are covered by the dedicated browser job which installs it. The
+module under test skipped nothing in either direction.
+
+**One aborted run, discarded rather than reported.** The first attempt at proof
+D restored the previous break with `assert 'current_liabilities' not in src` —
+which is **always false, because `non_current_liabilities` contains that
+string**. The restore silently did nothing and the run measured C+D together,
+returning the same 9 failures. It was thrown away and D was re-run in isolation.
+A substring guard on a name that is a suffix of another name is a guard that
+cannot fire.
 
 ### 6. #50 — genuinely red from 09:59 UTC, four hours before the incident
 

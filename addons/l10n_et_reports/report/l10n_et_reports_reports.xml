@@ -32,4 +32,15 @@
         <field name="binding_model_id" ref="model_l10n_et_profit_loss"/>
         <field name="binding_type">report</field>
     </record>
+
+    <record id="action_report_balance_sheet" model="ir.actions.report">
+        <field name="name">Balance Sheet</field>
+        <field name="model">l10n.et.balance.sheet</field>
+        <field name="report_type">qweb-pdf</field>
+        <field name="report_name">l10n_et_reports.report_balance_sheet</field>
+        <field name="report_file">l10n_et_reports.report_balance_sheet</field>
+        <field name="print_report_name">'%s' % (object.name)</field>
+        <field name="binding_model_id" ref="model_l10n_et_balance_sheet"/>
+        <field name="binding_type">report</field>
+    </record>
 </odoo>

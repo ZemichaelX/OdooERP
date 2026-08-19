@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 {
     "name": "Ethiopia Statutory Reports (SapianERP)",
-    "version": "19.0.1.2.0",
-    "summary": "Monthly VAT declaration, withholding tax summary and profit & loss "
-    "statement for Ethiopia, computed from posted moves with GL tie-out. "
+    "version": "19.0.1.3.0",
+    "summary": "Monthly VAT declaration, withholding tax summary, profit & loss and "
+    "balance sheet for Ethiopia, computed from posted moves with GL tie-out. "
     "Verify layouts against the current MoR forms before filing. See README.md.",
     "author": "Sapian Technologies PLC",
     "website": "https://sapiantech.com",
