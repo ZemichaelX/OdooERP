@@ -114,7 +114,9 @@ staged already, from some other branch's work, and reports success.
 ## Pull requests: ours are authorised, third parties' are not
 
 **Opening a pull request against THIS repository is authorised by default.** It is
-how every change ships, and **CI cannot run without one** — `.github/workflows/ci.yml`
+how every change ships — a ruleset on `master` now enforces it, so a direct push
+is rejected by the remote rather than merely discouraged — and **CI cannot run
+without one** — `.github/workflows/ci.yml`
 triggers on `push: [master]` and `pull_request`, so a feature branch with no PR has
 zero checks. Never sit on finished work waiting to be told to open one.
 
