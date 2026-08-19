@@ -179,13 +179,6 @@ class L10nEtBalanceSheet(models.Model):
                 "credit_positive": True,
             },
             {
-                "key": "current_liabilities",
-                "group": liabilities,
-                "label": self.env._("Current Liabilities"),
-                "types": ("liability_current",),
-                "credit_positive": True,
-            },
-            {
                 "key": "non_current_liabilities",
                 "group": liabilities,
                 "label": self.env._("Non-current Liabilities"),
