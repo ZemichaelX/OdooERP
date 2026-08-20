@@ -1381,12 +1381,32 @@ jobs:
           # different cairosvg or Pillow re-renders the same SVG to a different
           # PNG, and the diff below would fail on a file nobody touched.
           pip install --quiet --break-system-packages cairosvg==2.9.0 pillow==12.3.0
+
+          # NOT `git diff`. There is no git here, in EITHER sense: the odoo
+          # image ships without the binary, and because it does,
+          # actions/checkout fell back to downloading a tarball through the
+          # REST API — so there is no .git directory to diff against either.
+          # The first version of this step ran `git diff --exit-code`, got
+          # "git: command not found", and its `if !` read that as "the files
+          # changed". A missing tool reported as a brand defect.
+          #
+          # Hashing every PNG before and after is what the diff was FOR, and it
+          # asserts a count as well, which the diff did not: a run that wrote
+          # nothing at all cannot pass.
+          snapshot() { find addons brand -name '*.png' -type f | sort | xargs sha256sum; }
+          snapshot > /tmp/rasters-before.txt
+          BEFORE=$(wc -l < /tmp/rasters-before.txt)
+          if [ "${BEFORE}" -lt 50 ]; then
+            echo "::error::Only ${BEFORE} PNGs found before regenerating; expected at least 50. The checkout is wrong, so this proves nothing."
+            exit 1
+          fi
           python3 scripts/build_brand_assets.py
-          if ! git diff --exit-code --stat; then
+          snapshot > /tmp/rasters-after.txt
+          if ! diff -u /tmp/rasters-before.txt /tmp/rasters-after.txt; then
             echo "::error::Regenerating the brand assets changed files. A raster was edited by hand, or the sources moved and scripts/build_brand_assets.py was never re-run. Run it and commit the result."
             exit 1
           fi
-          echo "OK — every raster matches what the committed sources generate."
+          echo "OK — all ${BEFORE} rasters match what the committed sources generate."
 
       - name: Install, then upgrade, and the brand assets survive both
         shell: bash

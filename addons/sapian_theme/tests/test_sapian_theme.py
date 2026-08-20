@@ -45,17 +45,33 @@ class TestSapianTheme(TransactionCase):
         ).group(0)
         self.assertEqual(brand.brand_primary(), declared.upper())
 
-    def test_the_mark_takes_its_colour_from_the_palette(self):
-        """No hex in the mark, and no way for it to acquire one.
+    def test_the_mark_carries_its_own_four_colours(self):
+        """The reverse of what this test used to assert, and deliberately so.
 
-        `fill="currentColor"` is what lets the same file be brand-coloured on
-        the login page and in the backend footer without a second definition of
-        the colour — and it is why the hex guard below needs no exemption for
-        it.
+        It required `fill="currentColor"` and NO hex, on the reasoning that a
+        monochrome mark keeps the colour in one place. That decision was
+        reversed on 20 Aug 2026 — see the header of views/sapian_mark.xml — and
+        this test was left behind asserting the old one, which is how a
+        deliberate change reads as a regression.
+
+        What is checkable HERE is the shape of the result: four petals, four
+        distinct colours, and no fallback to the enclosing text colour. That
+        the four values are byte-for-byte the ones in `brand/sapian-logo.svg`
+        is asserted by `tests_fast/test_sapian_mark_is_the_logo.py`, which is a
+        fast test because `brand/` is not on the addons path and an Odoo test
+        cannot see it.
         """
         inline = (MODULE_ROOT / "views" / "sapian_mark.xml").read_text()
-        self.assertIn('fill="currentColor"', inline)
-        self.assertNotRegex(inline, HEX_LITERAL.pattern)
+        self.assertNotIn(
+            "currentColor",
+            inline,
+            "the mark fell back to the enclosing colour instead of its own",
+        )
+        fills = re.findall(r'<path [^>]*fill="(#[0-9A-Fa-f]{6})"', inline)
+        self.assertEqual(len(fills), 4, "expected four painted petals, got %r" % (fills,))
+        self.assertEqual(
+            len(set(fills)), 4, "the four petals are not four colours: %r" % (fills,)
+        )
 
     def test_no_raw_hex_outside_palette(self):
         """The one-edit property, enforced.
