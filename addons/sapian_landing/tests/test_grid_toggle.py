@@ -79,4 +79,20 @@ class TestGridTogglesBackToTheLanding(HttpCase):
                 "web_responsive did not clear is_redirect_home, so the grid "
                 "button will still take its one-way branch",
             )
-        self.browser_js("/odoo", TOGGLE_JS, "web.Chrome", login="admin", timeout=120)
+        self.browser_js(
+            "/odoo",
+            TOGGLE_JS,
+            # A BOOLEAN, and this is the third time in this repository that it
+            # was not. `_wait_ready` compares the CDP result against
+            # {'type': 'boolean', 'value': True}, so the pre-19 idiom
+            # "web.Chrome" is never ready: the job spent 85 seconds timing out
+            # on `Runtime.evaluate({'expression': 'try { web.Chrome } catch {}'})`
+            # and reported it as though the page had never loaded. The navbar is
+            # the right gate here — the script below waits for the landing page
+            # itself, and gives a far better message than a ready timeout if it
+            # never arrives. Guarded now by
+            # tests_fast/test_browser_ready_is_a_boolean.py.
+            "!!document.querySelector('.o_main_navbar')",
+            login="admin",
+            timeout=120,
+        )
