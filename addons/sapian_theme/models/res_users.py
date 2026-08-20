@@ -132,8 +132,33 @@ SAPIAN_LAUNCHER_DEFAULTS = {
 SAPIAN_NO_HOME_ACTION = {"action_id": False}
 
 
+#: The ONE opt-in that turns public sign-up back on, wherever it is decided.
+#:
+#: An `ir.config_parameter` rather than a field, so it can be set on a running
+#: tenant with no upgrade, and so it is visible in Technical > System Parameters
+#: — which is where somebody auditing a client's ERP would look for it.
+#:
+#: It lives HERE, on the module both bridges depend on, because sign-up is
+#: decided in two different places depending on what is installed: the
+#: `auth_signup` parameter on a plain tenant, the per-website column once
+#: `website` is on. Two switches for one property is how a tenant ends up half
+#: open, so there is one switch and two bridges that read it.
+ALLOW_PUBLIC_SIGNUP_PARAM = "sapian_theme.allow_public_signup"
+
+
 class ResUsers(models.Model):
     _inherit = "res.users"
+
+    @api.model
+    def _sapian_public_signup_allowed(self):
+        """True only when an operator has explicitly opted in.
+
+        Anything else — unset, empty, '0', 'off', a typo — is False. A security
+        default that can be switched off by misspelling something is not a
+        default.
+        """
+        value = self.env["ir.config_parameter"].sudo().get_param(ALLOW_PUBLIC_SIGNUP_PARAM)
+        return str(value or "").strip().lower() in ("1", "true", "yes", "on")
 
     @api.model
     def default_get(self, fields_list):

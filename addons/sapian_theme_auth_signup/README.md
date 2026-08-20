@@ -120,3 +120,48 @@ different mechanism (a data override on `body_html`, not view inheritance):
 | Unregistered User Reminder | `auth_signup.mail_template_data_unregistered_users` | an invited user who never signed up |
 
 The middle one is customer-facing and is the same defect as this module's.
+
+## Public sign-up is off unless somebody turned it on
+
+`models/res_users.py` overrides `res.users._get_signup_invitation_scope()` — the
+method `auth_signup`'s own login controller calls — and serves **b2b
+(invitation only)** unless an operator has explicitly opted in with
+
+    ir.config_parameter  sapian_theme.allow_public_signup = 1
+
+**Why the module needed this at all.** Measured on tenants built exactly the way
+`provision_client.sh` builds them (CI job *A stranger cannot get an account*):
+
+| Tenant | `/web/signup` | user created |
+|---|---|---|
+| sign-up switched on deliberately | 200 | **yes** — the probe can fail |
+| never ran the provisioner's phase 4 | *was* 200 | *was* **yes** |
+| default modules, no `website` | 404 | no |
+| default modules + `website` + `website_sale` | 404 | no |
+
+The last two were already closed — but for different reasons, and only one of
+them was the product's. With `website`, `sapian_theme_website` overrides the
+scope on every request. Without it, the tenant was closed because **a shell
+script had once written a parameter**, and Odoo's own default for that parameter
+is `b2c` — free sign-up. A restored backup, a database created from the database
+manager, or a tenant provisioned before that phase existed had nothing closing
+it. "Closed because a script ran" is a step somebody can skip, and nothing tells
+them; this override is a property of the product.
+
+**One switch, two bridges.** `ALLOW_PUBLIC_SIGNUP_PARAM` is defined on
+`sapian_theme` and read by both this module and `sapian_theme_website`, because
+sign-up is decided in two different places depending on what is installed. Two
+switches for one property is how a tenant ends up half open.
+
+**Existing tenants.** The override only exists where this module's code is
+loaded, so a tenant running an older checkout is unaffected until it is
+upgraded:
+
+    docker compose -f docker/docker-compose.yml run --rm odoo \
+      odoo -d <db> -u sapian_theme_auth_signup --stop-after-init
+
+The module is `auto_install` and is already present on every real tenant, since
+`auth_signup` is itself auto-installed on (base_setup, mail, web). Until that
+upgrade runs, such a tenant is closed only if phase 4 ever ran on it — check it
+with `scripts/check_public_signup.py`, which asks over HTTP rather than reading
+the setting.

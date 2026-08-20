@@ -149,7 +149,14 @@ def main():
     offers = 1 if _OFFERS_SIGNUP.search(login_html) else 0
 
     get_status, signup_html, signup_url = session.get("/web/signup?db=%s" % args.db)
-    token = _CSRF.search(signup_html)
+    # A TOKEN FROM WHICHEVER PAGE WILL GIVE ONE. When sign-up is closed
+    # /web/signup is a 404 and carries no form, so a POST built only from it is
+    # rejected for a MISSING CSRF TOKEN — which is a weaker refusal than the one
+    # being claimed, and would look identical on a tenant that was wide open but
+    # happened to 404 that one page. The login page always renders and always
+    # carries a token, so the stranger arrives with a valid one and is refused
+    # on the merits.
+    token = _CSRF.search(signup_html) or _CSRF.search(login_html)
     form = {
         "login": STRANGER_LOGIN,
         "name": STRANGER_NAME,
@@ -168,8 +175,13 @@ def main():
     print("SAPIAN-SIGNUP tenant=%s" % label)
     print("SAPIAN-SIGNUP login_page=%s offers_signup=%d" % (login_status, offers))
     print(
-        "SAPIAN-SIGNUP signup_get=%s csrf=%d landed=%s"
-        % (get_status, 1 if token else 0, urllib.parse.urlparse(signup_url).path)
+        "SAPIAN-SIGNUP signup_get=%s csrf=%d csrf_from=%s landed=%s"
+        % (
+            get_status,
+            1 if token else 0,
+            "signup" if _CSRF.search(signup_html) else ("login" if token else "none"),
+            urllib.parse.urlparse(signup_url).path,
+        )
     )
     print(
         "SAPIAN-SIGNUP signup_post=%s landed=%s"

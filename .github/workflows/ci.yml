@@ -279,11 +279,13 @@ jobs:
           # move with the suite. Measured, not guessed: run 32232939918 summed
           # 632 across its module stats lines, of which sapian_theme_mail is 68
           # — a floor left at 418 would not have noticed that module vanishing.
-          # 462 -> 490 when the filing period became per-tax: seven more in
+          # 490 -> 500 when sapian_theme_auth_signup gained the sign-up scope
+          # override and its six tests. 462 -> 490 when the filing period
+          # became per-tax: seven more in
           # sapian_landing and the demo's payroll goldens moved to the Ethiopian
           # cycle. Measured, not guessed: run 32352484471 summed 497 before this
           # change.
-          MIN_EXPECTED_TESTS=490
+          MIN_EXPECTED_TESTS=500
           EXECUTED=$(grep -oE "odoo\.tests\.stats: [A-Za-z0-9_]+: [0-9]+ tests" /tmp/odoo-test.log \
                      | awk '$4 == "tests" { total += $3 } END { print total + 0 }')
           echo "Executed ${EXECUTED} tests (floor ${MIN_EXPECTED_TESTS}):"
@@ -2300,14 +2302,19 @@ jobs:
     # through the ORM, not through the API, so nothing the product believes
     # about itself can make the answer agree.
     #
-    # Three tenants, and the first one is what makes the other two mean
+    # Four tenants, and the first one is what makes the other three mean
     # anything:
     #   1. OPEN ON PURPOSE — the probe must create an account. A guard never
     #      seen to fail is another thing that passes by doing nothing.
-    #   2. A plain client tenant, provisioned the way provision_client.sh does
+    #   2. A tenant that NEVER RAN the provisioner's phase 4: a restored backup,
+    #      a database made from the database manager, a tenant built by hand,
+    #      or one provisioned before phase 4 existed. Odoo's own default for the
+    #      setting is b2c — free sign-up — so this one was open until
+    #      sapian_theme_auth_signup started overriding the scope.
+    #   3. A plain client tenant, provisioned the way provision_client.sh does
     #      it, with the DEFAULT module list — which has no `website`. This is
     #      what an ordinary client gets.
-    #   3. The same, plus `website` and `website_sale` — because website_sale's
+    #   4. The same, plus `website` and `website_sale` — because website_sale's
     #      post-install hook writes `auth_signup_uninvited = 'b2c'` onto every
     #      website row, and that column outranks the parameter we set.
     container:
@@ -2333,7 +2340,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Walk up to three tenants as a stranger and try to sign up
+      - name: Walk up to four tenants as a stranger and try to sign up
         shell: bash
         run: |
           set -uo pipefail
@@ -2404,7 +2411,33 @@ jobs:
           fi
           echo "OK — the probe DOES create an account when sign-up is open, so it can fail."
 
-          # ---- 2. a plain client tenant, default modules, no website ----
+          # ---- 2. THE TENANT THAT NEVER RAN PHASE 4 ---------------------
+          # A restored backup, a database made from the database manager, a
+          # tenant built by hand, or any tenant provisioned before phase 4
+          # existed. Odoo's own default for the setting is b2c — FREE SIGN-UP —
+          # so before sapian_theme_auth_signup carried the override this tenant
+          # was open to the internet. It is the reason the fix is a property of
+          # the product and not a step in a shell script.
+          provision_without_phase4 () {
+            local db="$1"
+            odoo ${ARGS} -d "${db}" -i base --without-demo=all --stop-after-init --log-level=warn
+            echo "company = env['res.company'].search([], limit=1); company.country_id = env['res.country'].search([('code','=','ET')], limit=1); env.cr.commit(); print('country', company.country_id.code)" \
+              | odoo shell ${ARGS} -d "${db}" --no-http --stop-after-init --log-level=warn
+            odoo ${ARGS} -d "${db}" -i "${MODULES}" --without-demo=all --stop-after-init --log-level=warn 2>&1 | tail -3
+            # And put Odoo's own default back, in case installing something
+            # wrote one: this tenant must be exactly as Odoo would leave it.
+            echo "env['ir.config_parameter'].sudo().set_param('auth_signup.invitation_scope', 'b2c'); env.cr.commit(); print('UNCONFIGURED', env['ir.config_parameter'].sudo().get_param('auth_signup.invitation_scope'), env['res.users']._get_signup_invitation_scope())" \
+              | odoo shell ${ARGS} -d "${db}" --no-http --stop-after-init --log-level=warn
+          }
+          provision_without_phase4 ci_signup_raw
+          serve ci_signup_raw || exit 1
+          python3 "${GITHUB_WORKSPACE}/scripts/check_public_signup.py" \
+            --base-url http://localhost:8069 --db ci_signup_raw \
+            --label "never ran the provisioner's phase 4 (Odoo default b2c)" | tee /tmp/probe-raw.log
+          RAW=${PIPESTATUS[0]}
+          stop
+
+          # ---- 3. a plain client tenant, default modules, no website ----
           provision ci_signup_plain ""
           serve ci_signup_plain || exit 1
           python3 "${GITHUB_WORKSPACE}/scripts/check_public_signup.py" \
@@ -2413,7 +2446,7 @@ jobs:
           PLAIN=${PIPESTATUS[0]}
           stop
 
-          # ---- 3. the same tenant WITH website + website_sale -----------
+          # ---- 4. the same tenant WITH website + website_sale -----------
           provision ci_signup_site ",website,website_sale"
           serve ci_signup_site || exit 1
           python3 "${GITHUB_WORKSPACE}/scripts/check_public_signup.py" \
@@ -2422,16 +2455,56 @@ jobs:
           SITE=${PIPESTATUS[0]}
           stop
 
-          echo "::group::What the three tenants reported"
-          cat /tmp/probe-open.log /tmp/probe-plain.log /tmp/probe-site.log
+          echo "::group::What the four tenants reported"
+          cat /tmp/probe-open.log /tmp/probe-raw.log /tmp/probe-plain.log /tmp/probe-site.log
           echo "::endgroup::"
 
-          for f in /tmp/probe-plain.log /tmp/probe-site.log; do
+          for f in /tmp/probe-raw.log /tmp/probe-plain.log /tmp/probe-site.log; do
             grep -q "SAPIAN-SIGNUP verdict=" "$f" \
               || { echo "::error::${f} never reported a verdict. ABORTED, not a pass."; exit 1; }
           done
+          if [ "${RAW}" -ne 0 ]; then
+            echo "::error::A stranger got an account on a tenant that never ran the provisioner's phase 4. Sign-up is closed only for tenants a shell script happened to touch, which is not a default."
+            exit 1
+          fi
           if [ "${PLAIN}" -ne 0 ] || [ "${SITE}" -ne 0 ]; then
             echo "::error::A stranger got an account on a tenant provisioned the way clients are provisioned."
             exit 1
           fi
-          echo "OK — no user was created on either provisioned tenant, and the probe is known to be able to create one."
+          echo "OK — no user was created on any of the three closed tenants, and the probe is known to be able to create one."
+
+      - name: The no-website tests ran on a database that has no website
+        # sapian_theme_auth_signup's tests SKIP themselves when `website` is
+        # installed, because on such a database the website bridge would be the
+        # thing closing sign-up and the pass would be attributed to the wrong
+        # module. A skip is not a pass, and eight silent skips have already cost
+        # this project a green run that meant nothing — so they are run here,
+        # against ci_signup_plain, which is the tenant they are about, and a
+        # non-zero skip count fails.
+        shell: bash
+        run: |
+          set -uo pipefail
+          ARGS="--db_host=db --db_port=5432 --db_user=odoo --db_password=odoo
+                --data-dir=/tmp/odoo-data
+                --addons-path=${GITHUB_WORKSPACE}/addons,${GITHUB_WORKSPACE}/vendor/oca_web,/usr/lib/python3/dist-packages/odoo/addons
+                --workers=0 --max-cron-threads=0 --stop-after-init"
+          odoo ${ARGS} -d ci_signup_plain -u sapian_theme_auth_signup \
+            --test-enable --test-tags '/sapian_theme_auth_signup' \
+            --log-level=test 2>&1 | tee /tmp/signup-tests.log
+          grep -q "odoo\.tests\.result:" /tmp/signup-tests.log \
+            || { echo "::error::The sign-up tests never reported. ABORTED, not a pass."; exit 1; }
+          if grep -qE "tests\.result: ([1-9][0-9]* failed|0 failed, [1-9][0-9]* error)" /tmp/signup-tests.log; then
+            echo "::error::sapian_theme_auth_signup's own tests failed."
+            exit 1
+          fi
+          if grep -qE "[1-9][0-9]* skipped" /tmp/signup-tests.log; then
+            echo "::error::A sign-up test skipped, so it proved nothing:"
+            grep -E "skipped" /tmp/signup-tests.log
+            exit 1
+          fi
+          RAN=$(sed -n 's/.*tests\.result:.* of \([0-9][0-9]*\) tests.*/\1/p' /tmp/signup-tests.log | tail -1)
+          if [ -z "${RAN:-}" ] || [ "${RAN}" -lt 8 ]; then
+            echo "::error::Expected at least 8 sapian_theme_auth_signup tests, the runner reported '${RAN:-none}'."
+            exit 1
+          fi
+          echo "OK — ${RAN} tests, no skips, on a tenant with no website."
