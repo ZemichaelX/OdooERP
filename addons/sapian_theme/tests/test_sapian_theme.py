@@ -61,9 +61,16 @@ class TestSapianTheme(TransactionCase):
         fast test because `brand/` is not on the addons path and an Odoo test
         cannot see it.
         """
-        inline = (MODULE_ROOT / "views" / "sapian_mark.xml").read_text()
+        markup = (MODULE_ROOT / "views" / "sapian_mark.xml").read_text()
+        # THE <svg> ONLY, exactly as tests_fast/test_sapian_mark_is_the_logo.py
+        # slices it. The file's header comment explains the reversal by NAMING
+        # the value it reversed, so a whole-file search for "currentColor"
+        # fails on the prose rather than on the markup — the same trap as
+        # scanning comments for hex literals, which this repository has now
+        # been caught by twice.
+        inline = markup[markup.index("<svg") : markup.index("</svg>")]
         self.assertNotIn(
-            "currentColor",
+            'fill="currentColor"',
             inline,
             "the mark fell back to the enclosing colour instead of its own",
         )

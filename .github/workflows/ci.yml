@@ -1433,7 +1433,11 @@ jobs:
           # A REPORTED RESULT IS NOT A RUN SUITE. Both classes are tagged
           # post_install, and a mis-typed class name in --test-tags selects
           # nothing while the runner still prints a clean result line.
-          RAN=$(grep -oE "tests\.result: [0-9]+ tests" /tmp/brand-install.log | tail -1 | grep -oE "[0-9]+")
+          # `of N tests`, because that is what Odoo actually prints:
+          #   "odoo.tests.result: 0 failed, 0 error(s) of 7 tests when ..."
+          # The first version of this line matched "result: N tests", found
+          # nothing, and failed the job on a run where all 7 tests had passed.
+          RAN=$(sed -n 's/.*tests\.result:.* of \([0-9][0-9]*\) tests.*/\1/p' /tmp/brand-install.log | tail -1)
           if [ -z "${RAN:-}" ] || [ "${RAN}" -lt 7 ]; then
             echo "::error::Expected at least 7 brand-asset tests, the runner reported '${RAN:-none}'."
             exit 1
