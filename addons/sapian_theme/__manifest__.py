@@ -18,6 +18,9 @@
         # The mark first: login_templates.xml t-calls it.
         "views/sapian_mark.xml",
         "views/login_templates.xml",
+        # The browser tab. A view, because res.company has no favicon field in
+        # Odoo 19 — see the file for what assuming otherwise cost.
+        "views/favicon.xml",
         # The other emitter of "Powered by Odoo" — reached by the portal,
         # and by the login page itself when `website` is installed.
         "views/brand_promotion.xml",

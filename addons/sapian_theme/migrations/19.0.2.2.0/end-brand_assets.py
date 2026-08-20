@@ -1,17 +1,21 @@
 # -*- coding: utf-8 -*-
-"""Put our favicon (and, where none was chosen, our logo) on an EXISTING tenant.
+"""Put our logo, where none was chosen, on an EXISTING tenant.
 
 THE OTHER HALF OF THE PAIR, and the half that is easy to forget.
 
 `post_init_hook` runs on install and never on upgrade. A tenant that already
 has `sapian_theme` — which is every tenant we have provisioned — would keep
-Odoo's purple favicon in every browser tab forever, because nothing would ever
-run the code that replaces it. That is the same install-versus-upgrade split
+Odoo's stock logo on its invoices forever, because nothing would ever run the
+code that replaces it. That is the same install-versus-upgrade split
 `sapian_theme_mail` documents for the bot's name, and it is why both paths are
 proved separately in CI rather than one being assumed from the other.
 
+The favicon needs no migration at all, and that is not an omission: it is a
+view (`views/favicon.xml`), and a module upgrade reloads views. Only records
+have this problem.
+
 `end-` so it runs at STEP 3.5, after every module in the graph has loaded:
-`res.company._sapian_apply_brand_assets` is defined by this module and the
+`res.company._sapian_apply_default_logo` is defined by this module and the
 `file_open` it does resolves against the addons path, both of which want a
 fully loaded registry.
 
@@ -30,9 +34,9 @@ def migrate(cr, version):
     from odoo import api, SUPERUSER_ID  # noqa: PLC0415 - migration-time import
 
     env = api.Environment(cr, SUPERUSER_ID, {})
-    written = env["res.company"]._sapian_apply_brand_assets()
+    written = env["res.company"]._sapian_apply_default_logo()
     _logger.info(
-        "sapian_theme: upgrade wrote brand assets on %d compan%s",
+        "sapian_theme: upgrade wrote the default logo on %d compan%s",
         written,
         "y" if written == 1 else "ies",
     )

@@ -14,10 +14,10 @@ here on the day it is added, which is the only moment the fix is cheap.
 
 WHY A FAST TEST. Everything below is a fact about files in the repository, and
 `brand/` is not on the addons path, so an Odoo test cannot see half of it. The
-runtime half — that the favicon and logo actually reach `res.company`, on
-install AND on upgrade — is proved separately in
-`sapian_theme/tests/test_brand_assets.py`, because that is a fact about records
-and only Odoo can answer it.
+runtime half — that the favicon reaches the served <head> and the logo reaches
+`res.company`, on install AND on upgrade — is proved separately in
+`sapian_theme/tests/test_brand_assets.py`, because those are facts about a
+running database and only Odoo can answer them.
 """
 
 import os

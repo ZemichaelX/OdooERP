@@ -1,38 +1,57 @@
 # -*- coding: utf-8 -*-
-"""The favicon and the default logo reach `res.company` RECORDS.
+"""The favicon reaches the browser tab, and our logo reaches `res.company`.
 
 WHY THIS IS SEPARATE FROM THE FAST TEST
 ---------------------------------------
 `tests_fast/test_every_brand_display_point.py` proves the FILES exist and are
-ours. That is necessary and not sufficient: both of these live on records, and
-a file nobody writes to a record is a file nobody sees.
+ours. That is necessary and not sufficient: a file nobody serves is a file
+nobody sees.
 
-INSTALL AND UPGRADE ARE PROVED SEPARATELY, and that is the whole point of this
-file. It is the same split `sapian_theme_mail` documents for the bot's name: a
-`post_init_hook` runs on install and never on `-u`, so a tenant that already has
-this module would keep Odoo's purple favicon in every browser tab forever while
-a freshly installed one looked correct. Asserting one path and assuming the
-other is how that defect ships.
+TWO DELIVERY MECHANISMS, AND THEY ARE NOT INTERCHANGEABLE
+---------------------------------------------------------
+The first version of this module wrote BOTH assets to `res.company`, and could
+not: **`res.company` has no `favicon` field in Odoo 19.** `logo`,
+`uses_default_logo` and `primary_color` are on `base`'s res.company; the favicon
+belongs to the `website` model. The write raised `AttributeError` inside
+`post_init_hook`, the registry failed to load, and every CI job that installs
+this module died in setup.
 
-  * install  — `post_init_hook`, exercised by this module being installed at
-               all, and asserted here against the database it produced.
-  * upgrade  — `migrations/19.0.2.2.0/end-brand_assets.py`, exercised by the
-               `brand-assets-survive-upgrade` CI job which runs `-u
-               sapian_theme` against a database where the assets have been
-               deliberately reset to Odoo's, and asserted by
-               `test_the_upgrade_path_rewrites_a_reset_company`.
-  * later    — a company created AFTER install, covered by the `create`
-               override and asserted here. Multi-company is a requirement of
-               this product, and a second company is exactly the case a data
-               file cannot reach.
+  * the favicon — a VIEW, `views/favicon.xml`, inheriting `web.layout` so the
+    `x_icon` fallback in its <head> is ours instead of Odoo's. Reaching install
+    and upgrade alike, because that is what loading a data file does. Asserted
+    here by fetching a real page and reading the <link> the browser reads.
+  * the logo — a RECORD, so it has the install-versus-upgrade split
+    `sapian_theme_mail` documents for the bot's name: a `post_init_hook` runs on
+    install and never on `-u`, so a tenant that already has this module would
+    keep Odoo's stock logo forever while a freshly installed one looked correct.
+    Asserting one path and assuming the other is how that defect ships.
+      - install — `post_init_hook`, asserted here against the database it built.
+      - upgrade — `migrations/19.0.2.2.0/end-brand_assets.py`, exercised by the
+        `brand-assets` CI job's real `-u` against a database whose logo has been
+        deliberately reset, and asserted here at the method level.
+      - later   — a company created AFTER install, covered by the `create`
+        override. Multi-company is a requirement of this product, and a second
+        company is exactly the case a data file cannot reach.
 """
 
 import base64
 
-from odoo.tests import TransactionCase, tagged
+from odoo.tests import HttpCase, TransactionCase, tagged
 from odoo.tools import file_open
 
-from ..models.res_company import FAVICON, LOGO
+from ..models.res_company import LOGO
+
+# A real 1x1 PNG. It has to decode: `logo` is related to `partner_id.image_1920`,
+# an `fields.Image`, and Odoo runs every write through `ImageProcess`, which
+# raises on bytes it cannot open. A plausible-looking blob with a PNG magic
+# number is not an image.
+A_CLIENTS_OWN_LOGO = (
+    b"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAE"
+    b"hQGAhKmMIQAAAABJRU5ErkJggg=="
+)
+
+OUR_FAVICON = "/sapian_theme/static/src/img/favicon.png"
+ODOO_FAVICON = "/web/static/img/favicon.ico"
 
 
 def _asset(path):
@@ -41,35 +60,65 @@ def _asset(path):
 
 
 @tagged("post_install", "-at_install")
+class TestFaviconReachesTheTab(HttpCase):
+    """Read the page the browser reads, not the view record behind it.
+
+    Asserting that the `sapian_theme.favicon` view EXISTS would pass on a
+    database where an xpath silently matched nothing — `web.layout` is upstream
+    markup and can move. The served <head> cannot lie about it.
+    """
+
+    def test_the_login_page_serves_our_favicon(self):
+        page = self.url_open("/web/login").text
+        self.assertIn(
+            OUR_FAVICON,
+            page,
+            "the login page's <head> does not point at our favicon; the "
+            "web.layout inheritance in views/favicon.xml matched nothing",
+        )
+        self.assertNotIn(
+            ODOO_FAVICON,
+            page,
+            "the login page still falls back to Odoo's favicon",
+        )
+
+    def test_the_backend_serves_our_favicon(self):
+        """The tab a client's staff have open all day."""
+        self.authenticate("admin", "admin")
+        page = self.url_open("/odoo").text
+        self.assertIn(OUR_FAVICON, page, "the backend tab is not wearing our favicon")
+        self.assertNotIn(ODOO_FAVICON, page, "the backend still falls back to Odoo's")
+
+    def test_the_favicon_file_is_actually_served(self):
+        """A correct href to a 404 is still Odoo's icon in the tab."""
+        response = self.url_open(OUR_FAVICON)
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(
+            response.content.startswith(b"\x89PNG\r\n\x1a\n"),
+            "the favicon route did not return a PNG",
+        )
+
+
+@tagged("post_install", "-at_install")
 class TestBrandAssets(TransactionCase):
-    def test_every_company_carries_our_favicon(self):
-        """Not "the field is set" — the field equals OUR bytes.
+    def test_no_company_is_left_on_odoos_stock_logo(self):
+        """`uses_default_logo` IS the question, and it is Odoo's own answer.
 
-        Odoo ships its own favicon as the column default, so a non-empty
-        favicon is a success signal that a completely unbranded database also
-        produces.
+        Not "the logo equals ours": a client who uploaded their own is correct
+        and must not be flagged. What must not survive install is a company
+        still wearing the stock image nobody chose.
         """
-        ours = _asset(FAVICON)
-        wrong = (
-            self.env["res.company"]
-            .sudo()
-            .search([])
-            .filtered(lambda company: company.favicon != ours)
-        )
+        companies = self.env["res.company"].sudo().search([])
+        self.assertTrue(companies, "no company to check — this proves nothing")
+        stock = companies.filtered(lambda company: company.uses_default_logo)
         self.assertFalse(
-            wrong,
-            "companies still serving a favicon that is not ours: %s"
-            % wrong.mapped("display_name"),
+            stock,
+            "companies still carrying Odoo's stock logo: %s" % stock.mapped("display_name"),
         )
 
-    def test_a_company_created_after_install_gets_them_too(self):
+    def test_a_company_created_after_install_gets_it_too(self):
         """The case a data file cannot reach."""
         company = self.env["res.company"].create({"name": "Brand Asset Latecomer"})
-        self.assertEqual(
-            company.favicon,
-            _asset(FAVICON),
-            "a company created after install kept Odoo's favicon",
-        )
         self.assertEqual(
             company.logo,
             _asset(LOGO),
@@ -84,20 +133,26 @@ class TestBrandAssets(TransactionCase):
         than of the code it wires up.
         """
         company = self.env["res.company"].create({"name": "Brand Asset Reset"})
-        company.sudo().write({"favicon": False})
-        self.assertNotEqual(company.favicon, _asset(FAVICON))
-        written = self.env["res.company"]._sapian_apply_brand_assets(company)
+        company.sudo().write({"logo": False})
+        self.assertNotEqual(company.logo, _asset(LOGO))
+        written = self.env["res.company"]._sapian_apply_default_logo(company)
         self.assertEqual(written, 1, "the reset company was not rewritten")
-        self.assertEqual(company.favicon, _asset(FAVICON))
+        self.assertEqual(company.logo, _asset(LOGO))
 
     def test_a_client_logo_is_never_overwritten(self):
-        """The logo is THEIRS. Only the favicon is ours unconditionally.
+        """The logo is THEIRS.
 
         A client who uploads their own logo through onboarding must keep it
         through every upgrade, or this module is vandalising their invoices.
         """
         company = self.env["res.company"].create({"name": "Brand Asset Client"})
-        theirs = base64.b64encode(b"\x89PNG\r\n\x1a\n" + b"not our mark, but theirs" * 40)
-        company.sudo().write({"logo": theirs})
-        self.env["res.company"]._sapian_apply_brand_assets(company)
-        self.assertEqual(company.logo, theirs, "the client's own logo was overwritten by ours")
+        company.sudo().write({"logo": A_CLIENTS_OWN_LOGO})
+        self.assertFalse(
+            company.uses_default_logo,
+            "the fixture did not take, so this test cannot discriminate",
+        )
+        written = self.env["res.company"]._sapian_apply_default_logo(company)
+        self.assertEqual(written, 0, "we wrote to a company that had chosen its own logo")
+        self.assertNotEqual(
+            company.logo, _asset(LOGO), "the client's own logo was overwritten by ours"
+        )
