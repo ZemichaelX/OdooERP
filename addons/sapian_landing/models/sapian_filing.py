@@ -76,14 +76,34 @@ class SapianFiling(models.Model):
                 raise ValidationError(self.env._("The period start must be before its end."))
 
     @api.model
-    def _filed_on_for(self, filing_key, period_end, company):
-        """The submission date for one period, or ``False``."""
+    def _filed_on_for(self, filing_key, period_start, period_end, company):
+        """The submission date for one period, or ``False``.
+
+        MATCHED BY OVERLAP AT THE MIDPOINT, not by `period_end =`. Exact date
+        equality worked only while every period was a Gregorian month computed
+        by one function: the moment a filing is counted in Ethiopian months, the
+        row on the page and the record an operator typed can disagree by a day
+        over where Hamle ends — Pagume is 5 days in three years out of four and
+        6 in the fourth, so a conversion done on the wrong side of a leap year
+        moves every boundary after it. Two records both meaning "Hamle 2018"
+        would then never match, the page would read `due` forever, and the
+        operator would be told to file a return they had already filed.
+
+        The midpoint is the test because filing periods do not overlap each
+        other: the middle of Hamle is inside Hamle and inside nothing else, and
+        it stays inside it under a boundary that moves by a day or two.
+        """
+        if not period_start or not period_end:
+            return False
+        midpoint = period_start + (period_end - period_start) / 2
         record = self.sudo().search(
             [
                 ("company_id", "=", company.id),
                 ("filing_key", "=", filing_key),
-                ("period_end", "=", period_end),
+                ("period_start", "<=", midpoint),
+                ("period_end", ">=", midpoint),
             ],
+            order="filed_on desc, id desc",
             limit=1,
         )
         return record.filed_on or False

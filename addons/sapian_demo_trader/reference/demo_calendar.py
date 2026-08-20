@@ -34,9 +34,50 @@ pinning the tenant to a month that recedes.
 A demo whose books begin twenty days before the demo is its own kind of
 unconvincing, which is the other half of why there are three trading months and
 not one.
+
+PAYROLL RUNS ON ETHIOPIAN MONTHS, AND THE REST DOES NOT
+--------------------------------------------------------
+`docs/ethiopian-tax-reference.md` section 2 is VERIFIED that the employment
+income tax period is an ETHIOPIAN month, and records that the payroll CYCLE
+itself is a business choice: one accountant runs Ethiopian months, the other
+Gregorian. This tenant runs Ethiopian months — accountant 1's practice — because
+that is the cycle the reference settles the filing mapping for. A Gregorian-cycle
+run cannot be placed onto a filing month from anything the reference says, and a
+demo should not show the product guessing.
+
+The two calendars overlap rather than nest, which is exactly what a real
+Ethiopian company's books look like: trading, VAT and withholding on Gregorian
+months, payroll and its declaration on Ethiopian ones. `ethiopian_payroll_months`
+returns one Ethiopian month ending inside each Gregorian trading month, plus the
+last complete Ethiopian month — the one the landing page asks for.
 """
 
+import importlib.util
+import os
+import sys as _sys
 from datetime import date, timedelta
+
+# The Ethiopian calendar, reachable from inside Odoo and from `tests_fast/`,
+# which loads this file by path. Same shape as the fallback in
+# sapian_landing/reference/filing_status.py, and for the same reason: a package
+# import would make the goldens uncollectable, and a silent None would make them
+# pass by not running.
+try:  # pragma: no cover - exercised on whichever side is running
+    from odoo.addons.l10n_et_calendar.reference import et_calendar
+except ImportError:  # pragma: no cover
+    _ET = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "..",
+        "..",
+        "l10n_et_calendar",
+        "reference",
+        "et_calendar.py",
+    )
+    _NAME = "sapian_demo_trader._et_calendar_offdisk"
+    _spec = importlib.util.spec_from_file_location(_NAME, _ET)
+    et_calendar = importlib.util.module_from_spec(_spec)
+    _sys.modules[_NAME] = et_calendar  # dataclasses reads sys.modules on decorate
+    _spec.loader.exec_module(et_calendar)
 
 #: How many whole trading months the tenant has traded for.
 TRADING_MONTHS = 3
@@ -96,6 +137,44 @@ def day_in(window, day):
     """
     first, last = window
     return first.replace(day=min(day, last.day))
+
+
+#: How many Ethiopian payroll months the tenant runs. One ends inside each of
+#: the three Gregorian trading months, and the fourth is the last Ethiopian
+#: month to have finished — which is the one the landing page asks for and the
+#: whole reason the count is four rather than three.
+PAYROLL_MONTHS = 4
+
+
+def _ethiopian_month_window(year, month):
+    last_day = et_calendar.days_in_month(year, month)
+    return (
+        et_calendar.ethiopian_to_gregorian(year, month, 1),
+        et_calendar.ethiopian_to_gregorian(year, month, last_day),
+    )
+
+
+def ethiopian_payroll_months(today=None):
+    """The Ethiopian months this tenant runs payroll for, oldest first.
+
+    The newest is the last Ethiopian month to have FINISHED before ``today``,
+    because that is the period the landing page shows as due — a run for the
+    month still in progress would be a half-month payslip under a deadline.
+
+    Thirteen months to the Ethiopian year, and the thirteenth (Pagume) is 5 or 6
+    days long. It is not skipped: a company pays its staff in Pagume too, and
+    Pagume is the one month where "+30 days" and "the end of the following
+    month" give different filing deadlines, so a demo that stepped over it would
+    never show the difference.
+    """
+    today = today or date.today()
+    current = et_calendar.gregorian_to_ethiopian(today)
+    index = (current.year * 13) + (current.month - 1) - 1  # the month before this one
+    months = []
+    for offset in range(PAYROLL_MONTHS - 1, -1, -1):
+        year, month = divmod(index - offset, 13)
+        months.append(_ethiopian_month_window(year, month + 1))
+    return months
 
 
 def iso(value):

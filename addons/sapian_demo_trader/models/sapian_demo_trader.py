@@ -203,21 +203,29 @@ class SapianDemoTrader(models.AbstractModel):
         # a tenant with only the build month in it shows an empty page from the
         # first of the following month onwards.
         #
-        # The two earlier months carry SERVICES, expenses, payments and payroll;
-        # the newest carries those AND the goods flow, the quotation pipeline
-        # and the full compliance showcase. Stated rather than implied: the
+        # The two earlier months carry SERVICES, expenses and payments; the
+        # newest carries those AND the goods flow, the quotation pipeline and
+        # the full compliance showcase. Stated rather than implied: the
         # inventory story is deliberately not repeated three times, because
         # opening stock would have to be three times larger to survive it and
         # the demo's headline stock figures would stop being readable.
         for month in ("early", "middle"):
-            demo._run_earlier_month(partners, products, employees, month)
+            demo._run_earlier_month(partners, products, month)
         demo._run_sales_flow(partners, products)
         # After the invoiced flow, so the pipeline's one confirmed order draws
         # on what the month actually leaves on hand rather than on opening stock.
         demo._create_quotations(partners, products)
         demo._run_purchase_flow(partners, products)
         demo._create_direct_bills(partners, products)
-        demo._run_payroll(employees)
+        # PAYROLL RUNS ON ITS OWN CALENDAR, and not once per trading month.
+        # The employment income tax period is an ETHIOPIAN month — VERIFIED,
+        # docs/ethiopian-tax-reference.md section 2 — so this tenant runs the
+        # cycle whose mapping onto a filing month the reference settles. One
+        # Ethiopian month ends inside each Gregorian trading month, so each
+        # month's profit still carries a month's wages; the fourth ends after
+        # them, in the month the landing page reads.
+        demo._run_payroll_year(employees)
+        demo._record_filing_period_overrides()
         for month in ("early", "middle", "current"):
             demo._create_report_periods(month)
         if company_name == DEMO_COMPANY_NAME:
@@ -1327,8 +1335,8 @@ class SapianDemoTrader(models.AbstractModel):
         # invoices nobody ever paid.
         self._pay(bills, self._day(month, cat.DIRECT_BILL_PAYMENT_DAY))
 
-    def _run_earlier_month(self, partners, products, employees, month):
-        """One of the two months BEFORE the newest: services, expenses, payroll.
+    def _run_earlier_month(self, partners, products, month):
+        """One of the two months BEFORE the newest: services, expenses, money.
 
         WHAT IT DELIBERATELY DOES NOT DO is buy and sell goods. The inventory
         story — opening stock, a purchase order received, the same SKU sold out
@@ -1396,21 +1404,88 @@ class SapianDemoTrader(models.AbstractModel):
         bill.action_post()
         self._pay(bill, self._day(month, cat.SUPPLIER_PAYMENT_DAY))
 
-        # AND THE STAFF WERE PAID. Payroll is the largest recurring cost this
-        # tenant has, and a profit & loss whose two earlier months carry none of
-        # it would show a margin no trading company recognises.
-        self._run_payroll(employees, month=month)
+        # PAYROLL IS NOT RUN HERE. It is the largest recurring cost this tenant
+        # has and every month needs one, but its period is an Ethiopian month
+        # and not this Gregorian one — `_run_payroll_year` runs the whole cycle
+        # once, arranged so exactly one Ethiopian month ends inside each of
+        # these trading months. Running it per Gregorian month is what used to
+        # make the demo's only working payroll figure an accident of the cycle.
 
-    def _run_payroll(self, employees, month="current"):
+    def _run_payroll_year(self, employees):
+        """Every payroll month this tenant runs, oldest first.
+
+        OLDEST FIRST IS LOAD-BEARING. `_pay_net_wages` settles whatever the net
+        wages account still owes, so a run created out of order would have its
+        wages paid on a date before the entry that created them.
+
+        Four Ethiopian months: one ending inside each Gregorian trading month,
+        so each month's profit and loss still carries a month's wages, and one
+        more that ends after them — the last Ethiopian month to have finished,
+        which is the period the landing page shows as due.
+        """
+        runs = self.env["l10n.et.payroll.run"].browse()
+        for period_from, period_to in demo_calendar.ethiopian_payroll_months():
+            runs |= self._run_payroll(employees, period_from, period_to)
+        return runs
+
+    def _record_filing_period_overrides(self):
+        """This tenant files pension on the same Ethiopian month as PAYE.
+
+        A PROPERTY OF THIS FICTIONAL TENANT, NOT AN ANSWER ABOUT ETHIOPIAN LAW,
+        and the distinction is the whole reason this is a company-scoped row
+        rather than an edit to the shipped default.
+
+        `docs/ethiopian-tax-reference.md` section 3 marks the pension window
+        UNVERIFIED in as many words — *"whether the pension CSV shares the
+        income-tax window ... she was not asked directly"* — so the product's
+        global rule stays Gregorian and stays marked UNVERIFIED. What this row
+        says is narrower: Selam General Trading PLC runs payroll on Ethiopian
+        months (accountant 1's cycle) and its accountant sends the POESSA file
+        with the Schedule A file. Without it the demo would show a pension
+        figure it cannot state, for the honest reason that no payroll run lines
+        up with a Gregorian month — which is a true thing about the product and
+        a confusing thing to put in front of a prospect.
+
+        Soft-referenced: `sapian_landing` is not a dependency of the demo, and
+        making it one to write one configuration row would put the product's
+        overview module inside every tenant that only wants the trading data.
+        """
+        if "sapian.filing.period" not in self.env:
+            return self.env["res.company"].browse()
+        model = self.env["sapian.filing.period"].sudo()
+        company = self.env.company
+        existing = model.search(
+            [("company_id", "=", company.id), ("filing_key", "=", "pension")], limit=1
+        )
+        if existing:
+            return existing
+        return model.create(
+            {
+                "company_id": company.id,
+                "filing_key": "pension",
+                "effective_from": demo_calendar.iso(demo_calendar.demo_calendar()["opening"]),
+                "calendar": "ethiopian",
+                "source_note": (
+                    "DEMO TENANT CONFIGURATION, not a statement about Ethiopian "
+                    "law. This tenant runs payroll on Ethiopian months and its "
+                    "accountant files the POESSA pension declaration alongside "
+                    "the Schedule A income-tax file. The product's own rule for "
+                    "pension is still Gregorian and still UNVERIFIED — see the "
+                    "global row, which carries the question that would settle it."
+                ),
+            }
+        )
+
+    def _run_payroll(self, employees, period_from, period_to):
         """One month's payroll: a payslip per PAYE band, posted + bank file.
 
-        THE MONTH IS COMPUTED, and this docstring used to argue the opposite —
-        that pinning it to July 2026 was what made exact GL tie-outs possible.
-        The tie-outs never depended on WHICH month it was, only on it being one
-        clean whole month, which `reference/demo_calendar.py` still guarantees.
-        What pinning actually bought was a tenant that emptied out the month
-        after the build, and a landing page correctly reporting that it had
-        nothing to show.
+        THE PERIOD IS PASSED IN, and it is an ETHIOPIAN month rather than the
+        Gregorian trading month it used to be. That is not a cosmetic change:
+        `docs/ethiopian-tax-reference.md` section 2 is VERIFIED that the
+        employment income tax period is an Ethiopian month, so a Gregorian run
+        cannot be placed onto a filing month by anything this project can cite.
+        The tie-outs never depended on WHICH calendar it was, only on the period
+        being one clean whole month.
 
         EVERY FIGURE ON EVERY PAYSLIP IS COMPUTED BY THE REAL ENGINE. Nothing
         below writes an amount: the run generates payslips from
@@ -1419,7 +1494,6 @@ class SapianDemoTrader(models.AbstractModel):
         l10n_et_payroll. A hand-written payslip is a number nobody can defend,
         and it would eventually get quoted at a prospect.
         """
-        period_from, period_to = self._window(month)
         run = self.env["l10n.et.payroll.run"].create(
             {
                 "company_id": self.env.company.id,
@@ -1438,7 +1512,10 @@ class SapianDemoTrader(models.AbstractModel):
         self.env["l10n.et.payslip.input"].create(
             {
                 "payslip_id": overtime_slip.id,
-                "name": "Overtime July",
+                # Named from the period, not from a month that used to be
+                # pinned: "Overtime July" on a Hamle payslip is the kind of
+                # detail a prospect's accountant reads before the totals.
+                "name": self.env._("Overtime %(period)s", period=run.name or period_to),
                 "category": "earning",
                 "taxable": True,
                 "amount": cat.OVERTIME_AMOUNT,
@@ -1446,10 +1523,10 @@ class SapianDemoTrader(models.AbstractModel):
         )
         run.action_confirm()
         run.action_export_bank_file()
-        self._pay_net_wages(run, month=month)
+        self._pay_net_wages(run)
         return run
 
-    def _pay_net_wages(self, run, month="current"):
+    def _pay_net_wages(self, run):
         """Actually pay the staff, instead of only writing the bank file.
 
         The run posted its journal entry and exported a transfer file, and then
@@ -1484,10 +1561,12 @@ class SapianDemoTrader(models.AbstractModel):
         entry = self.env["account.move"].create(
             {
                 "move_type": "entry",
-                "date": self._day(month, cat.MONTH_END_DAY),
-                "ref": self.env._(
-                    "%(period)s salaries paid", period=run.name or self._day(month, 1)
-                ),
+                # THE LAST DAY OF THE PAY PERIOD, which is the run's own,
+                # not the end of some Gregorian month the run has nothing to do
+                # with. Paying before the entry that creates the payable is how
+                # a ledger ends up with a negative salary account mid-month.
+                "date": run.date_to,
+                "ref": self.env._("%(period)s salaries paid", period=run.name or run.date_to),
                 "journal_id": journal.id,
                 "line_ids": [
                     Command.create(

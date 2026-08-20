@@ -39,6 +39,19 @@ themselves derived from data:
 The last one is what makes a brand-new tenant readable. A company that has
 existed for a day has no P&L, and printing "Revenue 0.00 / Net profit 0.00" for
 it is a wall of zeros pretending to be a business.
+
+ONE PERIOD PER FILING, NOT ONE PERIOD PER PAGE
+-----------------------------------------------
+The page used to compute a single Gregorian month and put all four filings under
+it. For employment income tax that is wrong: `docs/ethiopian-tax-reference.md`
+section 2 is VERIFIED that the period is an ETHIOPIAN month. So each filing now
+asks `sapian.filing.period` which calendar it is counted in, and gets its own
+`period_start`, `period_end` and label. The BUSINESS half of the page is still a
+Gregorian month, because sales and cash are not a filing and have no calendar
+question attached.
+
+Three of the four calendars are still open questions and their rows say so in
+the data. This module does not reason across from the one that is settled.
 """
 
 import ast
@@ -63,11 +76,14 @@ class SapianLanding(models.TransientModel):
         "res.company", required=True, default=lambda self: self.env.company
     )
     currency_id = fields.Many2one(related="company_id.currency_id")
+    # THE BUSINESS WINDOW, and only that. Each compliance line carries its own
+    # period, in its own calendar — see `_filing_period`.
     date_from = fields.Date(required=True)
     date_to = fields.Date(required=True)
     period_label = fields.Char(
         compute="_compute_period_label",
-        help="The filing period, in the calendar the deadlines are set in.",
+        help="The month the business figures cover. Never a filing period: the "
+        "four filings each carry their own, which may be in another calendar.",
     )
     line_ids = fields.One2many("sapian.landing.line", "landing_id")
     compliance_line_ids = fields.One2many(
@@ -90,34 +106,59 @@ class SapianLanding(models.TransientModel):
 
     @api.depends("date_from", "date_to", "company_id")
     def _compute_period_label(self):
-        """Ethiopian, because that is what the deadlines are set in.
-
-        `l10n_et_calendar` is a hard dependency of this module for exactly this
-        line. It is not decoration: an operator who is told a return is due
-        "30 Nehase" and reads "5 September" on the page has to convert in their
-        head every month, and the conversion is where mistakes live.
-        """
+        """The business month, described as what it actually is."""
         for landing in self:
-            landing.period_label = landing._ethiopian_period_label()
+            landing.period_label = landing._period_label(landing.date_from, landing.date_to)
 
-    def _ethiopian_period_label(self):
-        self.ensure_one()
-        if not self.date_from or not self.date_to:
+    @api.model
+    def _period_label(self, date_from, date_to):
+        """Name a range only if it IS that period; otherwise say what it is.
+
+        THE DEFECT THIS REPLACES. The old label converted both endpoints of a
+        Gregorian month to Ethiopian and printed the two MONTH NAMES it landed
+        in: "Sene 2018 – Hamle 2018" for 1–31 July 2026. That reads as two whole
+        Ethiopian months — 8 June to 6 August, sixty days — over a range that
+        begins 24 days into Sene, ends 24 days into Hamle and covers neither of
+        them. A label that names a period the figures do not cover is the defect
+        whichever calendar turns out to be right.
+
+        So: a whole Ethiopian month is NAMED. A whole Gregorian month is named
+        as the Gregorian month it is, with the Ethiopian span given as DATES —
+        "24 Sene – 24 Hamle 2018" is a date range and cannot be read as a month.
+        Anything else gets the date range alone.
+        """
+        if not date_from or not date_to:
             return False
         from odoo.addons.l10n_et_calendar.reference import (  # noqa: PLC0415
             et_calendar,
         )
 
-        start = et_calendar.gregorian_to_ethiopian(self.date_from)
-        end = et_calendar.gregorian_to_ethiopian(self.date_to)
-        if (start.year, start.month) == (end.year, end.month):
-            return "%s %s" % (et_calendar.month_name(start.month), start.year)
-        return "%s %s – %s %s" % (
-            et_calendar.month_name(start.month),
-            start.year,
-            et_calendar.month_name(end.month),
-            end.year,
-        )
+        def ethiopian_span():
+            start = et_calendar.gregorian_to_ethiopian(date_from)
+            end = et_calendar.gregorian_to_ethiopian(date_to)
+            if start.year == end.year:
+                return "%d %s – %d %s %d" % (
+                    start.day,
+                    et_calendar.month_name(start.month),
+                    end.day,
+                    et_calendar.month_name(end.month),
+                    end.year,
+                )
+            return "%d %s %d – %d %s %d" % (
+                start.day,
+                et_calendar.month_name(start.month),
+                start.year,
+                end.day,
+                et_calendar.month_name(end.month),
+                end.year,
+            )
+
+        if filing_status.is_whole_period(filing_status.ETHIOPIAN, date_from, date_to):
+            ethiopian = et_calendar.gregorian_to_ethiopian(date_from)
+            return "%s %d" % (et_calendar.month_name(ethiopian.month), ethiopian.year)
+        if filing_status.is_whole_period(filing_status.GREGORIAN, date_from, date_to):
+            return "%s (%s)" % (date_from.strftime("%B %Y"), ethiopian_span())
+        return ethiopian_span()
 
     # ---- opening the page ------------------------------------------------
 
@@ -160,23 +201,78 @@ class SapianLanding(models.TransientModel):
         record = self.env[model].sudo().search(domain, limit=1)
         return record or self.env[model].sudo().create(values)
 
-    def _source_records(self):
-        """Every report this page reads, created once per period."""
-        self.ensure_one()
-        window = {
-            "company_id": self.company_id.id,
-            "date_from": self.date_from,
-            "date_to": self.date_to,
-        }
-        return {
-            "vat": self._find_or_create("l10n.et.vat.declaration", dict(window)),
-            "wht": self._find_or_create("l10n.et.wht.summary", dict(window)),
-            "pl": self._find_or_create("l10n.et.profit.loss", dict(window)),
-            "bs": self._find_or_create("l10n.et.balance.sheet", dict(window)),
-        }
+    def _filing_period(self, filing_key):
+        """(calendar, first_day, last_day) for one filing, or (None, None, None).
 
-    def _payroll_run_domain(self):
-        """The month's payroll runs, as a domain that SURVIVES `repr`.
+        The calendar comes from `sapian.filing.period` — data with an effective
+        date — and the period is the last one of that calendar to have FINISHED
+        before today. Not defaulted to Gregorian when no rule is recorded:
+        defaulting is how the original defect got in, and a filing whose calendar
+        nobody has written down is one this page cannot put a period against.
+        """
+        self.ensure_one()
+        today = fields.Date.context_today(self)
+        calendar = self.env["sapian.filing.period"]._calendar_for(
+            filing_key, today, self.company_id
+        )
+        if not calendar:
+            return None, None, None
+        start, end = filing_status.previous_period(calendar, today)
+        return calendar, start, end
+
+    def _report_for(self, model, date_from, date_to):
+        """One report record over one window."""
+        self.ensure_one()
+        return self._find_or_create(
+            model,
+            {
+                "company_id": self.company_id.id,
+                "date_from": date_from,
+                "date_to": date_to,
+            },
+        )
+
+    def _source_records(self):
+        """Every report this page reads.
+
+        The profit & loss and the balance sheet are on the BUSINESS window,
+        because they are not filings. The VAT declaration and the withholding
+        summary are on their OWN filing periods, so that clicking either figure
+        opens the record that figure was read from — which is the point of
+        finding before creating, and would be defeated by building them over a
+        window neither of them is filed for.
+        """
+        self.ensure_one()
+        records = {
+            "pl": self._report_for("l10n.et.profit.loss", self.date_from, self.date_to),
+            "bs": self._report_for("l10n.et.balance.sheet", self.date_from, self.date_to),
+        }
+        for key, model in (
+            ("vat", "l10n.et.vat.declaration"),
+            ("wht", "l10n.et.wht.summary"),
+        ):
+            _calendar, start, end = self._filing_period(key)
+            records[key] = (
+                self._report_for(model, start, end) if start else self.env[model].browse()
+            )
+        return records
+
+    def _payroll_run_domain(self, period_start, period_end):
+        """The runs that ARE this filing month, as a domain that survives `repr`.
+
+        THE MAPPING RULE, and it is deliberately only the half the evidence
+        settles. `docs/ethiopian-tax-reference.md` section 2 records that the
+        payroll CYCLE is a business choice — accountant 1 runs Ethiopian months,
+        accountant 2 runs Gregorian ones — and that "the mapping to the Ethiopian
+        filing month and its window is what is mandatory". For accountant 1 that
+        mapping is the identity: a run whose period IS Hamle 2018 is filed as
+        Hamle 2018. That is what this domain expresses.
+
+        For a Gregorian-cycle run the reference states the WINDOW ("1st–30th of
+        the following Ethiopian month") and never states which Ethiopian month
+        goes on the form. `_unmappable_runs` finds those runs and the page says
+        it cannot place them, naming the open question, rather than picking a
+        month. See docs/defect-register.md.
 
         The dates are ISO strings, not `date` objects, and that is the whole
         reason this method exists rather than the domain being written inline.
@@ -184,18 +280,34 @@ class SapianLanding(models.TransientModel):
         open exactly the same set, which means it makes a round trip through
         `repr` and `ast.literal_eval` — and `repr(date(2026, 7, 1))` is
         `datetime.date(2026, 7, 1)`, a CALL, which `literal_eval` refuses.
-
-        Found by the guard on its first run, and it presented as eight broken
-        figures rather than one: `_compute_value` is handed the whole recordset,
-        so the exception raised while computing the payroll lines surfaced under
-        whichever subtest happened to touch the field first.
         """
         self.ensure_one()
         return [
             ("company_id", "=", self.company_id.id),
-            ("date_from", ">=", str(self.date_from)),
-            ("date_to", "<=", str(self.date_to)),
+            ("date_from", "=", str(period_start)),
+            ("date_to", "=", str(period_end)),
         ]
+
+    def _unmappable_runs(self, period_start, period_end):
+        """Runs that OVERLAP the filing month without being it.
+
+        The difference between "this company ran no payroll" and "this company
+        runs payroll on a cycle we cannot yet place onto a filing month" is the
+        whole of the honest answer, and they are two different sentences on the
+        page.
+        """
+        self.ensure_one()
+        return (
+            self.env["l10n.et.payroll.run"]
+            .sudo()
+            .search(
+                [
+                    ("company_id", "=", self.company_id.id),
+                    ("date_from", "<=", period_end),
+                    ("date_to", ">=", period_start),
+                ]
+            )
+        )
 
     def _has_posted_entries(self):
         """Did anything at all happen in the ledger this period?
@@ -241,11 +353,9 @@ class SapianLanding(models.TransientModel):
         return self.line_ids
 
     def _filing_row(self, key, label, source_model, source_key, **extra):
-        """One statutory filing: amount, period, deadline, status."""
+        """One statutory filing: its own period, amount, deadline and status."""
         self.ensure_one()
-        days = self.env["sapian.filing.deadline"]._days_for(key, self.date_to, self.company_id)
-        deadline = filing_status.deadline_for(self.date_to, days)
-        filed_on = self.env["sapian.filing"]._filed_on_for(key, self.date_to, self.company_id)
+        calendar, period_start, period_end = self._filing_period(key)
         row = {
             "section": COMPLIANCE,
             "kind": "amount",
@@ -253,13 +363,41 @@ class SapianLanding(models.TransientModel):
             "label": label,
             "source_model": source_model,
             "source_key": source_key,
-            "deadline": deadline,
-            "filed_on": filed_on,
-            "status": filing_status.status_for(
-                deadline, filed_on, today=fields.Date.context_today(self)
-            ),
+            "period_start": period_start,
+            "period_end": period_end,
+            "period_label": self._period_label(period_start, period_end),
             "available": True,
         }
+        if not calendar:
+            # No recorded calendar means no period, which means no figure — the
+            # page does not fall back to "probably a Gregorian month".
+            row.update(
+                available=False,
+                status=filing_status.UNKNOWN,
+                unavailable_reason=self.env._(
+                    "No filing period rule is recorded for this filing, so the "
+                    "period it covers is unknown. Set one under Accounting > "
+                    "Filing periods."
+                ),
+            )
+            row.update(extra)
+            return row
+
+        rule = self.env["sapian.filing.deadline"]._rule_for(key, period_end, self.company_id)
+        window, days = rule if rule else (None, None)
+        deadline = (
+            filing_status.deadline_for(period_end, days, window, calendar) if rule else None
+        )
+        filed_on = self.env["sapian.filing"]._filed_on_for(
+            key, period_start, period_end, self.company_id
+        )
+        row.update(
+            deadline=deadline,
+            filed_on=filed_on,
+            status=filing_status.status_for(
+                deadline, filed_on, today=fields.Date.context_today(self)
+            ),
+        )
         row.update(extra)
         return row
 
@@ -267,7 +405,6 @@ class SapianLanding(models.TransientModel):
         self.ensure_one()
         sources = self._source_records()
         vat = sources["vat"]
-        runs = self.env["l10n.et.payroll.run"].sudo().search(self._payroll_run_domain())
 
         rows = []
 
@@ -278,7 +415,7 @@ class SapianLanding(models.TransientModel):
             "net_vat",
             source_res_id=vat.id,
         )
-        if vat.off_chart:
+        if vat and vat.off_chart:
             # The report says so about itself: with no Ethiopian chart no VAT
             # code resolves, and its own totals are zero for that reason rather
             # than because no VAT was charged.
@@ -301,28 +438,54 @@ class SapianLanding(models.TransientModel):
             )
         )
 
-        payroll_missing = self.env._(
-            "No payroll run covers this period, so there is no employment "
-            "income tax to declare. That is not the same as declaring nothing."
-        )
-        paye = self._filing_row(
-            "paye",
-            self.env._("Employment Income Tax (PAYE)"),
-            "l10n.et.payroll.run",
-            "total_paye",
-            source_domain=repr(self._payroll_run_domain()),
-        )
-        pension = self._filing_row(
-            "pension",
-            self.env._("Pension"),
-            "l10n.et.payroll.run",
-            "total_pension_all",
-            source_domain=repr(self._payroll_run_domain()),
-        )
-        if not runs:
-            for row in (paye, pension):
-                row.update(available=False, unavailable_reason=payroll_missing)
-        rows.extend([paye, pension])
+        rows.extend(self._payroll_rows())
+        return rows
+
+    def _payroll_rows(self):
+        """Employment income tax and pension, which share their source records.
+
+        Both are read off the payroll runs that ARE the filing month. They can
+        each be on a different calendar — employment income tax is VERIFIED as
+        Ethiopian, pension's window is marked UNVERIFIED in the reference — so
+        they are built independently rather than as two views of one period.
+        """
+        self.ensure_one()
+        rows = []
+        for key, label, source_key in (
+            ("paye", self.env._("Employment Income Tax (PAYE)"), "total_paye"),
+            ("pension", self.env._("Pension"), "total_pension_all"),
+        ):
+            _calendar, period_start, period_end = self._filing_period(key)
+            row = self._filing_row(key, label, "l10n.et.payroll.run", source_key)
+            if not period_start:
+                rows.append(row)
+                continue
+            domain = self._payroll_run_domain(period_start, period_end)
+            row["source_domain"] = repr(domain)
+            runs = self.env["l10n.et.payroll.run"].sudo().search(domain)
+            if not runs:
+                overlapping = self._unmappable_runs(period_start, period_end)
+                row.update(
+                    available=False,
+                    unavailable_reason=(
+                        self.env._(
+                            "This company runs payroll on a cycle that does not "
+                            "line up with this filing period (%(count)s run(s) "
+                            "overlap it). Which filing month such a run belongs "
+                            "to is not settled in our tax reference, and this "
+                            "page will not guess it — see the filing period "
+                            "rule's note.",
+                            count=len(overlapping),
+                        )
+                        if overlapping
+                        else self.env._(
+                            "No payroll run covers this period, so there is no "
+                            "employment income tax or pension to declare. That "
+                            "is not the same as declaring nothing."
+                        )
+                    ),
+                )
+            rows.append(row)
         return rows
 
     # ---- what does not tie out -------------------------------------------
@@ -344,6 +507,10 @@ class SapianLanding(models.TransientModel):
         self.ensure_one()
         sources = self._source_records()
         pl, bs, vat, wht = sources["pl"], sources["bs"], sources["vat"], sources["wht"]
+        no_period = self.env._(
+            "No filing period rule is recorded for this filing, so there is no "
+            "period to reconcile."
+        )
         rows = []
 
         pl_data = pl._get_report_data()
@@ -389,31 +556,42 @@ class SapianLanding(models.TransientModel):
                 bs.id,
             )
         )
-        rows.append(
-            self._check_row(
-                "vat_on_chart",
-                self.env._("VAT resolves against the Ethiopian chart"),
-                not vat.off_chart,
-                (
+        vat_row = self._check_row(
+            "vat_on_chart",
+            self.env._("VAT resolves against the Ethiopian chart"),
+            bool(vat) and not vat.off_chart,
+            (
+                no_period
+                if not vat
+                else (
                     self.env._("This company is not on the Ethiopian chart of accounts.")
                     if vat.off_chart
                     else self.env._("VAT codes resolve.")
-                ),
-                "l10n.et.vat.declaration",
-                vat.id,
-            )
+                )
+            ),
+            "l10n.et.vat.declaration",
+            vat.id,
         )
-        wht_warnings = wht._get_report_data()["warnings"]
-        rows.append(
-            self._check_row(
-                "wht_identifiers",
-                self.env._("Every withholding line carries a supplier TIN"),
-                not wht_warnings,
-                wht_warnings[0] if wht_warnings else self.env._("No missing identifier."),
-                "l10n.et.wht.summary",
-                wht.id,
-            )
+        if not vat:
+            vat_row.update(available=False, unavailable_reason=no_period)
+        rows.append(vat_row)
+
+        wht_warnings = wht._get_report_data()["warnings"] if wht else []
+        wht_row = self._check_row(
+            "wht_identifiers",
+            self.env._("Every withholding line carries a supplier TIN"),
+            bool(wht) and not wht_warnings,
+            (
+                no_period
+                if not wht
+                else (wht_warnings[0] if wht_warnings else self.env._("No missing identifier."))
+            ),
+            "l10n.et.wht.summary",
+            wht.id,
         )
+        if not wht:
+            wht_row.update(available=False, unavailable_reason=no_period)
+        rows.append(wht_row)
         return rows
 
     # ---- the money --------------------------------------------------------
@@ -526,6 +704,16 @@ class SapianLandingLine(models.TransientModel):
     unavailable_reason = fields.Char()
 
     # ---- compliance ------------------------------------------------------
+    # EACH FILING CARRIES ITS OWN PERIOD. The page has no single one: employment
+    # income tax is counted in Ethiopian months and the other three in Gregorian
+    # ones today, so a shared header period would be wrong for at least one row
+    # whichever calendar it used.
+    period_start = fields.Date()
+    period_end = fields.Date()
+    period_label = fields.Char(
+        help="The period this figure covers, named only if the range IS that "
+        "period. A range that is not a whole month is given as dates.",
+    )
     deadline = fields.Date()
     filed_on = fields.Date()
     status = fields.Selection(

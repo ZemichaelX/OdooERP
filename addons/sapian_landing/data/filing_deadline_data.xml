@@ -10,10 +10,17 @@
 
          WHAT 30 DAYS IS BASED ON. CLAUDE.md records, accountant-verified in
          July 2026: "pension via POESSA declaration + bank slip within 30
-         days". VAT, withholding and employment income tax are given the same
-         window BY ANALOGY, which is not the same as being verified. Until
-         somebody checks them, the landing page shows a deadline computed from
-         these rows and the module README says where the number came from.
+         days". VAT and withholding are given the same window BY ANALOGY, which
+         is not the same as being verified. Their rows below carry the word
+         UNVERIFIED and the exact question that would settle each one.
+
+         EMPLOYMENT INCOME TAX IS NO LONGER ONE OF THEM. Its window is VERIFIED
+         in docs/ethiopian-tax-reference.md section 2 — the return is filed
+         "during the following Ethiopian month" — so its row uses the
+         end_of_next_period shape rather than a day count. The two agree for
+         every ordinary Ethiopian month, which is 30 days, and part at Pagume,
+         which is 5 or 6: Nehase 2018's return is due 10 Sep 2026, where
+         "+30 days" says 5 Oct.
 
          The effective date is 2000-01-01 rather than today's date on purpose:
          a rule that started this morning would make every historical period
@@ -24,24 +31,28 @@
         <record id="deadline_vat" model="sapian.filing.deadline">
             <field name="filing_key">vat</field>
             <field name="effective_from" eval="'2000-01-01'"/>
+            <field name="deadline_window">days</field>
             <field name="days_after_period_end">30</field>
-            <field name="source_note">By analogy with the pension window — UNVERIFIED against a current MoR schedule.</field>
+            <field name="source_note">UNVERIFIED — by analogy with the pension window, which is not evidence. QUESTION: which article of Proclamation 1341/2024 or Regulation 570/2025 sets the VAT return deadline, and what does the etax.mor.gov.et VAT screen show?</field>
         </record>
         <record id="deadline_wht" model="sapian.filing.deadline">
             <field name="filing_key">wht</field>
             <field name="effective_from" eval="'2000-01-01'"/>
+            <field name="deadline_window">days</field>
             <field name="days_after_period_end">30</field>
-            <field name="source_note">By analogy with the pension window — UNVERIFIED against a current MoR schedule.</field>
+            <field name="source_note">UNVERIFIED — by analogy with the pension window, which is not evidence. QUESTION: which article of Proclamation 979/2016 as amended by 1395/2025 sets the withholding remittance deadline, and what does the etax.mor.gov.et withholding screen show?</field>
         </record>
         <record id="deadline_paye" model="sapian.filing.deadline">
             <field name="filing_key">paye</field>
             <field name="effective_from" eval="'2000-01-01'"/>
-            <field name="days_after_period_end">30</field>
-            <field name="source_note">By analogy with the pension window — UNVERIFIED against a current MoR schedule.</field>
+            <field name="deadline_window">end_of_next_period</field>
+            <field name="days_after_period_end">0</field>
+            <field name="source_note">VERIFIED — docs/ethiopian-tax-reference.md section 2: the declaration for one Ethiopian month is filed at any time during the following Ethiopian month. Accountant: "Sene taxes must be reported from Hamle 01 to Hamle 30." PwC: "by the end of the month following the month the income was earned."</field>
         </record>
         <record id="deadline_pension" model="sapian.filing.deadline">
             <field name="filing_key">pension</field>
             <field name="effective_from" eval="'2000-01-01'"/>
+            <field name="deadline_window">days</field>
             <field name="days_after_period_end">30</field>
             <field name="source_note">CLAUDE.md, accountant-verified Jul 2026: POESSA declaration + bank slip within 30 days.</field>
         </record>

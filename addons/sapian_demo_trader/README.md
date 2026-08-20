@@ -172,6 +172,37 @@ demo whose books begin twenty days ago is also a bad demo in front of a client.
 The goldens survive because the amounts are downstream of `demo_catalogue.py`,
 not of the calendar; the tests compute the window the same way the module does.
 
+### Payroll runs on ETHIOPIAN months, and the rest does not
+
+`docs/ethiopian-tax-reference.md` §2 is VERIFIED that the employment income tax
+period is an **Ethiopian** month, and records the payroll **cycle** itself as a
+business choice: one of the two accountants runs Ethiopian months, the other
+Gregorian. This tenant runs the Ethiopian cycle, because that is the one whose
+mapping onto a filing month the reference settles — a Gregorian-cycle run cannot
+be placed on the evidence we hold, and a demo should not show the product
+guessing.
+
+So the two calendars **overlap rather than nest**, which is what a real
+Ethiopian company's books look like: trading, VAT and withholding on Gregorian
+months, payroll and its declaration on Ethiopian ones. `ethiopian_payroll_months`
+returns **four**: one ending inside each of the three Gregorian trading months —
+so every month's profit still carries a month's wages — and one more that ends
+after them, the last Ethiopian month to have finished, which is the period the
+landing page shows as due.
+
+The month's profit and loss is unchanged by this: the run that ends inside it
+carries the same six payslips it always did.
+
+**One thing here is the tenant's configuration and not a claim about the law.**
+The tenant carries a company-scoped `sapian.filing.period` row putting *pension*
+on Ethiopian months too — i.e. its accountant sends the POESSA file with the
+Schedule A file. The product's own pension rule stays Gregorian and stays marked
+UNVERIFIED, because the reference marks that exact question open (`Open 3` in
+`docs/defect-register.md`). Without the override the demo would show a pension
+figure it cannot state, for the honest reason that no payroll run lines up with
+a Gregorian month — true about the product, and confusing in front of a
+prospect.
+
 ## Amounts and our own validators
 
 The demo must never display data our own rules would reject.
