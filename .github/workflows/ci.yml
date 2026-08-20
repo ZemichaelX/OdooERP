@@ -2284,3 +2284,154 @@ jobs:
             || { echo "::error::The CONTROL verifier never reported, so the comparison is void."; exit 1; }
           echo "OK — both verifiers ran and reported; read the comparison above."
 
+  public-signup-closed:
+    name: A stranger cannot get an account
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # THE PROPERTY IS "NO USER WAS CREATED", not "a field reads b2b".
+    #
+    # Three guards in this repository have already been correct when written and
+    # wrong afterwards because they read a setting instead of the thing the
+    # setting was meant to cause — the login colour, the launcher redirect, and
+    # this very setting, which read b2b on a database whose login page offered
+    # free sign-up because `website` had taken over the decision. So this job
+    # runs a real Odoo, walks up to it with no session, POSTs the sign-up form,
+    # and then counts `res_users` STRAIGHT OFF POSTGRES with psycopg2 — not
+    # through the ORM, not through the API, so nothing the product believes
+    # about itself can make the answer agree.
+    #
+    # Three tenants, and the first one is what makes the other two mean
+    # anything:
+    #   1. OPEN ON PURPOSE — the probe must create an account. A guard never
+    #      seen to fail is another thing that passes by doing nothing.
+    #   2. A plain client tenant, provisioned the way provision_client.sh does
+    #      it, with the DEFAULT module list — which has no `website`. This is
+    #      what an ordinary client gets.
+    #   3. The same, plus `website` and `website_sale` — because website_sale's
+    #      post-install hook writes `auth_signup_uninvited = 'b2c'` onto every
+    #      website row, and that column outranks the parameter we set.
+    container:
+      image: odoo:19.0@sha256:e415f9924395e7521245813135112f264b9222bcde3b1d3c2ee9ff073081540a
+      options: --user root
+    services:
+      db:
+        image: postgres:16@sha256:33f923b05f64ca54ac4401c01126a6b92afe839a0aa0a52bc5aeb5cc958e5f20
+        env:
+          POSTGRES_USER: odoo
+          POSTGRES_PASSWORD: odoo
+          POSTGRES_DB: postgres
+        options: >-
+          --health-cmd "pg_isready -U odoo"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGHOST: db
+      PGUSER: odoo
+      PGPASSWORD: odoo
+      PGPORT: "5432"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Walk up to three tenants as a stranger and try to sign up
+        shell: bash
+        run: |
+          set -uo pipefail
+          mkdir -p /tmp/odoo-data
+          ARGS="--db_host=db --db_port=5432 --db_user=odoo --db_password=odoo
+                --data-dir=/tmp/odoo-data
+                --addons-path=${GITHUB_WORKSPACE}/addons,${GITHUB_WORKSPACE}/vendor/oca_web,/usr/lib/python3/dist-packages/odoo/addons
+                --workers=0 --max-cron-threads=0"
+
+          # THE DEFAULT MODULE LIST, read out of provision_client.sh rather than
+          # retyped. A copy here would keep passing after somebody changed the
+          # list the clients actually get.
+          MODULES="$(sed -n 's/^MODULES="\${2:-\(.*\)}"$/\1/p' "${GITHUB_WORKSPACE}/scripts/provision_client.sh")"
+          if [ -z "${MODULES}" ]; then
+            echo "::error::Could not read the default module list out of provision_client.sh. This job would have tested a set no client is given."
+            exit 1
+          fi
+          echo "Default client modules: ${MODULES}"
+
+          # provision_client.sh's phases 1-4, by hand because the script drives
+          # docker compose and this job IS the container. Any drift between the
+          # two is caught by the module list read above and by phase 4 being
+          # copied verbatim below.
+          provision () {
+            local db="$1" extra="$2"
+            odoo ${ARGS} -d "${db}" -i base --without-demo=all --stop-after-init --log-level=warn
+            echo "company = env['res.company'].search([], limit=1); company.country_id = env['res.country'].search([('code','=','ET')], limit=1); env.cr.commit(); print('country', company.country_id.code)" \
+              | odoo shell ${ARGS} -d "${db}" --no-http --stop-after-init --log-level=warn
+            odoo ${ARGS} -d "${db}" -i "${MODULES}${extra}" --without-demo=all --stop-after-init --log-level=warn 2>&1 | tail -3
+            # Phase 4 of provision_client.sh, verbatim in substance: the key is
+            # read off Odoo's own field rather than typed in.
+            echo "field = env['res.config.settings']._fields.get('auth_signup_uninvited'); key = getattr(field, 'config_parameter', None) or 'auth_signup.invitation_scope'; env['ir.config_parameter'].sudo().set_param(key, 'b2b'); env.cr.commit(); print('SIGNUP %s=%s' % (key, env['ir.config_parameter'].sudo().get_param(key)))" \
+              | odoo shell ${ARGS} -d "${db}" --no-http --stop-after-init --log-level=warn
+          }
+
+          serve () {
+            local db="$1"
+            odoo ${ARGS} -d "${db}" --http-port=8069 --db-filter="^${db}$" --log-level=warn \
+              >/tmp/serve-${db}.log 2>&1 &
+            echo $! > /tmp/serve.pid
+            for _ in $(seq 1 60); do
+              if python3 -c "import urllib.request,sys; urllib.request.urlopen('http://localhost:8069/web/login', timeout=2)" 2>/dev/null; then
+                return 0
+              fi
+              sleep 2
+            done
+            echo "::error::Odoo never came up for ${db}. That is ABORTED, not a pass."
+            cat /tmp/serve-${db}.log | tail -20
+            return 1
+          }
+          stop () { kill "$(cat /tmp/serve.pid)" 2>/dev/null || true; sleep 3; }
+
+          # ---- 1. RED: a tenant opened on purpose -----------------------
+          provision ci_signup_open ",website,website_sale"
+          echo "field = env['res.config.settings']._fields.get('auth_signup_uninvited'); env['ir.config_parameter'].sudo().set_param(getattr(field, 'config_parameter', None) or 'auth_signup.invitation_scope', 'b2c'); env['ir.config_parameter'].sudo().set_param('sapian_theme.allow_public_signup', '1'); env['website'].sudo().search([]).write({'auth_signup_uninvited': 'b2c'}); env.cr.commit(); print('OPENED', env['res.users']._get_signup_invitation_scope())" \
+            | odoo shell ${ARGS} -d ci_signup_open --no-http --stop-after-init --log-level=warn | tee /tmp/opened.log
+          grep -q "OPENED b2c" /tmp/opened.log \
+            || { echo "::error::Could not open sign-up on the control tenant, so the red phase measures nothing."; exit 1; }
+          serve ci_signup_open || exit 1
+          python3 "${GITHUB_WORKSPACE}/scripts/check_public_signup.py" \
+            --base-url http://localhost:8069 --db ci_signup_open \
+            --label "deliberately OPEN" --expect-open | tee /tmp/probe-open.log
+          RED=${PIPESTATUS[0]}
+          stop
+          if [ "${RED}" -ne 0 ]; then
+            echo "::error::The probe could not create an account even on a tenant where sign-up is switched on. It is not exercising sign-up, so its CLOSED verdicts below would prove nothing."
+            exit 1
+          fi
+          echo "OK — the probe DOES create an account when sign-up is open, so it can fail."
+
+          # ---- 2. a plain client tenant, default modules, no website ----
+          provision ci_signup_plain ""
+          serve ci_signup_plain || exit 1
+          python3 "${GITHUB_WORKSPACE}/scripts/check_public_signup.py" \
+            --base-url http://localhost:8069 --db ci_signup_plain \
+            --label "client tenant, default modules (no website)" | tee /tmp/probe-plain.log
+          PLAIN=${PIPESTATUS[0]}
+          stop
+
+          # ---- 3. the same tenant WITH website + website_sale -----------
+          provision ci_signup_site ",website,website_sale"
+          serve ci_signup_site || exit 1
+          python3 "${GITHUB_WORKSPACE}/scripts/check_public_signup.py" \
+            --base-url http://localhost:8069 --db ci_signup_site \
+            --label "client tenant + website + website_sale" | tee /tmp/probe-site.log
+          SITE=${PIPESTATUS[0]}
+          stop
+
+          echo "::group::What the three tenants reported"
+          cat /tmp/probe-open.log /tmp/probe-plain.log /tmp/probe-site.log
+          echo "::endgroup::"
+
+          for f in /tmp/probe-plain.log /tmp/probe-site.log; do
+            grep -q "SAPIAN-SIGNUP verdict=" "$f" \
+              || { echo "::error::${f} never reported a verdict. ABORTED, not a pass."; exit 1; }
+          done
+          if [ "${PLAIN}" -ne 0 ] || [ "${SITE}" -ne 0 ]; then
+            echo "::error::A stranger got an account on a tenant provisioned the way clients are provisioned."
+            exit 1
+          fi
+          echo "OK — no user was created on either provisioned tenant, and the probe is known to be able to create one."
