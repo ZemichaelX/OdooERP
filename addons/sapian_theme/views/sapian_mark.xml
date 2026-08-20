@@ -1,36 +1,53 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
 
-    <!-- THE SAPIAN MARK, inline and monochrome.
+    <!-- THE SAPIAN MARK, inline and in its own four colours.
 
-         Inline SVG rather than <img src="...">, because the colour has to come
-         from the palette and nowhere else. `fill="currentColor"` only resolves
-         against the HOST document, and an <img> renders the SVG in a document
-         of its own where `currentColor` falls back to black. Inlined, the mark
-         takes the `color` of whatever encloses it — which is $sapian-brand, set
-         in exactly one place. There is no hex here, and
-         test_no_raw_hex_outside_palette would fail the build if there were.
+         Inline SVG rather than <img src="...">, because an <img> renders the
+         SVG in a document of its own and cannot participate in the page's own
+         sizing and accessibility. Inlined, the mark is part of the document.
 
-         MONOCHROME IS DELIBERATE, and it is not a redrawing. brand/README.md
-         says: "Never recreate or trace them — a redrawn logo that looks close
-         is worse than a missing one." So the four path definitions below are
-         the EXACT `d` attributes from brand/Sapian Logo.svg, byte for byte,
-         with only the per-petal `fill` dropped. What changes is the paint, not
-         the shape, and test_the_mark_is_the_committed_logo compares the paths
-         against that file so a "close enough" version cannot creep in.
+         FOUR-COLOUR, AND THAT REVERSES A DECISION THIS FILE USED TO ARGUE FOR.
 
-         The four-colour original stays the corporate mark; a 1em inline glyph
-         beside a line of teal text is a monochrome use, which is what the
-         four-colour original would look like at 16px anyway. -->
+         Until 20 Aug 2026 the four petals carried `fill="currentColor"` and the
+         mark took the colour of whatever enclosed it. The argument was that a
+         1em glyph beside a line of text is a monochrome use, and that keeping
+         the paint out of the markup kept re-branding to one edit.
 
-    <template id="mark" name="Sapian mark (inline, inherits colour)">
-        <svg viewBox="0 0 512 512" fill="currentColor" aria-hidden="true"
+         What that argument missed: the mark is not only ever a 1em glyph. It is
+         the app-rail brand at 28px and the login-page mark at 48px, and at both
+         of those sizes the four colours are legible and are what the product's
+         identity actually is. Rendering the corporate mark in one flat colour
+         everywhere meant the product never showed its own identity anywhere —
+         and the operator saw exactly that.
+
+         The paint now comes from `brand/sapian-logo.svg`, which is the ONE
+         source: both the `d` attributes and the `fill` attributes below are
+         byte-for-byte from that file. `tests_fast/test_sapian_mark_is_the_logo.py`
+         asserts both, for this template and for the OWL copy in
+         static/src/xml/app_rail.xml, so neither shape nor colour can drift and
+         a redrawn mark cannot creep in — brand/README.md: "Never recreate or
+         trace them."
+
+         Re-branding is therefore still one edit; the edit is the SVG.
+
+         LEGIBILITY. The mark is placed on the navbar, the login card and the
+         app rail. All three are light surfaces in this theme, and the darkest
+         petal is the brand teal, which is the same value the surrounding text
+         already uses — so nothing here needs the monochrome treatment. A
+         placement on a dark or brand-coloured surface WOULD: the teal petal
+         would disappear into it. There is no such placement today, and
+         `test_the_mark_sits_on_light_surfaces_only` fails if one appears.
+    -->
+
+    <template id="mark" name="Sapian mark (inline, four-colour)">
+        <svg viewBox="0 0 512 512" aria-hidden="true"
              focusable="false" class="o_sapian_mark"
              xmlns="http://www.w3.org/2000/svg">
-            <path d="M250.88 250.88C235.52 184.32 225.28 122.88 204.8 92.1602C184.32 61.4402 138.24 61.4402 107.52 87.0402C61.44 122.88 56.32 189.44 81.92 235.52C97.28 261.12 128 276.48 158.72 271.36C174.08 268.8 179.2 256 174.08 240.64C168.96 225.28 184.32 215.04 204.8 220.16C225.28 225.28 240.64 240.64 250.88 250.88Z"/>
-            <path d="M261.12 250.88C327.68 235.52 389.12 225.28 419.84 204.8C450.56 184.32 450.56 138.24 424.96 107.52C389.12 61.44 322.56 56.32 276.48 81.92C250.88 97.28 235.52 128 240.64 158.72C243.2 174.08 256 179.2 271.36 174.08C286.72 168.96 296.96 184.32 291.84 204.8C286.72 225.28 271.36 240.64 261.12 250.88Z"/>
-            <path d="M261.12 261.12C276.48 327.68 286.72 389.12 307.2 419.84C327.68 450.56 373.76 450.56 404.48 424.96C450.56 389.12 455.68 322.56 430.08 276.48C414.72 250.88 384 235.52 353.28 240.64C337.92 243.2 332.8 256 337.92 271.36C343.04 286.72 327.68 296.96 307.2 291.84C286.72 286.72 271.36 271.36 261.12 261.12Z"/>
-            <path d="M250.88 261.12C184.32 276.48 122.88 286.72 92.1602 307.2C61.4402 327.68 61.4402 373.76 87.0402 404.48C122.88 450.56 189.44 455.68 235.52 430.08C261.12 414.72 276.48 384 271.36 353.28C268.8 337.92 256 332.8 240.64 337.92C225.28 343.04 215.04 327.68 220.16 307.2C225.28 286.72 240.64 271.36 250.88 261.12Z"/>
+            <path d="M250.88 250.88C235.52 184.32 225.28 122.88 204.8 92.1602C184.32 61.4402 138.24 61.4402 107.52 87.0402C61.44 122.88 56.32 189.44 81.92 235.52C97.28 261.12 128 276.48 158.72 271.36C174.08 268.8 179.2 256 174.08 240.64C168.96 225.28 184.32 215.04 204.8 220.16C225.28 225.28 240.64 240.64 250.88 250.88Z" fill="#14454F"/>
+            <path d="M261.12 250.88C327.68 235.52 389.12 225.28 419.84 204.8C450.56 184.32 450.56 138.24 424.96 107.52C389.12 61.44 322.56 56.32 276.48 81.92C250.88 97.28 235.52 128 240.64 158.72C243.2 174.08 256 179.2 271.36 174.08C286.72 168.96 296.96 184.32 291.84 204.8C286.72 225.28 271.36 240.64 261.12 250.88Z" fill="#2F7E4F"/>
+            <path d="M261.12 261.12C276.48 327.68 286.72 389.12 307.2 419.84C327.68 450.56 373.76 450.56 404.48 424.96C450.56 389.12 455.68 322.56 430.08 276.48C414.72 250.88 384 235.52 353.28 240.64C337.92 243.2 332.8 256 337.92 271.36C343.04 286.72 327.68 296.96 307.2 291.84C286.72 286.72 271.36 271.36 261.12 261.12Z" fill="#E39A42"/>
+            <path d="M250.88 261.12C184.32 276.48 122.88 286.72 92.1602 307.2C61.4402 327.68 61.4402 373.76 87.0402 404.48C122.88 450.56 189.44 455.68 235.52 430.08C261.12 414.72 276.48 384 271.36 353.28C268.8 337.92 256 332.8 240.64 337.92C225.28 343.04 215.04 327.68 220.16 307.2C225.28 286.72 240.64 271.36 250.88 261.12Z" fill="#C05628"/>
         </svg>
     </template>
 

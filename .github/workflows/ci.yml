@@ -1333,6 +1333,97 @@ jobs:
           fi
           echo "All five steps ran and all five passed."
 
+  brand-assets:
+    name: One mark, everywhere, and it survives an upgrade
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # THREE THINGS NOTHING ELSE CHECKS.
+    #
+    # 1. The rasters are what the committed script produces from the committed
+    #    SVG. Regenerate and `git diff --exit-code`: a hand-edited PNG, or a
+    #    palette change nobody re-ran the script for, fails here. Before this,
+    #    the icon set had drifted into a palette that was not the mark's and
+    #    six modules had no icon at all.
+    # 2. The favicon and the default logo reach res.company on INSTALL.
+    # 3. And on UPGRADE, which is the path a post_init_hook cannot take. Proved
+    #    by resetting the favicon on a built database and running -u, exactly
+    #    as sapian_theme_mail proves the bot's name.
+    container:
+      image: odoo:19.0@sha256:e415f9924395e7521245813135112f264b9222bcde3b1d3c2ee9ff073081540a
+      options: --user root
+    services:
+      db:
+        image: postgres:16@sha256:33f923b05f64ca54ac4401c01126a6b92afe839a0aa0a52bc5aeb5cc958e5f20
+        env:
+          POSTGRES_USER: odoo
+          POSTGRES_PASSWORD: odoo
+          POSTGRES_DB: postgres
+        options: >-
+          --health-cmd "pg_isready -U odoo"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: The rasters are what the script generates, byte for byte
+        shell: bash
+        run: |
+          set -euo pipefail
+          apt-get update -qq && apt-get install -y -qq libcairo2 >/dev/null
+          pip install --quiet cairosvg pillow
+          python3 scripts/build_brand_assets.py
+          if ! git diff --exit-code --stat; then
+            echo "::error::Regenerating the brand assets changed files. A raster was edited by hand, or the sources moved and scripts/build_brand_assets.py was never re-run. Run it and commit the result."
+            exit 1
+          fi
+          echo "OK — every raster matches what the committed sources generate."
+
+      - name: Install, then upgrade, and the favicon survives both
+        shell: bash
+        run: |
+          set -uo pipefail
+          mkdir -p /tmp/odoo-data
+          ARGS="--db_host=db --db_port=5432 --db_user=odoo --db_password=odoo
+                --data-dir=/tmp/odoo-data
+                --addons-path=${GITHUB_WORKSPACE}/addons,${GITHUB_WORKSPACE}/vendor/oca_web,/usr/lib/python3/dist-packages/odoo/addons
+                --workers=0 --max-cron-threads=0 --stop-after-init"
+
+          # ---- PHASE 1: INSTALL -------------------------------------------
+          odoo ${ARGS} -d ci_brand -i base --without-demo=all --log-level=warn
+          odoo ${ARGS} -d ci_brand -i sapian_theme --without-demo=all \
+            --test-enable --test-tags '/sapian_theme:TestBrandAssets' \
+            --log-level=test 2>&1 | tee /tmp/brand-install.log
+          grep -q "odoo\.tests\.result:" /tmp/brand-install.log \
+            || { echo "::error::The install-phase tests never reported."; exit 1; }
+          if grep -qE "tests\.result: ([1-9][0-9]* failed|0 failed, [1-9][0-9]* error)" /tmp/brand-install.log; then
+            echo "::error::The brand assets do not reach res.company on INSTALL."
+            exit 1
+          fi
+
+          # ---- PHASE 2: RESET, THEN UPGRADE -------------------------------
+          # The favicon is put back to Odoo's on every company, so the upgrade
+          # has something real to repair. Without this the -u below would pass
+          # on a database that was already correct — a success signal produced
+          # by doing nothing.
+          echo 'env["res.company"].sudo().search([]).write({"favicon": False}); env.cr.commit(); print("SAPIAN-BRAND reset=%d" % env["res.company"].sudo().search_count([]))' \
+            | odoo shell ${ARGS} -d ci_brand --no-http --log-level=warn 2>&1 | tee /tmp/brand-reset.log
+          grep -qE "SAPIAN-BRAND reset=[1-9]" /tmp/brand-reset.log \
+            || { echo "::error::The reset step never reported, so the upgrade below proves nothing."; exit 1; }
+
+          odoo ${ARGS} -d ci_brand -u sapian_theme --log-level=warn 2>&1 | tee /tmp/brand-upgrade.log
+
+          echo 'c = env["res.company"].sudo().search([]); import base64; from odoo.tools import file_open; ours = base64.b64encode(file_open("sapian_theme/static/src/img/favicon.png","rb").read()); print("SAPIAN-BRAND wrong=%d of %d" % (len(c.filtered(lambda x: x.favicon != ours)), len(c)))' \
+            | odoo shell ${ARGS} -d ci_brand --no-http --log-level=warn 2>&1 | tee /tmp/brand-after.log
+          grep -q "SAPIAN-BRAND wrong=" /tmp/brand-after.log \
+            || { echo "::error::The post-upgrade check never reported."; exit 1; }
+          if ! grep -q "SAPIAN-BRAND wrong=0 of" /tmp/brand-after.log; then
+            echo "::error::After -u sapian_theme, companies still serve a favicon that is not ours:"
+            grep "SAPIAN-BRAND wrong=" /tmp/brand-after.log
+            exit 1
+          fi
+          echo "OK — install and upgrade both write the brand assets."
+
   auth-controls-palette:
     name: Every auth control is in the palette
     runs-on: ubuntu-latest

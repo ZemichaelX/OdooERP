@@ -26,6 +26,11 @@ PALETTE_FILE = MODULE_ROOT / "static" / "src" / "scss" / "sapian_variables.scss"
 HEX_LITERAL = re.compile(r"#(?:[0-9A-Fa-f]{6}|[0-9A-Fa-f]{3})\b")
 
 
+# The two files that carry the mark's own four colours. See the exemption
+# note in test_no_raw_hex_outside_palette.
+MARK_RENDERINGS = frozenset({"views/sapian_mark.xml", "static/src/xml/app_rail.xml"})
+
+
 @tagged("post_install", "-at_install")
 class TestSapianTheme(TransactionCase):
 
@@ -59,18 +64,33 @@ class TestSapianTheme(TransactionCase):
         silently becomes a find-and-replace and this module's central promise
         is broken.
 
-        Two exemptions, both deliberate:
+        Four exemptions, all deliberate:
         - Markdown: the README quotes measured contrast figures, which are data
           *about* the colour, not a second definition of it.
         - This tests/ directory: proving a client's colour is never overwritten
           requires a colour that is NOT the brand, so arbitrary fixture hexes
           are the point rather than a violation.
+        - Binary assets: a PNG read as text can hold any byte sequence, so
+          scanning one is a coin toss rather than a check.
+        - THE TWO MARK RENDERINGS. Added 20 Aug 2026, when the mark stopped
+          being monochrome. Its four petal colours are not in the palette file
+          and never were: three of them exist nowhere except
+          `brand/sapian-logo.svg`, which is the mark's single source. The
+          renderings are byte-for-byte copies OF that file, and
+          `tests_fast/test_sapian_mark_is_the_logo.py` asserts paths and fills
+          for both, so they cannot drift and re-branding is still one edit —
+          the edit is the SVG. Exempting them is what keeps the mark's own
+          colours from being flattened into the one palette value again.
         """
         offenders = []
         for path in sorted(MODULE_ROOT.rglob("*")):
             if not path.is_file() or path.suffix in (".md", ".pyc"):
                 continue
+            if path.suffix in (".png", ".jpg", ".jpeg", ".ico", ".gif", ".woff", ".woff2"):
+                continue
             if path == PALETTE_FILE or "__pycache__" in path.parts:
+                continue
+            if path.relative_to(MODULE_ROOT).as_posix() in MARK_RENDERINGS:
                 continue
             if "tests" in path.relative_to(MODULE_ROOT).parts:
                 continue

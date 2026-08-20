@@ -6,3 +6,4 @@ from . import test_login_page
 from . import test_sapian_theme
 from . import test_vendor_identity
 from . import test_auth_pages
+from . import test_brand_assets

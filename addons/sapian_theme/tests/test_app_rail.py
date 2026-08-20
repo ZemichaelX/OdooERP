@@ -1171,7 +1171,7 @@ SIDEBAR_KEYBOARD_JS = SIDEBAR_SETTLE_JS + """
 # The sidebar header is the product's mark, and it has to behave like one in a
 # running client, not just in the template source.
 # TestTheMarkIsTheCommittedLogo (test_vendor_identity.py) already proves the
-# four paths in app_rail.xml are byte-identical to brand/Sapian Logo.svg. What
+# four paths in app_rail.xml are byte-identical to brand/sapian-logo.svg. What
 # it cannot prove is that they SURVIVE to the screen: an SVG can be in the DOM
 # and be 0×0, or be painted in the browser's default black because `color` did
 # not reach it, and the template test would still be green.

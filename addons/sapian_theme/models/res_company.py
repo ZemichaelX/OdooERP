@@ -12,13 +12,45 @@ choice look identical — both are "a colour that is not the current brand".
 the pair we last wrote, so drift can be detected without guessing.
 """
 
+import base64
 import logging
 
 from odoo import api, fields, models
+from odoo.tools import file_open
 
 from .. import brand
 
 _logger = logging.getLogger(__name__)
+
+
+# ---- The company-level brand assets: the favicon and the default logo ------
+#
+# The company-level brand assets: the favicon and the default logo.
+#
+# WHY A MODEL AND NOT A DATA FILE
+# -------------------------------
+# Both of these live on `res.company` RECORDS, not in files, so they have exactly
+# the install-versus-upgrade problem the bot's name had (see
+# `sapian_theme_mail/models/res_partner.py`): a `<record>` in a data file reaches
+# a database being created and never reaches one being upgraded, and a company
+# created after install — a second company, a new tenant — gets whatever Odoo's
+# column default says.
+#
+# `res.company.favicon` is the sharper case of the two. Odoo's default is its own
+# purple favicon, served to every browser tab of every client, and nothing in this
+# product had ever set it: `grep favicon` across `addons/` returned nothing but
+# test files. A client's staff spend all day with that tab open.
+#
+# THE LOGO IS DIFFERENT, AND DELIBERATELY WEAKER
+# ----------------------------------------------
+# The favicon is OURS — it identifies the product, and a client does not get to
+# be Odoo in the tab. The logo is THEIRS: it goes on their invoices, and the
+# onboarding wizard exists to collect it. So the logo is only ever written when
+# the company still carries Odoo's stock image, and the wizard's upload always
+# wins. `uses_default_logo` is Odoo's own flag for "nobody has chosen one".
+#
+FAVICON = "sapian_theme/static/src/img/favicon.png"
+LOGO = "sapian_theme/static/src/img/sapian_logo.png"
 
 
 class ResCompany(models.Model):
@@ -122,7 +154,18 @@ class ResCompany(models.Model):
             if layout and "external_report_layout_id" not in vals:
                 vals["external_report_layout_id"] = layout.id
                 vals.setdefault("sapian_layout_applied", layout.key)
-        return super().create(vals_list)
+        companies = super().create(vals_list)
+        # THE FAVICON AND LOGO FOR A COMPANY CREATED LATER.
+        #
+        # Folded into the existing override rather than added as a second one:
+        # two `create` methods on one class is a redefinition, and the second
+        # silently wins. Written after super() because both are computed from
+        # files and neither belongs in vals — the favicon is ours
+        # unconditionally, the logo only while the company still carries
+        # Odoo's stock image, and `uses_default_logo` cannot be read before the
+        # record exists.
+        self._sapian_apply_brand_assets(companies)
+        return companies
 
     # ---- drift detection: WARN ONLY, never writes -------------------------
 
@@ -256,3 +299,41 @@ class ResCompany(models.Model):
                 company.write(vals)
                 changed |= company
         return changed
+
+    @api.model
+    def _sapian_apply_brand_assets(self, companies=None):
+        """Put our favicon on every company, and our logo where none was chosen.
+
+        Returns the number of companies written, so a caller can log a fact
+        rather than an intention.
+        """
+        # `search([])` with no limit is the intent, not an oversight: the
+        # favicon has to reach EVERY company, and a limit would silently leave
+        # the tail of a multi-company database on Odoo's purple.
+        # pylint: disable=no-search-all
+        companies = companies or self.sudo().search([])
+        with file_open(FAVICON, "rb") as handle:
+            favicon = base64.b64encode(handle.read())
+        with file_open(LOGO, "rb") as handle:
+            logo = base64.b64encode(handle.read())
+
+        written = 0
+        for company in companies:
+            vals = {}
+            if company.favicon != favicon:
+                vals["favicon"] = favicon
+            # `uses_default_logo` is True only while the company still carries
+            # the stock Odoo image. Once a client uploads their own, or the
+            # onboarding wizard writes one, this stops being true and we never
+            # touch it again.
+            if company.uses_default_logo and company.logo != logo:
+                vals["logo"] = logo
+            if vals:
+                company.sudo().write(vals)
+                written += 1
+                _logger.info(
+                    "sapian_theme: brand assets written on %s (fields=%s)",
+                    company.display_name,
+                    ",".join(sorted(vals)),
+                )
+        return written
