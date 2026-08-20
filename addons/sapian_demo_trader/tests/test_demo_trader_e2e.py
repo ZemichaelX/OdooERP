@@ -4,7 +4,7 @@
 Provisions a tenant through the REAL onboarding wizard and REAL business flows
 (quotation → delivery → invoice, PO → receipt → bill, payroll batch), then
 asserts every hand-computed month total and that all four statutory reports
-tie out to the GL. Numbers (July 2026):
+tie out to the GL. Numbers (the newest trading month, whichever it is):
 
 - Sales: 35,200 (Mebrat, 40 sheets G32) + 80,100 (Abyssinia, rebar+HCB) = 115,300
   → output VAT 17,295

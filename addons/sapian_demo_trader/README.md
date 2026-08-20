@@ -157,11 +157,20 @@ live in `brand/`.
 
 ## Dates
 
-Every date is pinned inside **July 2026**, so each statutory report has one
-clean period window with exact GL tie-outs, independent of the wall clock. July
-2026 is also the most recent closed month at the time this data was built; the
-pin is what makes goldens possible at all, so it is not computed from the
-calendar.
+Every date is **computed** by `reference/demo_calendar.py`: the tenant trades
+through **three whole months ending with the last month that has finished**, so
+each statutory report still has one clean period window with exact GL tie-outs.
+
+It used to be pinned inside July 2026, and the reasoning for the pin — that
+goldens need a fixed window — was wrong in the part that mattered. The tie-outs
+never depended on WHICH month it was, only on it being one clean whole month.
+What the pin actually bought was a tenant that was correct in August 2026 and
+empty from September onwards: the landing page reads the month with a filing
+deadline attached, found nothing there, and correctly showed nothing at all. A
+demo whose books begin twenty days ago is also a bad demo in front of a client.
+
+The goldens survive because the amounts are downstream of `demo_catalogue.py`,
+not of the calendar; the tests compute the window the same way the module does.
 
 ## Amounts and our own validators
 

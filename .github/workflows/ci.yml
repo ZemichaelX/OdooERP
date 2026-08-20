@@ -1613,7 +1613,8 @@ jobs:
     #    because the page has to be right on an empty tenant too. So "was this
     #    run meaningful" is a fact about the database, and the probe asserts it
     #    here: at least three figures available AND non-zero on the demo trader,
-    #    whose golden month is July 2026.
+    #    which trades through the three months ending with the last finished
+    #    one — the month the page itself reads.
     # 2. Every figure equals its source report, and every absent figure says
     #    why. Run against that same populated database.
     # 3. The grid button toggles BACK to the landing page — measured in Chrome,

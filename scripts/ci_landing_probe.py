@@ -21,9 +21,10 @@ and the job requires `nonzero` to be at least 3 on the demo database. A run
 where the demo data stopped loading then fails here instead of reporting a
 green comparison over five zeros.
 
-The window is FIXED, not "last month": the demo tenant's golden month is
-July 2026, and a probe that drifted with the calendar would quietly stop
-looking at it.
+The window is the month the PAGE reads — the one that has finished — and the
+demo tenant is built to trade in the three months before the build for exactly
+that reason. It is not "whichever month happens to have data": that would make
+the probe a proxy for the thing it is supposed to prove.
 """
 
 import datetime

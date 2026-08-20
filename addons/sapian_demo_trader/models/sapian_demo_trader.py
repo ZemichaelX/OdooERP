@@ -30,8 +30,12 @@ independent golden. Change a price and these move — recompute them, do not
 retailer buys stock and turns it within weeks, so a normal month has output
 above input; a credit only happens in a heavy stocking-up month.
 
-All dates are pinned inside July 2026 so every statutory report has one clean
-period window with exact GL tie-outs, independent of the wall clock.
+Every date is COMPUTED from `reference/demo_calendar.py`: three whole trading
+months ending in the month before the build, so every statutory report still
+has one clean period window with exact GL tie-outs, and the newest of those
+months is the one the landing page reads. The figures below belong to that
+newest month whatever month it happens to be — they are downstream of the
+catalogue, not of the calendar.
 """
 
 import base64
