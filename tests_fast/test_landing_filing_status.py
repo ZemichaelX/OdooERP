@@ -11,7 +11,7 @@ Run: pytest tests_fast/
 import importlib.util
 import os
 import sys as _sys
-from datetime import date
+from datetime import date, timedelta
 
 _MOD = os.path.join(
     os.path.dirname(__file__),
@@ -134,3 +134,108 @@ def test_the_running_month_is_not_complete():
 def test_a_partial_window_is_not_a_month():
     assert not fs.is_complete_month(date(2026, 7, 2), date(2026, 7, 31), today=TODAY)
     assert not fs.is_complete_month(date(2026, 7, 1), date(2026, 7, 30), today=TODAY)
+
+
+# ---------------------------------------------------------------------------
+# PERIODS, IN WHICHEVER CALENDAR THE FILING IS COUNTED IN
+#
+# Added when the landing page stopped putting all four filings under one
+# Gregorian month. `docs/ethiopian-tax-reference.md` section 2 is VERIFIED that
+# the employment income tax period is an ETHIOPIAN month; the goldens below are
+# the arithmetic that makes that true, and they are dated because Ethiopian
+# month boundaries are the whole point.
+# ---------------------------------------------------------------------------
+
+
+def test_a_gregorian_period_is_still_a_gregorian_month():
+    assert fs.previous_period(fs.GREGORIAN, TODAY) == (date(2026, 7, 1), date(2026, 7, 31))
+
+
+def test_an_ethiopian_period_is_an_ethiopian_month_not_a_converted_one():
+    """The defect, as arithmetic.
+
+    On 20 August 2026 the last FINISHED Ethiopian month is Hamle 2018, which is
+    8 July to 6 August. 1-31 July is not it: it begins 24 days into Sene and
+    ends 24 days into Hamle, covering neither.
+    """
+    assert fs.previous_period(fs.ETHIOPIAN, TODAY) == (date(2026, 7, 8), date(2026, 8, 6))
+
+
+def test_a_gregorian_month_is_not_a_whole_ethiopian_month():
+    assert not fs.is_whole_period(fs.ETHIOPIAN, date(2026, 7, 1), date(2026, 7, 31))
+    assert fs.is_whole_period(fs.GREGORIAN, date(2026, 7, 1), date(2026, 7, 31))
+    assert fs.is_whole_period(fs.ETHIOPIAN, date(2026, 7, 8), date(2026, 8, 6))
+
+
+def test_the_filing_window_is_the_following_month_not_thirty_days():
+    """Sene's return is due at the end of Hamle — the accountant's own example.
+
+    They agree here, because an Ethiopian month is 30 days. That agreement is
+    what let a wrong rule look right for eleven months of the year.
+    """
+    sene_end = date(2026, 7, 7)
+    assert fs.next_period_end(fs.ETHIOPIAN, sene_end) == date(2026, 8, 6)
+    assert sene_end + timedelta(days=30) == date(2026, 8, 6)
+
+
+def test_pagume_is_where_the_two_rules_disagree():
+    """Nehase's return is due at the end of Pagume, which is 5 days long.
+
+    This is the case that makes the shape worth recording: "+30 days" says
+    5 October, twenty-five days after the return was actually due.
+    """
+    nehase_end = date(2026, 9, 5)
+    assert fs.next_period_end(fs.ETHIOPIAN, nehase_end) == date(2026, 9, 10)
+    assert nehase_end + timedelta(days=30) == date(2026, 10, 5)
+
+
+def test_pagume_is_a_period_of_its_own_and_is_not_skipped():
+    """Thirteen months, and staff are paid in the thirteenth too."""
+    assert fs.period_containing(fs.ETHIOPIAN, date(2026, 9, 8)) == (
+        date(2026, 9, 6),
+        date(2026, 9, 10),
+    )
+    assert fs.next_period_end(fs.ETHIOPIAN, date(2026, 9, 10)) == date(2026, 10, 10)
+
+
+def test_the_deadline_shape_is_read_from_the_rule_not_assumed():
+    sene_end = date(2026, 7, 7)
+    assert fs.deadline_for(sene_end, None, fs.WINDOW_END_OF_NEXT_PERIOD, fs.ETHIOPIAN) == date(
+        2026, 8, 6
+    )
+    assert fs.deadline_for(sene_end, 45, fs.WINDOW_DAYS) == date(2026, 8, 21)
+
+
+def test_an_unknown_calendar_raises_rather_than_defaulting():
+    """Defaulting to Gregorian is how the original defect got in."""
+    try:
+        fs.previous_period("julian", TODAY)
+    except ValueError as exc:
+        assert "julian" in str(exc)
+    else:  # pragma: no cover
+        raise AssertionError("an unknown calendar was silently accepted")
+
+
+def test_the_old_rule_was_late_on_every_day_of_three_years():
+    """The size of the defect, swept rather than sampled.
+
+    Old behaviour: the previous GREGORIAN month, due 30 days after it ends.
+    Real rule for the filing that period BEGINS in: the end of the following
+    Ethiopian month. The old answer is never early, and it is 24 days late on
+    20 August 2026 — the day this was found.
+    """
+    deltas = []
+    day = date(2026, 1, 1)
+    while day < date(2029, 1, 1):
+        _start, end = fs.previous_period(fs.GREGORIAN, day)
+        begins_in = fs.period_containing(fs.ETHIOPIAN, fs.previous_period(fs.GREGORIAN, day)[0])
+        real = fs.next_period_end(fs.ETHIOPIAN, begins_in[1])
+        deltas.append(((end + timedelta(days=30)) - real).days)
+        day += timedelta(days=1)
+    assert min(deltas) > 0, "the old rule was early on some day; it was not"
+    assert (min(deltas), max(deltas)) == (20, 50)
+    _start, end = fs.previous_period(fs.GREGORIAN, TODAY)
+    begins_in = fs.period_containing(fs.ETHIOPIAN, fs.previous_period(fs.GREGORIAN, TODAY)[0])
+    assert (
+        (end + timedelta(days=30)) - fs.next_period_end(fs.ETHIOPIAN, begins_in[1])
+    ).days == 24

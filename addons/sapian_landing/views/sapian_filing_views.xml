@@ -37,7 +37,13 @@
             <list editable="bottom">
                 <field name="filing_key"/>
                 <field name="effective_from"/>
-                <field name="days_after_period_end"/>
+                <field name="window"/>
+                <!-- Only read for the day-count shape, so it is hidden for the
+                     other one rather than showing a 0 somebody would take for
+                     "due the same day". -->
+                <field name="days_after_period_end"
+                       column_invisible="False"
+                       invisible="window != 'days'"/>
                 <field name="source_note"/>
                 <field name="company_id" groups="base.group_multi_company"/>
             </list>
@@ -51,9 +57,41 @@
         <field name="help" type="html">
             <p class="o_view_nocontent_smiling_face">When each return is due</p>
             <p>Effective-dated on purpose: correcting a deadline must never move a
-            period that was already assessed against the old rule. The seeded
-            30-day window is UNVERIFIED against a current Ministry of Revenues
-            schedule — correct it here rather than in code.</p>
+            period that was already assessed against the old rule. Employment
+            income tax is VERIFIED — it is due at the end of the following
+            Ethiopian month. The other three keep a 30-day window that is
+            UNVERIFIED against a current Ministry of Revenues schedule; each row
+            carries the question that would settle it. Correct them here rather
+            than in code.</p>
+        </field>
+    </record>
+
+    <record id="view_sapian_filing_period_list" model="ir.ui.view">
+        <field name="name">sapian.filing.period.list</field>
+        <field name="model">sapian.filing.period</field>
+        <field name="arch" type="xml">
+            <list editable="bottom">
+                <field name="filing_key"/>
+                <field name="effective_from"/>
+                <field name="calendar"/>
+                <field name="source_note"/>
+                <field name="company_id" groups="base.group_multi_company"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="action_sapian_filing_period" model="ir.actions.act_window">
+        <field name="name">Filing Periods</field>
+        <field name="res_model">sapian.filing.period</field>
+        <field name="view_mode">list</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">Which calendar each return is counted in</p>
+            <p>Employment income tax is filed for an ETHIOPIAN month — verified with
+            two accountants and PwC. Whether VAT, withholding and pension are too is
+            an open question, and until somebody answers it these rows record what
+            the product does today rather than an answer. The note on each row is
+            the exact question that would settle it. Answer one, change the row
+            here, and every figure and deadline on the overview follows.</p>
         </field>
     </record>
 

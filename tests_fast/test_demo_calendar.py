@@ -86,3 +86,76 @@ def test_a_day_number_inside_the_month_is_left_alone():
     july = cal.month_window(date(2026, 8, 20), 1)
     assert cal.day_in(july, 31) == date(2026, 7, 31)
     assert cal.iso(cal.day_in(july, 6)) == "2026-07-06"
+
+
+# ---------------------------------------------------------------------------
+# THE PAYROLL CALENDAR, which is NOT the trading calendar
+#
+# The employment income tax period is an ETHIOPIAN month — VERIFIED,
+# docs/ethiopian-tax-reference.md section 2 — and the reference records the
+# payroll CYCLE itself as a business choice. This tenant runs the Ethiopian
+# cycle, because that is the one whose mapping onto a filing month the
+# reference settles. Trading, VAT and withholding stay on Gregorian months, so
+# the two calendars overlap rather than nest.
+#
+# The goldens assert the SHAPE, as everywhere else in this file: four months,
+# consecutive, ending with the last Ethiopian month to have finished, one of
+# them ending inside each Gregorian trading month.
+# ---------------------------------------------------------------------------
+
+
+def _months(today):
+    return cal.ethiopian_payroll_months(today)
+
+
+def test_there_are_four_payroll_months_ending_with_the_finished_one():
+    months = _months(date(2026, 8, 20))
+    assert len(months) == cal.PAYROLL_MONTHS == 4
+    # 20 Aug 2026 is Nehase 14, 2018; the last month to have FINISHED is Hamle.
+    assert months[-1] == (date(2026, 7, 8), date(2026, 8, 6))
+
+
+def test_the_payroll_months_are_consecutive_and_touch():
+    months = _months(date(2026, 8, 20))
+    for earlier, later in zip(months, months[1:]):
+        assert later[0] == earlier[1] + timedelta(days=1), (earlier, later)
+
+
+def test_the_newest_payroll_month_has_finished_on_any_build_day():
+    """A run for the month still in progress would be half a month's payslips."""
+    for day in (date(2026, 7, 8), date(2026, 7, 9), date(2026, 8, 6), date(2026, 8, 7)):
+        assert _months(day)[-1][1] < day, day
+
+
+def test_one_payroll_month_ends_inside_each_gregorian_trading_month():
+    """Which is why there are four and not three.
+
+    Each trading month's profit still carries a month's wages, and the fourth
+    ends after all of them — in the month the landing page reads.
+    """
+    today = date(2026, 8, 20)
+    windows = cal.demo_calendar(today)
+    ends = [end for _start, end in _months(today)]
+    for key in ("early", "middle", "current"):
+        start, stop = windows[key]
+        inside = [end for end in ends if start <= end <= stop]
+        assert len(inside) == 1, (key, inside)
+    assert ends[-1] > windows["current"][1]
+
+
+def test_pagume_is_not_skipped():
+    """Five days long, and staff are paid in it.
+
+    The one month where "+30 days" and "the end of the following month" give
+    different filing deadlines, so a demo that stepped over it would never show
+    the difference.
+    """
+    months = _months(date(2026, 9, 20))
+    assert (date(2026, 9, 6), date(2026, 9, 10)) in months
+
+
+def test_the_payroll_months_move_with_the_build_and_never_repeat():
+    a = _months(date(2026, 8, 20))
+    b = _months(date(2026, 9, 20))
+    assert a != b
+    assert len({tuple(m) for m in a}) == len(a)

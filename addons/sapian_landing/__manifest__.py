@@ -1,7 +1,12 @@
 # -*- coding: utf-8 -*-
 {
     "name": "SapianERP Landing Page",
-    "version": "19.0.1.0.0",
+    # BUMPED FOR THE MIGRATION, and the two are one commit or neither. Odoo runs
+    # `migrations/<version>/` only when the installed version is BELOW the
+    # manifest's, so a migration shipped without its bump never executes: it
+    # lands in the tree, it reviews as done, and every check stays green because
+    # nothing ran. See CLAUDE.md, "Stage by path".
+    "version": "19.0.1.1.0",
     "summary": "The page a person lands on: what is owed to the Ministry of "
     "Revenues and by when, what does not reconcile, and what the business "
     "earned. Every figure is read from the report that owns it.",
@@ -30,6 +35,7 @@
     ],
     "data": [
         "security/ir.model.access.csv",
+        "data/filing_period_data.xml",
         "data/filing_deadline_data.xml",
         "views/sapian_landing_views.xml",
         "views/sapian_filing_views.xml",

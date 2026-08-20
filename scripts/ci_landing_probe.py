@@ -104,11 +104,16 @@ print(
 )
 print("SAPIAN-LANDING company=%s period=%s" % (company.name, landing.period_label))
 for line in amounts:
+    # THE PERIOD IS PRINTED BESIDE THE FIGURE, because the four filings are no
+    # longer all counted in the same calendar: employment income tax is an
+    # Ethiopian month and the other three are Gregorian months today. A figure
+    # without its period is the defect this whole change was about.
     print(
-        "SAPIAN-LANDING figure %-16s %-12s %s"
+        "SAPIAN-LANDING figure %-16s %-12s %-28s %s"
         % (
             line.key,
             ("%.2f" % line.value) if line.available else "UNAVAILABLE",
+            line.period_label or "-",
             line.unavailable_reason or "",
         )
     )

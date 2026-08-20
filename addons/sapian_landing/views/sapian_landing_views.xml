@@ -12,6 +12,13 @@
         <field name="arch" type="xml">
             <list create="false" delete="false" edit="false" class="o_sapian_landing_lines">
                 <field name="label" string="Figure"/>
+                <!-- PER ROW, because the four filings are not all counted in
+                     the same calendar. Employment income tax is an Ethiopian
+                     month; the other three are Gregorian months today, and
+                     whether they should be is an open question recorded on the
+                     filing period rules. A single period in the header would be
+                     wrong for at least one row whichever calendar it used. -->
+                <field name="period_label" string="Period"/>
                 <!-- The amount and the reason share the row: a figure that is
                      not available shows WHY in the same place the number would
                      have been, so the eye never lands on an empty cell and
@@ -72,7 +79,11 @@
                     <div class="oe_title">
                         <h1><field name="company_id" readonly="1" options="{'no_open': True}"/></h1>
                         <h2>
-                            <span>Filing period </span>
+                            <!-- NOT "filing period". This is the month the
+                                 business figures below cover; each filing
+                                 carries its own period in the list, and the two
+                                 are not the same range. -->
+                            <span>Business month </span>
                             <field name="period_label" readonly="1" class="oe_inline"/>
                         </h2>
                     </div>
@@ -83,6 +94,10 @@
                     </group>
 
                     <separator string="Due to the Ministry of Revenues"/>
+                    <div class="text-muted">
+                        <span>Each return is shown for its own period, in the calendar
+                        that return is counted in.</span>
+                    </div>
                     <field name="compliance_line_ids" readonly="1" nolabel="1"
                            context="{'list_view_ref': 'sapian_landing.view_sapian_landing_line_list'}"/>
 
@@ -100,9 +115,13 @@
                          before they plan it. -->
                     <div class="text-muted mt-3">
                         <i class="fa fa-info-circle" role="img" aria-label="Note"/>
-                        <span> Deadlines come from the filing rules under Accounting, and the
-                        seeded 30-day window is unverified against a current Ministry of
-                        Revenues schedule. Correct it there and this page follows.</span>
+                        <span> Periods and deadlines come from the filing rules under
+                        Accounting. Employment income tax is verified: an Ethiopian month,
+                        filed during the following Ethiopian month. For VAT, withholding and
+                        pension, whether the period is an Ethiopian or a Gregorian month is
+                        an open question and these rows show what the product does today —
+                        each rule carries the question that would settle it. Correct them
+                        there and this page follows.</span>
                     </div>
                 </sheet>
             </form>

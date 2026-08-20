@@ -16,15 +16,23 @@ here rather than called on the line. If the two agree, the page is showing the
 report's number. If somebody replaces the line's compute with a cached column,
 they disagree.
 
-DATES ARE EXPLICIT, NEVER `previous_month(today)`
---------------------------------------------------
-The page picks the last complete month, which is correct behaviour and useless
-in a test: it would silently start covering a different month next month, and
-the demo tenant's golden month would fall out of range without anything going
-red. Every test here names its window.
+THE BUSINESS WINDOW IS EXPLICIT; THE FILING PERIODS ARE NOT, AND CANNOT BE
+---------------------------------------------------------------------------
+The business half of the page is handed a fixed window by `_landing()`, for the
+reason it always was: a window that moved with the calendar would silently start
+covering a different month and nothing would go red.
+
+The compliance half no longer takes a window at all. Each filing computes its
+own period from `sapian.filing.period` — which calendar, and the last period of
+that calendar to have finished — so a test that pinned a month here would be a
+second copy of the configuration and would go stale the day an accountant
+corrects a rule. `_period_of` asks the same rules the page asks, and the
+assertions are about SHAPE: that the employment income tax period is a whole
+Ethiopian month, that the deadline belongs to the filing month the period begins
+in, that a label never names a month the figures do not cover.
 """
 
-from datetime import date
+from datetime import date, timedelta
 
 from odoo.tests import TransactionCase, tagged
 
@@ -46,6 +54,22 @@ class TestLandingFigures(TransactionCase):
         )
         landing._build_lines()
         return landing
+
+    def _row(self, landing, key):
+        return landing.line_ids.filtered(lambda ln, k=key: ln.key == k)
+
+    def _period_of(self, key, company=None):
+        """The period the page will use for one filing, computed here.
+
+        Computed rather than pinned: the calendars are DATA now, so a literal
+        month in a test would be a second copy of the configuration and would
+        go stale the day somebody corrects a rule — which is the whole point of
+        the rules being correctable.
+        """
+        company = company or self.env.company
+        today = date.today()
+        calendar = self.env["sapian.filing.period"]._calendar_for(key, today, company)
+        return filing_status.previous_period(calendar, today) if calendar else (None, None)
 
     # ---- rule 1: the figure IS the report's figure ------------------------
 
@@ -165,14 +189,15 @@ class TestLandingFigures(TransactionCase):
         second = self._landing()
         second_vat = second.line_ids.filtered(lambda ln: ln.key == "vat").source_res_id
         self.assertEqual(first_vat, second_vat)
+        vat_period = self._period_of("vat")
         self.assertEqual(
             self.env["l10n.et.vat.declaration"]
             .sudo()
             .search_count(
                 [
                     ("company_id", "=", self.env.company.id),
-                    ("date_from", "=", JULY[0]),
-                    ("date_to", "=", JULY[1]),
+                    ("date_from", "=", vat_period[0]),
+                    ("date_to", "=", vat_period[1]),
                 ]
             ),
             1,
@@ -210,11 +235,48 @@ class TestLandingFigures(TransactionCase):
 
     def test_no_payroll_run_means_no_paye_figure_rather_than_zero(self):
         landing = self._landing()
-        runs = self.env["l10n.et.payroll.run"].sudo().search(landing._payroll_run_domain())
-        paye = landing.line_ids.filtered(lambda ln: ln.key == "paye")
+        start, end = self._period_of("paye")
+        runs = (
+            self.env["l10n.et.payroll.run"]
+            .sudo()
+            .search(landing._payroll_run_domain(start, end))
+        )
+        paye = self._row(landing, "paye")
         self.assertEqual(bool(runs), paye.available)
         if not runs:
-            self.assertIn("payroll run", paye.unavailable_reason)
+            self.assertTrue(paye.unavailable_reason)
+
+    def test_a_payroll_run_on_another_cycle_is_refused_rather_than_placed(self):
+        """The half of the mapping the reference does NOT settle.
+
+        `docs/ethiopian-tax-reference.md` section 2 records the payroll cycle as
+        a business choice and states the mapping only for the Ethiopian one: a
+        run whose period IS the filing month is filed as that month. For a
+        Gregorian-cycle run it gives the WINDOW ("1st-30th of the following
+        Ethiopian month") and never says which Ethiopian month goes on the form.
+
+        So a run that overlaps the filing month without being it must produce no
+        figure and a reason that says why — not a number arrived at by picking
+        the month with the biggest overlap, which is a guess wearing arithmetic.
+        """
+        company = self.env["res.company"].create({"name": "Other Cycle PLC"})
+        start, end = self._period_of("paye", company)
+        self.assertTrue(start, "no PAYE period rule; this test would prove nothing")
+        # A run that straddles the filing month: same length, shifted by a week.
+        self.env["l10n.et.payroll.run"].sudo().create(
+            {
+                "company_id": company.id,
+                "date_from": start + timedelta(days=7),
+                "date_to": end + timedelta(days=7),
+            }
+        )
+        landing = self._landing(company=company)
+        paye = self._row(landing, "paye")
+        self.assertFalse(
+            paye.available,
+            "the page placed a payroll run onto a filing month on evidence we " "do not have",
+        )
+        self.assertIn("not settled", paye.unavailable_reason)
 
     # ---- rule 4: an empty tenant ------------------------------------------
 
@@ -260,37 +322,238 @@ class TestLandingFigures(TransactionCase):
         expected = filing_status.previous_month(date.today())
         self.assertEqual((landing.date_from, landing.date_to), expected)
 
-    def test_the_period_is_labelled_in_the_ethiopian_calendar(self):
-        """Because that is the calendar the deadlines are set in."""
+    def test_a_label_never_names_a_period_the_figures_do_not_cover(self):
+        """The defect that started this: "Sene 2018 - Hamle 2018" over 31 days.
+
+        That range begins 24 days into Sene, ends 24 days into Hamle and covers
+        neither of them, and the label named both. The rule now: a whole month
+        may be NAMED; anything else is given as dates, where a month name is
+        part of a date and cannot be read as a period.
+        """
         from odoo.addons.l10n_et_calendar.reference import (  # noqa: PLC0415
             et_calendar,
         )
 
         landing = self._landing()
-        ethiopian = et_calendar.gregorian_to_ethiopian(JULY[0])
-        self.assertIn(et_calendar.month_name(ethiopian.month), landing.period_label)
-        self.assertIn(str(ethiopian.year), landing.period_label)
+        model = self.env["sapian.landing"]
+
+        # A whole Ethiopian month is named, and named alone.
+        eth_start, eth_end = filing_status.previous_period(
+            filing_status.ETHIOPIAN, date.today()
+        )
+        ethiopian = et_calendar.gregorian_to_ethiopian(eth_start)
+        self.assertEqual(
+            model._period_label(eth_start, eth_end),
+            "%s %d" % (et_calendar.month_name(ethiopian.month), ethiopian.year),
+        )
+
+        # A Gregorian month is named as the Gregorian month it is. The Ethiopian
+        # span is present, as DATES: every month name in it carries a day number.
+        greg_label = model._period_label(landing.date_from, landing.date_to)
+        self.assertIn(landing.date_from.strftime("%B %Y"), greg_label)
+        self._assert_no_bare_month_name(greg_label, after=landing.date_from.strftime("%Y"))
+
+    def _assert_no_bare_month_name(self, label, after):
+        """No Ethiopian month name in ``label`` stands without a day number."""
+        from odoo.addons.l10n_et_calendar.reference import (  # noqa: PLC0415
+            et_calendar,
+        )
+
+        tail = label[label.index(after) + len(after) :] if after in label else label
+        for month in range(1, 14):
+            name = et_calendar.month_name(month)
+            index = tail.find(name)
+            if index < 0:
+                continue
+            before = tail[:index].rstrip()
+            self.assertTrue(
+                before and before[-1].isdigit(),
+                "%r names the Ethiopian month %s without a day, so it reads as "
+                "a whole month the figures may not cover" % (label, name),
+            )
 
     # ---- filed / due / late ------------------------------------------------
 
     def test_recording_a_filing_moves_the_status_to_filed(self):
         """The one writable thing this feature adds, end to end."""
         landing = self._landing()
-        vat = landing.line_ids.filtered(lambda ln: ln.key == "vat")
+        vat = self._row(landing, "vat")
         self.assertNotEqual(vat.status, filing_status.FILED)
+        start, end = self._period_of("vat")
         self.env["sapian.filing"].create(
             {
                 "company_id": self.env.company.id,
                 "filing_key": "vat",
-                "period_start": JULY[0],
-                "period_end": JULY[1],
-                "filed_on": date(2026, 8, 10),
+                "period_start": start,
+                "period_end": end,
+                "filed_on": end + timedelta(days=3),
             }
         )
         rebuilt = self._landing()
         self.assertEqual(
             rebuilt.line_ids.filtered(lambda ln: ln.key == "vat").status,
             filing_status.FILED,
+        )
+
+    # ---- the period each filing is actually counted in ---------------------
+
+    def test_the_employment_income_tax_period_is_a_whole_ethiopian_month(self):
+        """VERIFIED in docs/ethiopian-tax-reference.md section 2.
+
+        Not "a month rendered in Ethiopian dates" — an Ethiopian month, with
+        Ethiopian boundaries. 1-31 July 2026 is 31 days beginning 24 days into
+        Sene, and every figure on that row covered the wrong days.
+        """
+        landing = self._landing()
+        paye = self._row(landing, "paye")
+        self.assertTrue(
+            filing_status.is_whole_period(
+                filing_status.ETHIOPIAN, paye.period_start, paye.period_end
+            ),
+            "the employment income tax row covers %s..%s, which is not a whole "
+            "Ethiopian month" % (paye.period_start, paye.period_end),
+        )
+
+    def test_the_paye_deadline_belongs_to_the_filing_month_its_period_starts_in(self):
+        """RED ON THE OLD RULE BY EXACTLY 24 DAYS, and this is that test.
+
+        Whatever period the page shows, the deadline it states must be the
+        deadline of the Ethiopian filing month that period BEGINS in — because
+        that is the filing an accountant reading the row takes it to be.
+
+        The old configuration was a Gregorian month with a flat 30-day window.
+        On 20 August 2026 that is 1-31 July, due 30 August; the period begins in
+        Sene 2018, whose return was due at the end of Hamle, 6 August. The page
+        was telling somebody they had until the 30th about a return that had
+        been late for a fortnight. The other half of this proof forces that
+        configuration back and watches the assertion below fail.
+        """
+        landing = self._landing()
+        paye = self._row(landing, "paye")
+        self._assert_deadline_matches_its_filing_month(paye)
+
+    def _assert_deadline_matches_its_filing_month(self, row):
+        filing_end = filing_status.period_containing(filing_status.ETHIOPIAN, row.period_start)[
+            1
+        ]
+        expected = filing_status.next_period_end(filing_status.ETHIOPIAN, filing_end)
+        self.assertEqual(
+            row.deadline,
+            expected,
+            "the page states %s. The Ethiopian filing month this period begins "
+            "in ends %s and its return is due %s — the page is %d days late."
+            % (
+                row.deadline,
+                filing_end,
+                expected,
+                (row.deadline - expected).days if row.deadline else 0,
+            ),
+        )
+
+    def test_the_guard_above_goes_red_on_the_rule_it_replaced(self):
+        """It DISCRIMINATES. An untested guard passes by doing nothing.
+
+        The configuration IS the behaviour now, so the old behaviour can be put
+        back as data — which is also the clearest possible demonstration that
+        the open questions really are a data change and not a rewrite.
+
+        Late on EVERY build date, not only today's: swept day by day across
+        2026-2028, the old rule over-runs the real deadline by 20 to 50 days and
+        is never early. 24 is the figure on 20 August 2026.
+        """
+        company = self.env["res.company"].create({"name": "Old Rule PLC"})
+        self.env["sapian.filing.period"].sudo().create(
+            {
+                "company_id": company.id,
+                "filing_key": "paye",
+                "effective_from": date(2000, 1, 1),
+                "calendar": filing_status.GREGORIAN,
+            }
+        )
+        self.env["sapian.filing.deadline"].sudo().create(
+            {
+                "company_id": company.id,
+                "filing_key": "paye",
+                "effective_from": date(2000, 1, 1),
+                "window": filing_status.WINDOW_DAYS,
+                "days_after_period_end": 30,
+            }
+        )
+        row = self._row(self._landing(company=company), "paye")
+        with self.assertRaises(AssertionError) as caught:
+            self._assert_deadline_matches_its_filing_month(row)
+        self.assertIn("days late", str(caught.exception))
+        # And it is late, not early: the old rule always over-ran the real one.
+        filing_end = filing_status.period_containing(filing_status.ETHIOPIAN, row.period_start)[
+            1
+        ]
+        expected = filing_status.next_period_end(filing_status.ETHIOPIAN, filing_end)
+        self.assertGreater((row.deadline - expected).days, 0)
+
+    def test_pagume_is_where_thirty_days_and_the_next_month_part_company(self):
+        """The reason the deadline records a SHAPE and not a day count.
+
+        Eleven Ethiopian months are 30 days, so "+30 days" and "the end of the
+        following month" agree and a wrong rule looks right. Pagume is 5 or 6,
+        and Nehase's return is due at the end of it.
+        """
+        nehase_end = date(2026, 9, 5)
+        self.assertEqual(
+            filing_status.deadline_for(
+                nehase_end,
+                None,
+                filing_status.WINDOW_END_OF_NEXT_PERIOD,
+                filing_status.ETHIOPIAN,
+            ),
+            date(2026, 9, 10),
+        )
+        self.assertEqual(
+            filing_status.deadline_for(nehase_end, 30, filing_status.WINDOW_DAYS),
+            date(2026, 10, 5),
+        )
+
+    def test_every_filing_records_which_calendar_it_is_counted_in(self):
+        """Per-tax, as data — and the three open ones say they are open."""
+        model = self.env["sapian.filing.period"].sudo()
+        for key in filing_status.FILING_KEYS:
+            with self.subTest(filing=key):
+                calendar = model._calendar_for(key, date.today(), self.env.company)
+                self.assertIn(calendar, filing_status.CALENDARS)
+        for key in ("vat", "wht", "pension"):
+            with self.subTest(filing=key):
+                rule = model.search(
+                    [("filing_key", "=", key), ("company_id", "=", False)], limit=1
+                )
+                self.assertTrue(rule, "%s has no global period rule" % key)
+                self.assertIn(
+                    "UNVERIFIED",
+                    rule.source_note or "",
+                    "%s's period rule does not say it is unverified" % key,
+                )
+                self.assertIn(
+                    "QUESTION",
+                    rule.source_note or "",
+                    "%s's period rule does not carry the question that would "
+                    "settle it" % key,
+                )
+
+    def test_a_filing_is_matched_to_its_period_without_exact_date_equality(self):
+        """Item 6: `period_end =` broke the moment a period became Ethiopian."""
+        start, end = self._period_of("paye")
+        self.env["sapian.filing"].sudo().create(
+            {
+                "company_id": self.env.company.id,
+                "filing_key": "paye",
+                # A day out at BOTH ends, which is what a conversion done on the
+                # wrong side of a leap year does to every Ethiopian boundary.
+                "period_start": start + timedelta(days=1),
+                "period_end": end - timedelta(days=1),
+                "filed_on": end,
+            }
+        )
+        self.assertEqual(
+            self.env["sapian.filing"]._filed_on_for("paye", start, end, self.env.company),
+            end,
         )
 
     def test_a_period_with_no_effective_rule_reads_unknown(self):

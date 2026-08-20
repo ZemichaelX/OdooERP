@@ -12,6 +12,12 @@
               parent="l10n_et_reports.menu_l10n_et_reports"
               sequence="50"/>
 
+    <menuitem id="menu_sapian_filing_period"
+              name="Filing Periods"
+              action="action_sapian_filing_period"
+              parent="l10n_et_reports.menu_l10n_et_reports"
+              sequence="55"/>
+
     <menuitem id="menu_sapian_filing_deadline"
               name="Filing Deadlines"
               action="action_sapian_filing_deadline"

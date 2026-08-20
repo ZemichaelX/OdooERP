@@ -46,6 +46,13 @@ class TestDemoTraderE2E(TransactionCase):
         # assert the defect this change removed — see reference/demo_calendar.py.
         cls.calendar = demo_calendar.demo_calendar()
         cls.period = tuple(demo_calendar.iso(day) for day in cls.calendar["current"])
+        # PAYROLL IS ON ITS OWN CALENDAR. Ethiopian months, because the
+        # employment income tax period is one — VERIFIED, section 2 of
+        # docs/ethiopian-tax-reference.md. The newest is the month the landing
+        # page reads, and the one the payroll goldens below are written about.
+        cls.payroll_period = tuple(
+            demo_calendar.iso(day) for day in demo_calendar.ethiopian_payroll_months()[-1]
+        )
 
     def _in_the_newest_month(self, field="invoice_date"):
         """Domain terms scoping a search to the month these goldens describe.
@@ -57,6 +64,22 @@ class TestDemoTraderE2E(TransactionCase):
         figure that comes back is not wrong so much as not the one asked for.
         """
         return [(field, ">=", self.period[0]), (field, "<=", self.period[1])]
+
+    def _newest_payroll_run(self):
+        """The run for the newest ETHIOPIAN payroll month, and only that one."""
+        run = self.env["l10n.et.payroll.run"].search(
+            [
+                ("company_id", "=", self.company.id),
+                ("date_from", "=", self.payroll_period[0]),
+                ("date_to", "=", self.payroll_period[1]),
+            ]
+        )
+        self.assertEqual(
+            len(run),
+            1,
+            "expected exactly one payroll run for %s..%s" % self.payroll_period,
+        )
+        return run
 
     def _report(self, model_name):
         return (
@@ -208,13 +231,7 @@ class TestDemoTraderE2E(TransactionCase):
         Journal = gross 58,300 + employer pension 6,193 = 64,493, which must
         equal PAYE 11,525 + pension payable 10,134 + net payable 42,834.
         """
-        run = self.env["l10n.et.payroll.run"].search(
-            [
-                ("company_id", "=", self.company.id),
-                *self._in_the_newest_month("date_from"),
-            ]
-        )
-        self.assertEqual(len(run), 1, "one payroll run per month, and this is the newest")
+        run = self._newest_payroll_run()
         self.assertEqual(run.state, "done")
         self.assertEqual(run.total_gross, 58300.0)
         self.assertEqual(run.total_paye, 11525.0)
@@ -487,15 +504,9 @@ class TestDemoTraderE2E(TransactionCase):
         self.assertIn("N/A (foreign)", html)
         self.assertIn("20184.00", html)
 
-        run = self.env["l10n.et.payroll.run"].search(
-            [
-                ("company_id", "=", self.company.id),
-                *self._in_the_newest_month("date_from"),
-            ]
-        )
-        # ONE month's declaration. Rendering all three and grepping for one
+        run = self._newest_payroll_run()
+        # ONE month's declaration. Rendering all four and grepping for one
         # month's PAYE would pass on a report that had the wrong month on it.
-        self.assertEqual(len(run), 1)
         html = render("l10n_et_payroll.report_paye_declaration", run.ids)[0].decode()
         self.assertIn("11,525", html)
         html = render("l10n_et_payroll.report_pension_schedule", run.ids)[0].decode()

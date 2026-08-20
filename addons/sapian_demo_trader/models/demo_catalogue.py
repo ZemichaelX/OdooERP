@@ -412,7 +412,6 @@ SUPPLIER_BILL_DAY = 15
 SUPPLIER_PAYMENT_DAY = 28
 DIRECT_BILL_DAYS = {"yonas": 18, "buildsoft": 20}
 DIRECT_BILL_PAYMENT_DAY = 30
-MONTH_END_DAY = 31  # clamped to the month's real length by `day_in`
 QUOTE_VALIDITY_DAYS = 31
 
 # The two earlier trading months. Smaller than the newest month on purpose: the

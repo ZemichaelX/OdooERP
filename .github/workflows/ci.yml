@@ -279,7 +279,11 @@ jobs:
           # move with the suite. Measured, not guessed: run 32232939918 summed
           # 632 across its module stats lines, of which sapian_theme_mail is 68
           # — a floor left at 418 would not have noticed that module vanishing.
-          MIN_EXPECTED_TESTS=462
+          # 462 -> 490 when the filing period became per-tax: seven more in
+          # sapian_landing and the demo's payroll goldens moved to the Ethiopian
+          # cycle. Measured, not guessed: run 32352484471 summed 497 before this
+          # change.
+          MIN_EXPECTED_TESTS=490
           EXECUTED=$(grep -oE "odoo\.tests\.stats: [A-Za-z0-9_]+: [0-9]+ tests" /tmp/odoo-test.log \
                      | awk '$4 == "tests" { total += $3 } END { print total + 0 }')
           echo "Executed ${EXECUTED} tests (floor ${MIN_EXPECTED_TESTS}):"
@@ -1710,8 +1714,13 @@ jobs:
             exit 1
           fi
           RAN=$(sed -n 's/.*tests\.result:.* of \([0-9][0-9]*\) tests.*/\1/p' /tmp/landing-tests.log | tail -1)
-          if [ -z "${RAN:-}" ] || [ "${RAN}" -lt 17 ]; then
-            echo "::error::Expected at least 17 landing tests, the runner reported '${RAN:-none}'."
+          # 17 -> 24 when the filing period became per-tax: the Ethiopian-month
+          # period, the deadline that belongs to the filing month its period
+          # begins in, that guard's own red proof, the Pagume divergence, the
+          # per-tax calendar rules, the overlap-matched filing record, and the
+          # refusal to place a payroll run from another cycle.
+          if [ -z "${RAN:-}" ] || [ "${RAN}" -lt 24 ]; then
+            echo "::error::Expected at least 24 landing tests, the runner reported '${RAN:-none}'."
             exit 1
           fi
           if grep -qE "[1-9][0-9]* skipped" /tmp/landing-tests.log; then
@@ -1720,6 +1729,47 @@ jobs:
             exit 1
           fi
           echo "OK — ${RAN} figure tests."
+
+      - name: An already-installed tenant gets the corrected deadline
+        # A MIGRATION SHIPPED WITHOUT ITS BUMP IS INERT, and a migration nobody
+        # exercises is the same thing with extra steps. `data/` is
+        # `noupdate="1"` so an upgrade cannot rewrite the row; the migration is
+        # the only path to a tenant that already carries the 30-day employment
+        # income tax deadline, and this proves it takes that path.
+        #
+        # Proved by making the bad thing happen on purpose: the row is forced
+        # back to the seeded 30-day shape and `latest_version` rewound, because
+        # a fresh install already sits AT the manifest version and `-u` would
+        # run no migration at all and report success.
+        #
+        # The python is one line joined with `;`, not a heredoc: every line of a
+        # YAML block scalar has to be indented, and a leading space on a
+        # top-level Python statement is a syntax error.
+        shell: bash
+        run: |
+          set -uo pipefail
+          ARGS="--db_host=db --db_port=5432 --db_user=odoo --db_password=odoo
+                --data-dir=/tmp/odoo-data
+                --addons-path=${GITHUB_WORKSPACE}/addons,${GITHUB_WORKSPACE}/vendor/oca_web,/usr/lib/python3/dist-packages/odoo/addons
+                --workers=0 --max-cron-threads=0 --stop-after-init"
+
+          echo 'rule = env.ref("sapian_landing.deadline_paye"); rule.sudo().write({"window": "days", "days_after_period_end": 30}); env["ir.module.module"].sudo().search([("name", "=", "sapian_landing")]).write({"latest_version": "19.0.1.0.0"}); env.cr.commit(); print("SAPIAN-MIGRATE before window=%s days=%s" % (rule.window, rule.days_after_period_end))' \
+            | odoo shell ${ARGS} -d ci_landing --no-http --log-level=warn 2>&1 \
+            | tee /tmp/migrate-before.log
+          grep -q "SAPIAN-MIGRATE before window=days days=30" /tmp/migrate-before.log \
+            || { echo "::error::Could not put the old rule back, so the proof below measures nothing."; exit 1; }
+
+          odoo ${ARGS} -d ci_landing -u sapian_landing --log-level=info 2>&1 \
+            | tee /tmp/migrate-run.log
+          grep -q "employment income tax deadline corrected on 1 row" /tmp/migrate-run.log \
+            || { echo "::error::The migration never reported. A migration that did not run is not a migration that passed."; grep -i "migrat" /tmp/migrate-run.log || true; exit 1; }
+
+          echo 'rule = env.ref("sapian_landing.deadline_paye"); print("SAPIAN-MIGRATE after window=%s days=%s" % (rule.window, rule.days_after_period_end))' \
+            | odoo shell ${ARGS} -d ci_landing --no-http --log-level=warn 2>&1 \
+            | tee /tmp/migrate-after.log
+          grep -q "SAPIAN-MIGRATE after window=end_of_next_period" /tmp/migrate-after.log \
+            || { echo "::error::The upgrade ran and the deadline is still the 30-day analogy."; cat /tmp/migrate-after.log; exit 1; }
+          echo "OK — the corrected deadline reaches a tenant that already had the old one."
 
       - name: The grid button toggles back to the landing page
         shell: bash

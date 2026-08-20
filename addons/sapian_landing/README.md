@@ -46,11 +46,49 @@ never be two different windows over the same ledger.
 |---|---|---|
 | Value Added Tax | `l10n.et.vat.declaration.net_vat` | the company is not on the Ethiopian chart, so no VAT code resolves — the declaration's own `off_chart` flag |
 | Withholding Tax | `l10n.et.wht.summary.total_wht` | — |
-| Employment Income Tax | `l10n.et.payroll.run.total_paye`, summed over the month | no payroll run covers the period |
-| Pension | the run's employee + employer halves | no payroll run covers the period |
+| Employment Income Tax | `l10n.et.payroll.run.total_paye`, summed over the filing month | no payroll run IS that filing month |
+| Pension | the run's employee + employer halves | no payroll run IS that filing month |
 
-Each carries the period, the deadline, and `filed` / `due` / `late` / `deadline
-unknown`.
+Each carries **its own period**, the deadline, and `filed` / `due` / `late` /
+`deadline unknown`.
+
+### The period is per-tax, and it is data
+
+The four filings are not all counted in the same calendar, so the page has no
+single period and its heading no longer claims one — it names the **business
+month**, and each compliance row carries the period that row covers.
+
+| Filing | Period | Confidence |
+|---|---|---|
+| Employment Income Tax | **Ethiopian month**, filed during the following Ethiopian month | **VERIFIED** — `docs/ethiopian-tax-reference.md` §2, two accountants and PwC |
+| Value Added Tax | Gregorian month, 30 days | **UNVERIFIED** — the reference is silent |
+| Withholding Tax | Gregorian month, 30 days | **UNVERIFIED** — the reference is silent |
+| Pension | Gregorian month, 30 days | **UNVERIFIED** — the reference marks this exact question open |
+
+The three UNVERIFIED rows record **what the product does today, not an answer**,
+and each carries the question that would settle it — read them at *Accounting →
+Filing Periods*, or in `data/filing_period_data.xml`. They are
+`sapian.filing.period` records with an effective date, so closing one of those
+questions is a row an accountant edits, not a release. The open questions are
+written up in `docs/defect-register.md`.
+
+**The label never names a period the figures do not cover.** The defect this
+replaced converted both ends of a Gregorian month into Ethiopian dates and
+printed the two month names it landed in: *"Sene 2018 – Hamle 2018"* for 1–31
+July 2026 — sixty days' worth of month names over a 31-day range that begins 24
+days into Sene, ends 24 days into Hamle and covers neither. Now a whole month is
+NAMED (`Hamle 2018`), a Gregorian month is named as itself with the Ethiopian
+span given as dates (`July 2026 (24 Sene – 24 Hamle 2018)`), and anything else
+gets the dates alone. A month name only ever appears with a day number beside
+it, where it cannot be read as a period.
+
+**A payroll run must BE the filing month.** The reference records the payroll
+cycle as a business choice — one accountant runs Ethiopian months, the other
+Gregorian — and states the mapping onto a filing month only for the first: a run
+whose period is Hamle 2018 is filed as Hamle 2018. For a Gregorian-cycle run it
+gives the filing *window* and never says which month goes on the form, so the
+page says it cannot place the run and names the open question rather than
+picking a month. That is `Open 4` in the defect register.
 
 ### What does not reconcile
 
@@ -87,12 +125,26 @@ stated here rather than quietly invented.
 **When a filing is due.** Nothing knew. `sapian.filing.deadline` is
 effective-dated configuration — CLAUDE.md rule 4, the same discipline as PAYE
 bands — so correcting a deadline never moves a period already assessed against
-the old rule. **The seeded 30-day window is UNVERIFIED**: it is what this
-project recorded for pension ("POESSA declaration + bank slip within 30 days",
-accountant-verified Jul 2026), applied to the other three by analogy. The page
-says so in as many words, and an accountant can fix it in the UI without a code
-change. A period that ends before every rule reads *deadline unknown* — it does
-not borrow a rule written later.
+the old rule. A period that ends before every rule reads *deadline unknown* — it
+does not borrow a rule written later.
+
+A deadline has **two shapes**, because the evidence has two:
+
+* **a number of days** — pension's shape: "POESSA declaration + bank slip within
+  30 days", accountant-verified Jul 2026. VAT and withholding are given the same
+  window **by analogy, which is not evidence**, and their rows say UNVERIFIED.
+* **the end of the following period** — employment income tax's shape, and
+  VERIFIED: the return is filed *"during the following Ethiopian month"*.
+
+They agree for eleven months of the Ethiopian year, because an Ethiopian month
+is 30 days — which is how a wrong rule looked right. They part at **Pagume**,
+which is 5 or 6 days: Nehase 2018's return is due 10 September 2026, where
+"+30 days" says 5 October. That is why the rule records the shape and not the
+coincidence.
+
+Swept day by day across 2026–2028, the old Gregorian-month-plus-30-days rule
+over-ran the real employment-income-tax deadline by **20 to 50 days and was
+never early** — 24 days on 20 August 2026, the day it was found.
 
 **Whether it was filed.** Nothing knew this either, and nothing can derive it: a
 posted payroll run means payslips were confirmed, not that a declaration reached

@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- WHICH CALENDAR EACH FILING'S PERIOD IS COUNTED IN.
+
+         `noupdate="1"` so an upgrade never overwrites an answer an accountant
+         has established. That is the point of these being records: three of the
+         four below are open questions, and the person who closes one must be
+         able to close it in the UI and keep it.
+
+         effective_from is 2000-01-01 rather than today: a rule that started
+         this morning would make every historical period read "no calendar
+         recorded", and the page would be blank on exactly the data an operator
+         opens it to see. These are not rule CHANGES — nobody is claiming the
+         law changed today — they are the first recording of what the rule is.
+    -->
+    <data noupdate="1">
+
+        <!-- VERIFIED. docs/ethiopian-tax-reference.md §2, headed
+             "Filing the monthly employment income tax — VERIFIED":
+             "The declaration for one Ethiopian month is filed at any time
+             during the following Ethiopian month", with the accountant's
+             example "Sene taxes must be reported from Hamle 01 to Hamle 30",
+             and PwC from the other direction: "by the end of the month
+             following the month the income was earned". Two independent
+             confirmations, and both accountants agree on it unprompted. -->
+        <record id="period_paye" model="sapian.filing.period">
+            <field name="filing_key">paye</field>
+            <field name="effective_from" eval="'2000-01-01'"/>
+            <field name="calendar">ethiopian</field>
+            <field name="source_note">VERIFIED — docs/ethiopian-tax-reference.md section 2, and both accountants independently. The period is an Ethiopian month; the return is filed during the following Ethiopian month.</field>
+        </record>
+
+        <!-- UNVERIFIED. Section 5 of the reference is headed "VAT — VERIFIED",
+             but that verification is about the 15% rate, the 2,000,000
+             threshold and the credit-invoice method. It says NOTHING about the
+             tax period or the return deadline. Gregorian is what this product
+             does today, kept so behaviour does not change on a guess. -->
+        <record id="period_vat" model="sapian.filing.period">
+            <field name="filing_key">vat</field>
+            <field name="effective_from" eval="'2000-01-01'"/>
+            <field name="calendar">gregorian</field>
+            <field name="source_note">UNVERIFIED. The reference does not state the VAT tax period or its calendar; this row records today's behaviour, not an answer. QUESTION THAT WOULD SETTLE IT: on etax.mor.gov.et, does the VAT declaration screen's period selector offer Ethiopian months or Gregorian months — and which article of Proclamation 1341/2024 or Regulation 570/2025 sets the tax period and the return deadline? Do NOT reason across from the employment income tax rule.</field>
+        </record>
+
+        <!-- UNVERIFIED. Section 6 covers the 3% rate, the 20,000/10,000
+             thresholds, the punitive 30% and VAT-exclusive computation. It says
+             nothing about when withholding is remitted or over what period. -->
+        <record id="period_wht" model="sapian.filing.period">
+            <field name="filing_key">wht</field>
+            <field name="effective_from" eval="'2000-01-01'"/>
+            <field name="calendar">gregorian</field>
+            <field name="source_note">UNVERIFIED. The reference does not state the withholding remittance period or its calendar; this row records today's behaviour, not an answer. QUESTION THAT WOULD SETTLE IT: on etax.mor.gov.et, does the withholding declaration screen's period selector offer Ethiopian months or Gregorian months — and which article of Proclamation 979/2016 as amended by 1395/2025 sets the remittance period? Do NOT reason across from the employment income tax rule.</field>
+        </record>
+
+        <!-- UNVERIFIED, and the reference says so about this exact question.
+             Section 3 is headed "Pension — VERIFIED by both practitioners", but
+             that is the 7%/11% rates and the basic-salary base. On the window
+             it says: "UNVERIFIED: whether the pension CSV shares the income-tax
+             window. Accountant 2 implies it does ... but she was not asked
+             directly." Implication is not evidence. -->
+        <record id="period_pension" model="sapian.filing.period">
+            <field name="filing_key">pension</field>
+            <field name="effective_from" eval="'2000-01-01'"/>
+            <field name="calendar">gregorian</field>
+            <field name="source_note">UNVERIFIED — and the reference marks this very question UNVERIFIED at section 3: "whether the pension CSV shares the income-tax window ... she was not asked directly." This row records today's behaviour, not an answer. QUESTION THAT WOULD SETTLE IT: ask either accountant directly whether the POESSA pension declaration covers the same Ethiopian month as the Schedule A income-tax file, and which article of Proclamation 1268/2022 sets the remittance period. Do NOT infer it from the employment income tax rule.</field>
+        </record>
+
+    </data>
+</odoo>

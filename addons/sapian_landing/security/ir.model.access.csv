@@ -6,3 +6,5 @@ access_sapian_filing_manager,sapian.filing manager,model_sapian_filing,account.g
 access_sapian_filing_user,sapian.filing read,model_sapian_filing,base.group_user,1,0,0,0
 access_sapian_filing_deadline_manager,sapian.filing.deadline manager,model_sapian_filing_deadline,account.group_account_manager,1,1,1,1
 access_sapian_filing_deadline_user,sapian.filing.deadline read,model_sapian_filing_deadline,base.group_user,1,0,0,0
+access_sapian_filing_period_manager,sapian.filing.period manager,model_sapian_filing_period,account.group_account_manager,1,1,1,1
+access_sapian_filing_period_user,sapian.filing.period read,model_sapian_filing_period,base.group_user,1,0,0,0
