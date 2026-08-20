@@ -12,13 +12,49 @@ choice look identical — both are "a colour that is not the current brand".
 the pair we last wrote, so drift can be detected without guessing.
 """
 
+import base64
 import logging
 
 from odoo import api, fields, models
+from odoo.tools import file_open
 
 from .. import brand
 
 _logger = logging.getLogger(__name__)
+
+
+# ---- The default company logo ---------------------------------------------
+#
+# WHY A MODEL AND NOT A DATA FILE
+# -------------------------------
+# The logo lives on a `res.company` RECORD, not in a file, so it has exactly the
+# install-versus-upgrade problem the bot's name had (see
+# `sapian_theme_mail/models/res_partner.py`): a `<record>` in a data file reaches
+# a database being created and never reaches one being upgraded, and a company
+# created after install — a second company, a new tenant — gets whatever Odoo's
+# column default says.
+#
+# THE FAVICON IS NOT HERE, AND THAT IS THE CORRECTION
+# ---------------------------------------------------
+# It was, and it could not be: `res.company` HAS NO `favicon` FIELD in Odoo 19.
+# `logo`, `uses_default_logo` and `primary_color` are on `base`'s res.company;
+# the favicon is a field of the `website` MODEL. Writing one here raised
+# `AttributeError: 'res.company' object has no attribute 'favicon'` inside
+# `post_init_hook`, which fails the registry load, which is why every CI job
+# that installs this module died in the same eighty seconds.
+#
+# The browser tab is branded by `views/favicon.xml` instead — a view inheriting
+# `web.layout`, which reaches install and upgrade by the same route and needs
+# neither a hook nor a migration.
+#
+# THE LOGO IS THEIRS, AND DELIBERATELY WEAKER THAN A BRAND CONSTANT
+# -----------------------------------------------------------------
+# It goes on their invoices, and the onboarding wizard exists to collect it. So
+# it is only ever written while the company still carries Odoo's stock image,
+# and the wizard's upload always wins. `uses_default_logo` is Odoo's own flag
+# for "nobody has chosen one".
+#
+LOGO = "sapian_theme/static/src/img/sapian_logo.png"
 
 
 class ResCompany(models.Model):
@@ -122,7 +158,16 @@ class ResCompany(models.Model):
             if layout and "external_report_layout_id" not in vals:
                 vals["external_report_layout_id"] = layout.id
                 vals.setdefault("sapian_layout_applied", layout.key)
-        return super().create(vals_list)
+        companies = super().create(vals_list)
+        # THE DEFAULT LOGO FOR A COMPANY CREATED LATER.
+        #
+        # Folded into the existing override rather than added as a second one:
+        # two `create` methods on one class is a redefinition, and the second
+        # silently wins. Written after super() because it is read from a file
+        # and because `uses_default_logo` cannot be read before the record
+        # exists.
+        self._sapian_apply_default_logo(companies)
+        return companies
 
     # ---- drift detection: WARN ONLY, never writes -------------------------
 
@@ -256,3 +301,31 @@ class ResCompany(models.Model):
                 company.write(vals)
                 changed |= company
         return changed
+
+    @api.model
+    def _sapian_apply_default_logo(self, companies=None):
+        """Put our logo on companies that never chose one. Idempotent.
+
+        Returns the number of companies written, so a caller can log a fact
+        rather than an intention.
+        """
+        # `search([])` with no limit is the intent, not an oversight: every
+        # company that still carries Odoo's stock image should carry ours, and
+        # a limit would silently leave the tail of a multi-company database on
+        # somebody else's mark.
+        # pylint: disable=no-search-all
+        companies = companies or self.sudo().search([])
+        with file_open(LOGO, "rb") as handle:
+            logo = base64.b64encode(handle.read())
+
+        written = 0
+        for company in companies:
+            # `uses_default_logo` is True only while the company still carries
+            # the stock Odoo image. Once a client uploads their own, or the
+            # onboarding wizard writes one, this stops being true and we never
+            # touch it again.
+            if company.uses_default_logo and company.logo != logo:
+                company.sudo().write({"logo": logo})
+                written += 1
+                _logger.info("sapian_theme: default logo written on %s", company.display_name)
+        return written

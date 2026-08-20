@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- THE BROWSER TAB.
+
+         `web.layout` is the <html> skeleton behind every backend page and
+         behind the login page, and its head carries:
+
+             <link type="image/x-icon" rel="shortcut icon"
+                   t-att-href="x_icon or '/web/static/img/favicon.ico'"/>
+
+         Nothing in this product had ever set `x_icon`, so every tab of every
+         client showed Odoo's icon all day. `website` sets it — from
+         `website.favicon`, its own record — but only on the FRONTEND, and only
+         when `website` is installed. The backend has no such record.
+
+         WHY A VIEW AND NOT A FIELD ON res.company. Because there is no such
+         field. `res.company.favicon` does not exist in Odoo 19: `logo`,
+         `uses_default_logo`, `primary_color` are on `base`'s res.company, and
+         the favicon is on the `website` MODEL. Writing one on install crashed
+         the registry with `AttributeError: 'res.company' object has no
+         attribute 'favicon'`, which took nine CI jobs down at once — every job
+         that installs this module.
+
+         A view is the better answer anyway, and not merely the available one:
+         it is loaded by the module's own data file, so it reaches an install
+         and an upgrade by the same route, with no post_init_hook, no
+         migration, and no company-by-company write that a new tenant could be
+         created after.
+
+         `x_icon or` is KEPT, deliberately. Where `website` is installed, that
+         variable holds the client's own website favicon — theirs, chosen in
+         their own website settings, and never ours to overwrite. Ours is the
+         fallback that used to be Odoo's, which is exactly the surface that
+         belongs to the product.
+    -->
+
+    <template id="favicon" inherit_id="web.layout" name="SapianERP favicon">
+        <xpath expr="//link[@rel='shortcut icon']" position="attributes">
+            <attribute name="type">image/png</attribute>
+            <attribute name="t-att-href">x_icon or '/sapian_theme/static/src/img/favicon.png'</attribute>
+        </xpath>
+    </template>
+
+</odoo>

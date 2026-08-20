@@ -26,6 +26,11 @@ PALETTE_FILE = MODULE_ROOT / "static" / "src" / "scss" / "sapian_variables.scss"
 HEX_LITERAL = re.compile(r"#(?:[0-9A-Fa-f]{6}|[0-9A-Fa-f]{3})\b")
 
 
+# The two files that carry the mark's own four colours. See the exemption
+# note in test_no_raw_hex_outside_palette.
+MARK_RENDERINGS = frozenset({"views/sapian_mark.xml", "static/src/xml/app_rail.xml"})
+
+
 @tagged("post_install", "-at_install")
 class TestSapianTheme(TransactionCase):
 
@@ -40,17 +45,40 @@ class TestSapianTheme(TransactionCase):
         ).group(0)
         self.assertEqual(brand.brand_primary(), declared.upper())
 
-    def test_the_mark_takes_its_colour_from_the_palette(self):
-        """No hex in the mark, and no way for it to acquire one.
+    def test_the_mark_carries_its_own_four_colours(self):
+        """The reverse of what this test used to assert, and deliberately so.
 
-        `fill="currentColor"` is what lets the same file be brand-coloured on
-        the login page and in the backend footer without a second definition of
-        the colour — and it is why the hex guard below needs no exemption for
-        it.
+        It required `fill="currentColor"` and NO hex, on the reasoning that a
+        monochrome mark keeps the colour in one place. That decision was
+        reversed on 20 Aug 2026 — see the header of views/sapian_mark.xml — and
+        this test was left behind asserting the old one, which is how a
+        deliberate change reads as a regression.
+
+        What is checkable HERE is the shape of the result: four petals, four
+        distinct colours, and no fallback to the enclosing text colour. That
+        the four values are byte-for-byte the ones in `brand/sapian-logo.svg`
+        is asserted by `tests_fast/test_sapian_mark_is_the_logo.py`, which is a
+        fast test because `brand/` is not on the addons path and an Odoo test
+        cannot see it.
         """
-        inline = (MODULE_ROOT / "views" / "sapian_mark.xml").read_text()
-        self.assertIn('fill="currentColor"', inline)
-        self.assertNotRegex(inline, HEX_LITERAL.pattern)
+        markup = (MODULE_ROOT / "views" / "sapian_mark.xml").read_text()
+        # THE <svg> ONLY, exactly as tests_fast/test_sapian_mark_is_the_logo.py
+        # slices it. The file's header comment explains the reversal by NAMING
+        # the value it reversed, so a whole-file search for "currentColor"
+        # fails on the prose rather than on the markup — the same trap as
+        # scanning comments for hex literals, which this repository has now
+        # been caught by twice.
+        inline = markup[markup.index("<svg") : markup.index("</svg>")]
+        self.assertNotIn(
+            'fill="currentColor"',
+            inline,
+            "the mark fell back to the enclosing colour instead of its own",
+        )
+        fills = re.findall(r'<path [^>]*fill="(#[0-9A-Fa-f]{6})"', inline)
+        self.assertEqual(len(fills), 4, "expected four painted petals, got %r" % (fills,))
+        self.assertEqual(
+            len(set(fills)), 4, "the four petals are not four colours: %r" % (fills,)
+        )
 
     def test_no_raw_hex_outside_palette(self):
         """The one-edit property, enforced.
@@ -59,18 +87,33 @@ class TestSapianTheme(TransactionCase):
         silently becomes a find-and-replace and this module's central promise
         is broken.
 
-        Two exemptions, both deliberate:
+        Four exemptions, all deliberate:
         - Markdown: the README quotes measured contrast figures, which are data
           *about* the colour, not a second definition of it.
         - This tests/ directory: proving a client's colour is never overwritten
           requires a colour that is NOT the brand, so arbitrary fixture hexes
           are the point rather than a violation.
+        - Binary assets: a PNG read as text can hold any byte sequence, so
+          scanning one is a coin toss rather than a check.
+        - THE TWO MARK RENDERINGS. Added 20 Aug 2026, when the mark stopped
+          being monochrome. Its four petal colours are not in the palette file
+          and never were: three of them exist nowhere except
+          `brand/sapian-logo.svg`, which is the mark's single source. The
+          renderings are byte-for-byte copies OF that file, and
+          `tests_fast/test_sapian_mark_is_the_logo.py` asserts paths and fills
+          for both, so they cannot drift and re-branding is still one edit —
+          the edit is the SVG. Exempting them is what keeps the mark's own
+          colours from being flattened into the one palette value again.
         """
         offenders = []
         for path in sorted(MODULE_ROOT.rglob("*")):
             if not path.is_file() or path.suffix in (".md", ".pyc"):
                 continue
+            if path.suffix in (".png", ".jpg", ".jpeg", ".ico", ".gif", ".woff", ".woff2"):
+                continue
             if path == PALETTE_FILE or "__pycache__" in path.parts:
+                continue
+            if path.relative_to(MODULE_ROOT).as_posix() in MARK_RENDERINGS:
                 continue
             if "tests" in path.relative_to(MODULE_ROOT).parts:
                 continue

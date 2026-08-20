@@ -1333,6 +1333,170 @@ jobs:
           fi
           echo "All five steps ran and all five passed."
 
+  brand-assets:
+    name: One mark, everywhere, and it survives an upgrade
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # THREE THINGS NOTHING ELSE CHECKS.
+    #
+    # 1. The rasters are what the committed script produces from the committed
+    #    SVG. Regenerate and `git diff --exit-code`: a hand-edited PNG, or a
+    #    palette change nobody re-ran the script for, fails here. Before this,
+    #    the icon set had drifted into a palette that was not the mark's and
+    #    six modules had no icon at all.
+    # 2. The favicon reaches the served <head> and the default logo reaches
+    #    res.company on INSTALL. Two mechanisms, because res.company has no
+    #    favicon field in Odoo 19 — assuming it did took nine jobs down at once.
+    # 3. The logo survives an UPGRADE, which is the path a post_init_hook cannot
+    #    take. Proved by resetting the logo on a built database and running -u,
+    #    exactly as sapian_theme_mail proves the bot's name. The favicon needs no
+    #    such proof: it is a view, and an upgrade reloads views.
+    container:
+      image: odoo:19.0@sha256:e415f9924395e7521245813135112f264b9222bcde3b1d3c2ee9ff073081540a
+      options: --user root
+    services:
+      db:
+        image: postgres:16@sha256:33f923b05f64ca54ac4401c01126a6b92afe839a0aa0a52bc5aeb5cc958e5f20
+        env:
+          POSTGRES_USER: odoo
+          POSTGRES_PASSWORD: odoo
+          POSTGRES_DB: postgres
+        options: >-
+          --health-cmd "pg_isready -U odoo"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: The rasters are what the script generates, byte for byte
+        shell: bash
+        run: |
+          set -euo pipefail
+          apt-get update -qq && apt-get install -y -qq libcairo2 >/dev/null
+          # --break-system-packages: the odoo:19.0 image is Debian, and Debian
+          # marks its interpreter externally managed (PEP 668), so a bare
+          # `pip install` exits 1 before installing anything.
+          # The versions are PINNED because this step compares BYTES: a
+          # different cairosvg or Pillow re-renders the same SVG to a different
+          # PNG, and the diff below would fail on a file nobody touched.
+          pip install --quiet --break-system-packages cairosvg==2.9.0 pillow==12.3.0
+
+          # NOT `git diff`. There is no git here, in EITHER sense: the odoo
+          # image ships without the binary, and because it does,
+          # actions/checkout fell back to downloading a tarball through the
+          # REST API — so there is no .git directory to diff against either.
+          # The first version of this step ran `git diff --exit-code`, got
+          # "git: command not found", and its `if !` read that as "the files
+          # changed". A missing tool reported as a brand defect.
+          #
+          # Hashing every PNG before and after is what the diff was FOR, and it
+          # asserts a count as well, which the diff did not: a run that wrote
+          # nothing at all cannot pass.
+          snapshot() { find addons brand -name '*.png' -type f | sort | xargs sha256sum; }
+          snapshot > /tmp/rasters-before.txt
+          BEFORE=$(wc -l < /tmp/rasters-before.txt)
+          if [ "${BEFORE}" -lt 50 ]; then
+            echo "::error::Only ${BEFORE} PNGs found before regenerating; expected at least 50. The checkout is wrong, so this proves nothing."
+            exit 1
+          fi
+          python3 scripts/build_brand_assets.py
+          snapshot > /tmp/rasters-after.txt
+          if ! diff -u /tmp/rasters-before.txt /tmp/rasters-after.txt; then
+            echo "::error::Regenerating the brand assets changed files. A raster was edited by hand, or the sources moved and scripts/build_brand_assets.py was never re-run. Run it and commit the result."
+            exit 1
+          fi
+          echo "OK — all ${BEFORE} rasters match what the committed sources generate."
+
+      - name: Install, then upgrade, and the brand assets survive both
+        shell: bash
+        run: |
+          set -uo pipefail
+          mkdir -p /tmp/odoo-data
+          ARGS="--db_host=db --db_port=5432 --db_user=odoo --db_password=odoo
+                --data-dir=/tmp/odoo-data
+                --addons-path=${GITHUB_WORKSPACE}/addons,${GITHUB_WORKSPACE}/vendor/oca_web,/usr/lib/python3/dist-packages/odoo/addons
+                --workers=0 --max-cron-threads=0 --stop-after-init"
+
+          # ---- PHASE 1: INSTALL -------------------------------------------
+          odoo ${ARGS} -d ci_brand -i base --without-demo=all --log-level=warn
+          odoo ${ARGS} -d ci_brand -i sapian_theme --without-demo=all \
+            --test-enable \
+            --test-tags '/sapian_theme:TestBrandAssets,/sapian_theme:TestFaviconReachesTheTab' \
+            --log-level=test 2>&1 | tee /tmp/brand-install.log
+          grep -q "odoo\.tests\.result:" /tmp/brand-install.log \
+            || { echo "::error::The install-phase tests never reported."; exit 1; }
+          if grep -qE "tests\.result: ([1-9][0-9]* failed|0 failed, [1-9][0-9]* error)" /tmp/brand-install.log; then
+            echo "::error::The brand assets do not reach the page or the company on INSTALL."
+            exit 1
+          fi
+          # A REPORTED RESULT IS NOT A RUN SUITE. Both classes are tagged
+          # post_install, and a mis-typed class name in --test-tags selects
+          # nothing while the runner still prints a clean result line.
+          # `of N tests`, because that is what Odoo actually prints:
+          #   "odoo.tests.result: 0 failed, 0 error(s) of 7 tests when ..."
+          # The first version of this line matched "result: N tests", found
+          # nothing, and failed the job on a run where all 7 tests had passed.
+          RAN=$(sed -n 's/.*tests\.result:.* of \([0-9][0-9]*\) tests.*/\1/p' /tmp/brand-install.log | tail -1)
+          if [ -z "${RAN:-}" ] || [ "${RAN}" -lt 7 ]; then
+            echo "::error::Expected at least 7 brand-asset tests, the runner reported '${RAN:-none}'."
+            exit 1
+          fi
+          # And skips are silent in that count's favour.
+          if grep -qE "[1-9][0-9]* skipped" /tmp/brand-install.log; then
+            echo "::error::A brand-asset test skipped, so it proved nothing:"
+            grep -E "skipped" /tmp/brand-install.log
+            exit 1
+          fi
+
+          # ---- PHASE 2: RESET, THEN UPGRADE -------------------------------
+          # The logo is put back to Odoo's stock image on every company, so the
+          # upgrade has something real to repair. Without this the -u below
+          # would pass on a database that was already correct — a success
+          # signal produced by doing nothing.
+          echo 'env["res.company"].sudo().search([]).write({"logo": False}); env.cr.commit(); print("SAPIAN-BRAND reset=%d" % env["res.company"].sudo().search_count([("uses_default_logo","=",True)]))' \
+            | odoo shell ${ARGS} -d ci_brand --no-http --log-level=warn 2>&1 | tee /tmp/brand-reset.log
+          grep -qE "SAPIAN-BRAND reset=[1-9]" /tmp/brand-reset.log \
+            || { echo "::error::The reset step never reported, so the upgrade below proves nothing."; exit 1; }
+
+          # REWIND THE RECORDED VERSION, or the migration never runs and this
+          # whole phase measures nothing. Odoo executes migrations/<version>/
+          # only when the INSTALLED version is below the manifest's, and phase 1
+          # installed this module at the manifest version — so a bare
+          # `-u sapian_theme` on a freshly installed database skips every
+          # migration script silently. The first version of this step did
+          # exactly that and reported `wrong=1 of 1`: the check was right and
+          # the proof was empty.
+          #
+          # Same mechanism the bot-rename job uses, and the same reason: it puts
+          # the database into the state of a tenant that installed this module
+          # before the migration existed, which is the only state the migration
+          # is for.
+          echo 'env.cr.execute("UPDATE ir_module_module SET latest_version = %s WHERE name = %s", ("19.0.2.1.0", "sapian_theme")); env.cr.commit(); print("SAPIAN-BRAND rewound")' \
+            | odoo shell ${ARGS} -d ci_brand --no-http --log-level=warn 2>&1 | tee /tmp/brand-rewind.log
+          grep -q "SAPIAN-BRAND rewound" /tmp/brand-rewind.log \
+            || { echo "::error::Could not rewind the module version, so the migration below would not run."; exit 1; }
+
+          odoo ${ARGS} -d ci_brand -u sapian_theme --log-level=info 2>&1 | tee /tmp/brand-upgrade.log
+          # THE MIGRATION'S OWN LINE, not the absence of an error. A `-u` that
+          # skipped it exits 0 and looks identical to one that ran it.
+          if ! grep -qE "sapian_theme: upgrade wrote the default logo on [1-9]" /tmp/brand-upgrade.log; then
+            echo "::error::migrations/19.0.2.2.0/end-brand_assets.py did not run, or ran and wrote nothing. Whatever the check below reports, it is not about the migration."
+            grep -i "migration" /tmp/brand-upgrade.log | head -20
+            exit 1
+          fi
+
+          echo 'c = env["res.company"].sudo().search([]); import base64; from odoo.tools import file_open; ours = base64.b64encode(file_open("sapian_theme/static/src/img/sapian_logo.png","rb").read()); print("SAPIAN-BRAND wrong=%d of %d" % (len(c.filtered(lambda x: x.logo != ours)), len(c)))' \
+            | odoo shell ${ARGS} -d ci_brand --no-http --log-level=warn 2>&1 | tee /tmp/brand-after.log
+          grep -q "SAPIAN-BRAND wrong=" /tmp/brand-after.log \
+            || { echo "::error::The post-upgrade check never reported."; exit 1; }
+          if ! grep -q "SAPIAN-BRAND wrong=0 of" /tmp/brand-after.log; then
+            echo "::error::After -u sapian_theme, companies still carry a logo that is not ours:"
+            grep "SAPIAN-BRAND wrong=" /tmp/brand-after.log
+            exit 1
+          fi
+          echo "OK — install and upgrade both write the default logo."
+
   auth-controls-palette:
     name: Every auth control is in the palette
     runs-on: ubuntu-latest

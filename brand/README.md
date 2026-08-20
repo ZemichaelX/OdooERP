@@ -8,8 +8,8 @@ reads from here automatically.
 
 | File | What it is |
 |---|---|
-| `Sapian Logo.svg` | the mark alone — the four-petal pinwheel |
-| `Sapian Logo+Name+Tag.svg` | mark, wordmark and tagline lockup |
+| `sapian-logo.svg` | the mark alone — the four-petal pinwheel |
+| `sapian-logo-name-tag.svg` | mark, wordmark and tagline lockup |
 
 Both are committed here as the originals. **Never recreate or trace them** — a
 redrawn logo that looks close is worse than a missing one, because it propagates
@@ -18,7 +18,7 @@ silently into every client deployment.
 ## Palette
 
 Four colours, read from the logo SVG source — and verified against the committed
-files: `Sapian Logo.svg` contains exactly four colour literals, one per petal.
+files: `sapian-logo.svg` contains exactly four colour literals, one per petal.
 
 | Colour | Hex | Role |
 |---|---|---|
@@ -50,7 +50,7 @@ that headroom.
 
 The mark is a **four-petal pinwheel**: four identical blades rotating about a
 common centre, each blade carrying one of the four palette colours. The SVG
-confirms it — `Sapian Logo.svg` is a 512×512 viewBox with exactly one colour
+confirms it — `sapian-logo.svg` is a 512×512 viewBox with exactly one colour
 literal per petal and no others.
 
 **Module icons reuse that motif.** Same blade shape, one of the four colours per

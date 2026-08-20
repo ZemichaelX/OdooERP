@@ -74,7 +74,13 @@ SAPIAN_PUSH_ICON = "/sapian_theme_mail/static/src/img/sapian_bot.png"
 # The brand original the shipped copy must equal, byte for byte. Relative to
 # the repository root, which is two levels above this addon — the same relation
 # in CI (${GITHUB_WORKSPACE}/addons/...) and locally.
-BRAND_AVATAR = "brand/icons/deliver/sapian_core__icon.png"
+BRAND_AVATAR = os.path.join("brand", "sapian-logo.svg")
+# The bot wears THE MARK. Until 20 Aug 2026 this pointed at
+# brand/icons/deliver/sapian_core__icon.png and the avatar was byte-identical
+# to the Settings app tile, so one image was doing two jobs and the product
+# showed two logos at once. The comparison is now against the rasteriser
+# rather than a stored PNG, because a PNG copy of a PNG proves only that a
+# copy was made.
 
 # The three upstream files whose served content this file sweeps. Odoo wraps
 # each JS module in the bundle as `odoo.define("@mail/core/web/...")`, so the
@@ -401,23 +407,46 @@ class TestTheFilesWeShip(BotIdentityCase):
     def test_the_avatar_we_ship_is_the_brand_asset(self):
         """brand/README.md: "Never recreate or trace them".
 
-        The module carries a copy because an addon must be self-contained, and
-        a copy is exactly the thing that drifts into a redraw. This is the
-        assertion that makes the copy safe.
+        The module carries a raster because an addon must be self-contained,
+        and a raster is exactly the thing that drifts into a redraw. The
+        assertion that makes it safe is not "this PNG equals that PNG" — that
+        only proves a copy was taken — but "this PNG is what the committed
+        generator produces from the committed SVG, today".
+
+        Skipped rather than failed when the rasteriser is absent: cairosvg is a
+        dev-time dependency and is deliberately not in the runtime image. The
+        skip is reported, and CI's brand job installs it so the check runs
+        there for real.
         """
         original = self.repo_file(BRAND_AVATAR)
         self.assertTrue(
             os.path.exists(original),
             "%s is not where this test expects the repository root to be" % original,
         )
-        with open(original, "rb") as handle:
-            self.assertEqual(
-                self.shipped(SAPIAN_AVATAR),
-                handle.read(),
-                "the avatar in this module is no longer byte-identical to the "
-                "brand original — a redrawn logo that looks close is worse "
-                "than a missing one",
+        try:
+            import cairosvg  # noqa: PLC0415 - dev-time only
+            from PIL import Image  # noqa: PLC0415 - dev-time only
+        except ImportError:  # pragma: no cover - depends on the environment
+            self.skipTest(
+                "cairosvg/pillow absent: cannot regenerate the mark to compare "
+                "against. CI's brand-assets job installs them."
             )
+        import io  # noqa: PLC0415
+
+        with open(original, "rb") as handle:
+            png = cairosvg.svg2png(
+                bytestring=handle.read(), output_width=256, output_height=256
+            )
+        expected = io.BytesIO()
+        Image.open(io.BytesIO(png)).convert("RGBA").save(expected, format="PNG", optimize=True)
+        self.assertEqual(
+            self.shipped(SAPIAN_AVATAR),
+            expected.getvalue(),
+            "the avatar in this module is not what scripts/build_brand_assets.py "
+            "produces from brand/sapian-logo.svg. Regenerate it with that "
+            "script rather than editing the PNG — a redrawn logo that looks "
+            "close is worse than a missing one",
+        )
 
     def test_the_transparency_check_discriminates(self):
         """Odoo's avatar must FAIL the check the previous test passes.

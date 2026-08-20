@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     "name": "SapianERP Theme",
-    "version": "19.0.2.1.0",
+    "version": "19.0.2.2.0",
     "summary": "SapianERP house identity: one brand colour driving the backend, "
     "the login page and printed documents, plus the app rail that makes the "
     "app icons visible on desktop. Horizontal — no client and no sector "
@@ -18,6 +18,9 @@
         # The mark first: login_templates.xml t-calls it.
         "views/sapian_mark.xml",
         "views/login_templates.xml",
+        # The browser tab. A view, because res.company has no favicon field in
+        # Odoo 19 — see the file for what assuming otherwise cost.
+        "views/favicon.xml",
         # The other emitter of "Powered by Odoo" — reached by the portal,
         # and by the login page itself when `website` is installed.
         "views/brand_promotion.xml",

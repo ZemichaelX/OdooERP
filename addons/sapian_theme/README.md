@@ -131,7 +131,7 @@ Three things about how it is built:
 - **The SVG is inline, not an `<img>`.** An `<img>` renders in a document of
   its own, where `currentColor` falls back to black; the mark takes the brand
   from `color` on the button. Same reasoning as the login page's mark.
-- **The four `d` attributes are copied from `brand/Sapian Logo.svg`**, byte for
+- **The four `d` attributes are copied from `brand/sapian-logo.svg`**, byte for
   byte, and they now appear in the repo twice: once in `views/sapian_mark.xml`
   (server QWeb, for the login page and the portal attribution) and once here,
   because an OWL template cannot `t-call` a server-side one. Two *renderings*,

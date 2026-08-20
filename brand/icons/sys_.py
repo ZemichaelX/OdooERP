@@ -29,41 +29,71 @@ SYSTEM v3
   Family    one bold silhouette per icon, a second hue overlapping it — the
             shape reads first, the accent gives it depth.
 """
+
 import cairosvg, io, colorsys
 from PIL import Image
 
 # Brand values — correct for print and text, too dark for a 39px tile.
 TEAL, GREEN, ORANGE, AMBER = "#14454F", "#2F7E4F", "#C05628", "#E39A42"
 
-def _hex2rgb(h): return tuple(int(h[i:i+2], 16) / 255 for i in (1, 3, 5))
-def _rgb2hex(r, g, b): return "#%02X%02X%02X" % tuple(min(255, max(0, round(v*255))) for v in (r, g, b))
+
+def _hex2rgb(h):
+    return tuple(int(h[i : i + 2], 16) / 255 for i in (1, 3, 5))
+
+
+def _rgb2hex(r, g, b):
+    return "#%02X%02X%02X" % tuple(min(255, max(0, round(v * 255))) for v in (r, g, b))
+
 
 def vivid(hex_c, light=None, sat=None):
     """Raise lightness/saturation, keep the hue. This is what makes a brand
     colour work at 39px without becoming a different colour."""
     r, g, b = _hex2rgb(hex_c)
     h, l, s = colorsys.rgb_to_hls(r, g, b)
-    if light is not None: l = light
-    if sat is not None:   s = sat
+    if light is not None:
+        l = light
+    if sat is not None:
+        s = sat
     return _rgb2hex(*colorsys.hls_to_rgb(h, l, s))
 
+
 def tint(hex_c, pct):
-    r, g, b = (int(hex_c[i:i+2], 16) for i in (1, 3, 5))
+    r, g, b = (int(hex_c[i : i + 2], 16) for i in (1, 3, 5))
     f = lambda v: int(v + (255 - v) * pct)
     return f"#{f(r):02X}{f(g):02X}{f(b):02X}"
 
-# ---- The icon palette: same four hues, tile-weight values -------------------
-# Measured target: Odoo's icons sit around L=0.45-0.62, S=0.55-0.80.
-T  = vivid(TEAL,   light=0.38, sat=0.68)   # deep turquoise — still the brand teal
-T2 = vivid(TEAL,   light=0.55, sat=0.55)   # lighter partner tone
-G  = vivid(GREEN,  light=0.42, sat=0.55)
-G2 = vivid(GREEN,  light=0.58, sat=0.48)
-O  = vivid(ORANGE, light=0.52, sat=0.72)
-A  = vivid(AMBER,  light=0.62, sat=0.82)
-W  = "#FFFFFF"
 
-HEAD = ('<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" '
-        'viewBox="0 0 512 512">')
+# ---- The icon palette: THE MARK'S OWN FOUR VALUES, unmodified ---------------
+#
+# v3 ran every hue through vivid() to lift it for a 39px tile, on the reasoning
+# quoted at the top of this file: the brand values are built for text and print
+# and read dour against Odoo's turquoise and magenta. That produced a set which
+# was recognisably in the family but in nobody's palette — four hues that
+# matched neither the mark nor anything else in the product. The operator saw
+# the result as a second logo sitting under the first.
+#
+# DECIDED 20 Aug 2026: one identity everywhere. The icons wear the mark's exact
+# values. The legibility argument above was real and is knowingly traded away —
+# the icons are slightly darker at 23px than v3's, and that is the price of not
+# shipping two palettes. vivid() and tint() are kept because the per-icon
+# bodies still use them for white cut-outs and partner tones derived FROM these
+# four; nothing else in the file changes.
+#
+# The partner tones (T2, G2) stay lighter versions of the same hue, which is
+# what "cool + warm in every icon" needs to keep working. They are derived, not
+# invented — tint() of the brand value, so a re-brand moves them too.
+T = TEAL
+T2 = tint(TEAL, 0.35)
+G = GREEN
+G2 = tint(GREEN, 0.35)
+O = ORANGE
+A = AMBER
+W = "#FFFFFF"
+
+HEAD = (
+    '<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" ' 'viewBox="0 0 512 512">'
+)
+
 
 def render(name, body, size=512):
     svg = HEAD + body + "</svg>"
@@ -72,6 +102,7 @@ def render(name, body, size=512):
     Image.open(io.BytesIO(png)).convert("RGBA").save(f"{name}.png")
     print("rendered", name, flush=True)
 
+
 if __name__ == "__main__":
-    for n, v in [("T",T),("T2",T2),("G",G),("G2",G2),("O",O),("A",A)]:
+    for n, v in [("T", T), ("T2", T2), ("G", G), ("G2", G2), ("O", O), ("A", A)]:
         print(f"{n:<3} {v}")

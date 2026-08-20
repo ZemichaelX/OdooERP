@@ -165,9 +165,9 @@ class TestTheMarkIsTheCommittedLogo(TransactionCase):
         import pathlib
 
         root = pathlib.Path(__file__).resolve().parents[3]
-        logo = (root / "brand" / "Sapian Logo.svg").read_text(encoding="utf-8")
+        logo = (root / "brand" / "sapian-logo.svg").read_text(encoding="utf-8")
         expected = self._paths(logo)
-        self.assertEqual(len(expected), 4, "brand/Sapian Logo.svg no longer has four paths")
+        self.assertEqual(len(expected), 4, "brand/sapian-logo.svg no longer has four paths")
 
         module = pathlib.Path(__file__).resolve().parents[1]
         for name in (
