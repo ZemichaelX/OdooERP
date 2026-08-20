@@ -202,8 +202,10 @@ inheritance** of `mail_notification_layout` and picks the change up for free.
 layouts above cover the mails a *document* produces. They do not cover a mail
 that carries its own body, and nobody had counted those. A sweep of the 83
 modules reachable from `sapian.module.catalog.STANDARD_CATALOG`, reading all
-1,362 data files each of them loads, found **fourteen more templates**, carrying **thirteen emails** (the digest is
-two templates, one mail):
+1,362 data files each of them loads, found **fourteen more templates**, and the guard then found a fifteenth the
+sweep could not reach — `auth_totp_mail` is `auto_install`, and a walk that
+follows `depends` never arrives at a module that attaches itself. Fifteen
+templates, fourteen emails (the digest is two templates, one mail):
 
 | Surface | Who receives it | What it carried |
 |---|---|---|
@@ -221,6 +223,7 @@ two templates, one mail):
 | `digest.digest_section_mobile` | the client's managers | an advert for the vendor's **phone app** — a screenshot on odoo.com, "Run your business from anywhere with Odoo Mobile", two app-store badges |
 | `account.mail_template_einvoice_notification` | **the client's customer** | Odoo's **logo image** |
 | `account.mail_template_invoice_subscriber` | a journal subscriber | Odoo's **logo image** |
+| `auth_totp_mail.mail_template_totp_invite` | the client's own staff | the SUBJECT: "...on your Odoo account" |
 
 `auth_signup.reset_password_email` was the fourteenth and is fixed by xpath in
 `sapian_theme_auth_signup`, because it is a QWeb template.

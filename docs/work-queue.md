@@ -39,7 +39,7 @@ block on it, and never guess it into code.
 | 6 | #50 — diagnose before fixing | **DONE** — merged as `5f21188` |
 | 7 | #49 — write-tripwire out, fix order-independent | **DONE** — merged as `1b87105` |
 | 8 | Palette additions | **DONE** — PR #73 merged as `95ad144` |
-| 9 | PR 4 — the remaining "Powered by Odoo" mails | **DONE** — it was 14 templates, not 4 |
+| 9 | PR 4 — the remaining "Powered by Odoo" mails | **DONE** — it was 15 templates, not 4 |
 | 10 | Landing slot and grid toggle — Phase A discovery first | todo |
 | 11 | Branch cleanup — 35 remote branches | **DONE** — 33 deleted, 7 live branches remain |
 | 12 | **Self-hosted CI runner** | **DONE, then deliberately undone** — see below |
@@ -340,7 +340,7 @@ did occur were the four above, and all were diagnosed rather than re-run.
 
 ### 9. THE REMAINING "POWERED BY ODOO" MAILS — DONE
 
-**What it turned out to be: fourteen templates carrying thirteen emails, not
+**What it turned out to be: fifteen templates carrying fourteen emails, not
 four — and four of them go to someone outside the client's company.** The four in this item were the four
 somebody had noticed; a sweep of the 83 modules reachable from
 `STANDARD_CATALOG`, reading all 1,362 data files they load, found the rest.
@@ -376,6 +376,12 @@ Two of those three markers are not the word "Odoo" at all, so a word-level scrub
 would have left the advert standing with our name on it.
 
 Three things worth carrying forward:
+
+* **A dependency walk does not find `auto_install` modules.** The sweep followed
+  `depends` and missed `auth_totp_mail`, whose two-factor invitation says "on
+  your Odoo account" in the SUBJECT. The runtime guard found it, because it
+  sweeps the database rather than a list somebody wrote down — which is the
+  whole argument for building it that way.
 
 * **`/odoo/...` is not branding, it is the backend route.** `\bOdoo\b` matches
   inside it, and `account.mail_template_einvoice_notification` links into it for

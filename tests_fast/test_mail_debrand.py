@@ -232,6 +232,24 @@ def test_the_vendors_app_advert_is_removed_not_renamed():
     assert "odoocdn.com" not in out
 
 
+# addons/auth_totp_mail/data/mail_template_data.xml — the subject of the
+# two-factor invitation, from a module that AUTO-INSTALLS.
+TOTP_SUBJECT = "Invitation to activate two-factor authentication on your Odoo account"
+
+
+def test_the_two_factor_invitation_subject():
+    """The one the inventory missed and the guard caught.
+
+    `auth_totp_mail` is auto_install, so a dependency walk that follows
+    `depends` never reaches it. This is the case that argues for a guard which
+    sweeps the DATABASE rather than a list somebody wrote down.
+    """
+    assert len(odoo_branding_in(TOTP_SUBJECT)) == 1
+    out = debrand_subject(TOTP_SUBJECT, PRODUCT)
+    assert odoo_branding_in(out) == []
+    assert out.endswith("on your SapianERP account")
+
+
 def test_a_clients_own_sentence_is_left_alone():
     """The scrub is not a find-and-replace on the word.
 

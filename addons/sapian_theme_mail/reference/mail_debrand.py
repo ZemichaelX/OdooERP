@@ -157,6 +157,11 @@ def _phrase_rules(product):
         (re.compile(r"\bEnjoy Odoo!", re.I), "Enjoy %s!" % product),
         (re.compile(r"\bto connect on Odoo\b", re.I), "to connect on %s" % product),
         (re.compile(r"\bYour Odoo domain is\b", re.I), "Your %s address is" % product),
+        # auth_totp_mail.mail_template_totp_invite — the SUBJECT of the
+        # two-factor invitation. Found by the guard and not by the inventory:
+        # `auth_totp_mail` is auto_install, and a dependency walk that follows
+        # `depends` never reaches a module that attaches itself.
+        (re.compile(r"\byour Odoo account\b", re.I), "your %s account" % product),
         # calendar.calendar_template_meeting_* — the label of the video-call
         # service, shown to whoever was invited, including a customer.
         (re.compile(r"\bOdoo Discuss\b", re.I), "%s Discuss" % product),
