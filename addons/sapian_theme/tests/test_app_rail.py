@@ -1203,7 +1203,14 @@ SIDEBAR_HEADER_JS = SIDEBAR_SETTLE_JS + """
             paths: svg ? svg.querySelectorAll('path').length : 0,
             markW: box ? Math.round(box.width) : 0,
             markH: box ? Math.round(box.height) : 0,
-            markFill: svg ? getComputedStyle(svg).fill : 'none',
+            // THE PETALS, not the <svg>. The mark stopped being monochrome on
+            // 20 Aug 2026: the four `fill` attributes now sit on the paths and
+            // the <svg> carries none, so getComputedStyle(svg).fill is the
+            // CSS initial value — black — on a mark that is painted perfectly.
+            // Reading the wrong element failed this test on a correct page.
+            petalFills: svg
+                ? [...svg.querySelectorAll('path')].map((p) => getComputedStyle(p).fill)
+                : [],
             markDisplay: svg ? getComputedStyle(svg).display : 'none',
             word: word ? word.textContent.trim() : null,
             wordShown: word ? getComputedStyle(word).display !== 'none' : false,
@@ -1224,7 +1231,7 @@ SIDEBAR_HEADER_JS = SIDEBAR_SETTLE_JS + """
 
     console.log('SAPIAN-SIDEBAR-HEADER paths=' + open.paths
         + ' mark=' + open.markW + 'x' + open.markH
-        + ' fill="' + open.markFill + '"'
+        + ' fills="' + open.petalFills.join(',') + '"'
         + ' word="' + open.word + '"'
         + ' expandedOpen="' + open.expanded + '" expandedShut="' + shut.expanded + '"'
         + ' wordShown=' + open.wordShown + '->' + shut.wordShown
@@ -1241,9 +1248,17 @@ SIDEBAR_HEADER_JS = SIDEBAR_SETTLE_JS + """
         throw new Error('the mark is in the DOM but renders at ' + open.markW
             + 'x' + open.markH + ', so nobody sees it');
     }
-    if (open.markFill === 'rgb(0, 0, 0)' || open.markFill === 'none') {
-        throw new Error('the mark paints "' + open.markFill + '" — currentColor '
-            + 'did not reach it, so it is not in the brand');
+    // FOUR DISTINCT PAINTED PETALS. Black or `none` on any of them is the
+    // monochrome mark returning, or a fill that never reached the DOM.
+    const flat = open.petalFills.filter(
+        (f) => f === 'rgb(0, 0, 0)' || f === 'none' || !f);
+    if (flat.length) {
+        throw new Error('the mark paints "' + open.petalFills.join(',')
+            + '" — the four petal fills did not reach it, so it is not in the brand');
+    }
+    if (new Set(open.petalFills).size !== 4) {
+        throw new Error('the mark paints ' + new Set(open.petalFills).size
+            + ' distinct colours, not 4: "' + open.petalFills.join(',') + '"');
     }
     if (open.word !== 'SapianERP') {
         throw new Error('the header wordmark reads "' + open.word + '"');
