@@ -30,8 +30,50 @@ import datetime
 
 WINDOW = (datetime.date(2026, 7, 1), datetime.date(2026, 7, 31))
 
-company = env["res.company"].search([], limit=1)  # noqa: F821 - `env` is odoo shell's
-landing = env["sapian.landing"].create(  # noqa: F821
+# THE COMPANY THAT HAS DATA, and not `search([], limit=1)`.
+#
+# The first version took the first company and got Odoo's stock "My Company",
+# which has no Ethiopian chart and no entries — so the page it built was
+# correctly all-unavailable, and the job correctly failed on `nonzero=0`. The
+# demo trader provisions its OWN company through the onboarding wizard, and that
+# is the tenant this step is named after.
+#
+# Chosen by counting posted lines in the window rather than by name: a probe
+# that greps for "Selam General Trading PLC" breaks the day the demo tenant is
+# renamed, and would then report zero figures as a landing-page defect.
+# Counted per company with `search_count` rather than grouped: `read_group` is
+# gone from the public API in Odoo 19 and `_read_group`'s return shape has moved
+# between versions, and a probe that breaks on an ORM rename would read as a
+# landing-page defect. There are a handful of companies; the loop is free.
+candidates = []
+for candidate in env["res.company"].search([]):  # noqa: F821
+    posted = env["account.move.line"].search_count(  # noqa: F821
+        [
+            ("company_id", "=", candidate.id),
+            ("parent_state", "=", "posted"),
+            ("date", ">=", WINDOW[0]),
+            ("date", "<=", WINDOW[1]),
+        ]
+    )
+    if posted:
+        candidates.append((posted, candidate))
+candidates.sort(key=lambda row: -row[0])
+
+if not candidates:
+    print("SAPIAN-LANDING lines=0 available=0 nonzero=0 unavailable_with_reason=0")
+    print("SAPIAN-LANDING blank_without_reason=0")
+    print(
+        "SAPIAN-LANDING ABORTED no company posted anything between %s and %s, so "
+        "there is no tenant with data to measure" % WINDOW
+    )
+    raise SystemExit(0)
+
+posted_lines, company = candidates[0]
+print(
+    "SAPIAN-LANDING chose company=%s posted_lines=%d"
+    % (company.name, posted_lines)
+)
+landing = env["sapian.landing"].with_company(company).create(  # noqa: F821
     {"company_id": company.id, "date_from": WINDOW[0], "date_to": WINDOW[1]}
 )
 landing._build_lines()
