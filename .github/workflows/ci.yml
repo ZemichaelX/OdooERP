@@ -230,6 +230,14 @@ jobs:
           # failed or errored test (matches "N failed" or "0 failed, N error(s)"
           # but not the clean "0 failed, 0 error(s)").
           if grep -qE "tests\.result: ([1-9][0-9]* failed|0 failed, [1-9][0-9]* error)" /tmp/odoo-test.log; then
+            # NAME THEM. A 3,000-line log ends with "3 failed, 1 error(s)" and
+            # nothing else, and the FAIL:/ERROR: headers are a thousand lines
+            # up it — so the summary that a reader actually sees says only that
+            # something broke, not what.
+            echo "::group::Which tests failed"
+            grep -E "(FAIL|ERROR): [A-Za-z][A-Za-z0-9_.]*$" -A 12 /tmp/odoo-test.log \
+              | head -200 || true
+            echo "::endgroup::"
             echo "::error::Odoo integration tests reported failures"
             exit 1
           fi
