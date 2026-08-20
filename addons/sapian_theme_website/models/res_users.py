@@ -70,24 +70,16 @@ import logging
 
 from odoo import api, models
 
-_logger = logging.getLogger(__name__)
+# ONE switch, defined on sapian_theme, read by both bridges. Sign-up is decided
+# in two different places depending on what is installed, and two switches for
+# one property is how a tenant ends up half open.
+from odoo.addons.sapian_theme.models.res_users import ALLOW_PUBLIC_SIGNUP_PARAM
 
-ALLOW_PUBLIC_SIGNUP_PARAM = "sapian_theme.allow_public_signup"
+_logger = logging.getLogger(__name__)
 
 
 class ResUsers(models.Model):
     _inherit = "res.users"
-
-    @api.model
-    def _sapian_public_signup_allowed(self):
-        """True only when an operator has explicitly opted in.
-
-        An `ir.config_parameter` rather than a field, so it can be set on a
-        running tenant with no upgrade and so it is visible in Technical >
-        System Parameters, where somebody auditing this would look for it.
-        """
-        value = self.env["ir.config_parameter"].sudo().get_param(ALLOW_PUBLIC_SIGNUP_PARAM)
-        return str(value or "").strip().lower() in ("1", "true", "yes", "on")
 
     @api.model
     def _get_signup_invitation_scope(self):

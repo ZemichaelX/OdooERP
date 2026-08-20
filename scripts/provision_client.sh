@@ -92,18 +92,34 @@ $COMPOSE run --rm odoo \
 # Odoo's default for "Customer Account" is b2c — FREE SIGN UP — declared on
 # res.config.settings.auth_signup_uninvited (auth_signup/models/
 # res_config_settings.py:13). On a private company ERP that puts "Don't have an
-# account?" on the login page of every client we provision, and nothing in this
-# repo was setting it: not here, and not on the demo tenant either. Both are set
-# now; the demo's copy lives in sapian_demo_trader._configure_login_page.
+# account?" on the login page of every client we provision.
 #
 # b2b = invitation only. Existing users can still be sent a signup link, a
 # stranger cannot make themselves one.
 #
+# THIS WRITE IS NO LONGER WHAT KEEPS THE TENANT CLOSED, and that matters more
+# than the write does. `sapian_theme_auth_signup` (and `sapian_theme_website`
+# once `website` is on) override res.users._get_signup_invitation_scope() and
+# serve b2b unless sapian_theme.allow_public_signup is set — read on every
+# request, so a database that never ran this script is closed too. A backup
+# restored onto a new host, a second database created from the database
+# manager, or a tenant provisioned before this phase existed all used to be
+# open; measured in CI, job "A stranger cannot get an account".
+#
+# It is still written, for two reasons: Settings > General should not read
+# "Free sign up" on a tenant where sign-up is closed, and an operator who opts
+# in with allow_public_signup should get b2b rather than Odoo's b2c.
+#
 # The parameter KEY is read off Odoo's own field rather than typed in: the
 # setting is called auth_signup_uninvited and stores itself under
 # auth_signup.invitation_scope, and a literal of either name is a string that
-# can silently stop matching. It prints what it wrote, so a run that did
-# nothing does not look like a run that worked.
+# can silently stop matching.
+#
+# AND THE READ-BACK IS THE EFFECTIVE SCOPE, not the parameter. Reading back what
+# you just wrote proves the write, which nobody doubted; the parameter stopped
+# being the authority the moment `website` was installed, and a check that kept
+# reading it was green on a database whose login page offered free sign-up.
+# _get_signup_invitation_scope() is the method the login controller itself calls.
 echo ">> [4/6] Closing public sign-up (invitation only)..."
 SIGNUP_OUT="$(printf "%s\n" \
   "field = env['res.config.settings']._fields.get('auth_signup_uninvited')" \
@@ -111,11 +127,13 @@ SIGNUP_OUT="$(printf "%s\n" \
   "env['ir.config_parameter'].sudo().set_param(key, 'b2b')" \
   "env.cr.commit()" \
   "print('SIGNUP %s=%s' % (key, env['ir.config_parameter'].sudo().get_param(key)))" \
+  "print('SIGNUP effective=%s' % env['res.users']._get_signup_invitation_scope())" \
   | $COMPOSE run --rm -T odoo odoo shell -d "${DB_NAME}" --no-http 2>&1)"
 printf '%s\n' "${SIGNUP_OUT}" | grep -E '^SIGNUP ' || true
-if ! printf '%s\n' "${SIGNUP_OUT}" | grep -q '^SIGNUP .*=b2b$'; then
+if ! printf '%s\n' "${SIGNUP_OUT}" | grep -q '^SIGNUP effective=b2b$'; then
   echo "!! Public sign-up is NOT closed on ${DB_NAME} — the login page will offer" >&2
-  echo "   account creation to anyone who can reach it. Read back: none." >&2
+  echo "   account creation to anyone who can reach it. The value the served" >&2
+  echo "   page honours is what was read back, and it is not b2b." >&2
   exit 1
 fi
 

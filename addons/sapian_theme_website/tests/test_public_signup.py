@@ -26,7 +26,7 @@ while doing nothing.
 
 from odoo.tests import HttpCase, TransactionCase, tagged
 
-from odoo.addons.sapian_theme_website.models.res_users import ALLOW_PUBLIC_SIGNUP_PARAM
+from odoo.addons.sapian_theme.models.res_users import ALLOW_PUBLIC_SIGNUP_PARAM
 
 SIGNUP_HREF = "/web/signup"
 SIGNUP_TEXT = "Don't have an account"

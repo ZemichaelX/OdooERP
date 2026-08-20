@@ -39,7 +39,11 @@
     "data": [
         "views/reset_password_email.xml",
     ],
-    # No model, no field, no access rule: two xpaths into one template. The
-    # attribution switch and the button colour both already exist on
-    # res.company — see sapian_theme_mail.
+    # ONE MODEL NOW, and it is not decoration: models/res_users.py forces the
+    # sign-up scope to "invitation only" unless an operator has explicitly
+    # opted in. Before it, a tenant without `website` was closed only because a
+    # shell script had once written a parameter whose Odoo default is FREE
+    # SIGN-UP — so a restored backup or a hand-built database was open to the
+    # internet. No field and no access rule: the override reads an
+    # ir.config_parameter and adds nothing to store.
 }
