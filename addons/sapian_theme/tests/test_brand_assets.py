@@ -35,6 +35,7 @@ this module died in setup.
 """
 
 import base64
+import re
 
 from odoo.tests import HttpCase, TransactionCase, tagged
 from odoo.tools import file_open
@@ -68,26 +69,59 @@ class TestFaviconReachesTheTab(HttpCase):
     markup and can move. The served <head> cannot lie about it.
     """
 
-    def test_the_login_page_serves_our_favicon(self):
-        page = self.url_open("/web/login").text
-        self.assertIn(
-            OUR_FAVICON,
-            page,
-            "the login page's <head> does not point at our favicon; the "
-            "web.layout inheritance in views/favicon.xml matched nothing",
-        )
-        self.assertNotIn(
-            ODOO_FAVICON,
-            page,
-            "the login page still falls back to Odoo's favicon",
-        )
+    def _favicon_href(self, route):
+        """The href of the <link> the browser actually follows.
+
+        Extracted from the tag rather than substring-searched in the page: a
+        bare `assertNotIn("/web/static/img/favicon.ico")` over 400 kB of
+        webclient HTML answers a question about the whole document, not about
+        the one element that decides what the tab shows.
+        """
+        page = self.url_open(route).text
+        tag = re.search(r'<link[^>]*rel="shortcut icon"[^>]*>', page)
+        self.assertTrue(tag, "%s served no favicon <link> at all" % route)
+        href = re.search(r'href="([^"]+)"', tag.group(0))
+        self.assertTrue(href, "the favicon <link> on %s has no href" % route)
+        return href.group(1)
 
     def test_the_backend_serves_our_favicon(self):
-        """The tab a client's staff have open all day."""
+        """The tab a client's staff have open all day.
+
+        Unconditional, unlike the login page below: `website` brands the
+        FRONTEND head and never the backend one, so nothing else can be setting
+        `x_icon` here.
+        """
         self.authenticate("admin", "admin")
-        page = self.url_open("/odoo").text
-        self.assertIn(OUR_FAVICON, page, "the backend tab is not wearing our favicon")
-        self.assertNotIn(ODOO_FAVICON, page, "the backend still falls back to Odoo's")
+        self.assertEqual(
+            self._favicon_href("/odoo"),
+            OUR_FAVICON,
+            "the backend tab is not wearing our favicon",
+        )
+
+    def test_the_login_page_favicon_is_never_odoos(self):
+        """Two correct answers here, and Odoo's icon is neither of them.
+
+        With `website` installed, /web/login renders inside the website layout,
+        which sets `x_icon` from `website.favicon` — the client's own, and ours
+        to leave alone. Without it, the fallback is reached and must be ours.
+        Branching rather than skipping: a skip is a test that proves nothing on
+        exactly the database it was written for.
+        """
+        href = self._favicon_href("/web/login")
+        self.assertNotEqual(href, ODOO_FAVICON, "the login page still serves Odoo's icon")
+        website = (
+            self.env["ir.module.module"]
+            .sudo()
+            .search_count([("name", "=", "website"), ("state", "=", "installed")])
+        )
+        if website:
+            self.assertTrue(
+                href.startswith("/web/image/website"),
+                "with `website` installed the login favicon should be the "
+                "client's own website favicon, got %r" % href,
+            )
+        else:
+            self.assertEqual(href, OUR_FAVICON)
 
     def test_the_favicon_file_is_actually_served(self):
         """A correct href to a 404 is still Odoo's icon in the tab."""
