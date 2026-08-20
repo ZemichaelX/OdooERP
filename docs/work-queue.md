@@ -39,10 +39,11 @@ block on it, and never guess it into code.
 | 6 | #50 — diagnose before fixing | **DONE** — merged as `5f21188` |
 | 7 | #49 — write-tripwire out, fix order-independent | **DONE** — merged as `1b87105` |
 | 8 | Palette additions | **DONE** — PR #73 merged as `95ad144` |
-| 9 | PR 4 — the four remaining "Powered by Odoo" mails | todo |
+| 9 | PR 4 — the remaining "Powered by Odoo" mails | **DONE** — it was 13, not 4 |
 | 10 | Landing slot and grid toggle — Phase A discovery first | todo |
 | 11 | Branch cleanup — 35 remote branches | **DONE** — 33 deleted, 7 live branches remain |
 | 12 | **Self-hosted CI runner** | **DONE, then deliberately undone** — see below |
+| 13 | **One mark, everywhere, in its own colours** | **DONE** — PR #75 merged as `b096078` |
 
 ## Items 0 and 12: the runner decision, settled — do not re-litigate
 
@@ -337,11 +338,49 @@ block are **prophylactic** — no checkbox renders on either page today.
 The CDP `TimeoutError` from the first attempt never recurred; the failures that
 did occur were the four above, and all were diagnosed rather than re-run.
 
-### 9. PR 4 — the four remaining "Powered by Odoo" mails
+### 9. THE REMAINING "POWERED BY ODOO" MAILS — DONE
 
-Three `auth_signup` templates into the existing `sapian_theme_auth_signup` bridge
-(they are `mail.template` data records, so they need a `body_html` override), and
-the `im_livechat` transcript into a **new** bridge. Register entry 4.
+**What it turned out to be: thirteen surfaces, not four, and four of them go to
+someone outside the client's company.** The four in this item were the four
+somebody had noticed; a sweep of the 83 modules reachable from
+`STANDARD_CATALOG`, reading all 1,362 data files they load, found the rest.
+
+Two are not words at all: `account.mail_template_einvoice_notification` and
+`account.mail_template_invoice_subscriber` embed Odoo's **logo image** at the
+head of a finance email. One — `auth_signup.set_password_email`, the mail that
+invites the client's own staff to their own system — carries **eight** mentions
+including the subject line and a paragraph of competitor marketing ("Never heard
+of Odoo? ... loved by 12+ million users").
+
+**The plan in this item was wrong and was not followed.** It called for a
+`body_html` override per template, which means copying upstream's entire body
+into this repository, once per template, in a bridge per upstream module — and
+every copy rots at the next Odoo release. Worse, the set is not closed: an
+optional module nobody enumerated, a new Odoo version, or a client duplicating
+an Odoo template all put the branding back.
+
+Fixed instead at `mail.mail._prepare_outgoing_body`, upstream's own documented
+extension point and the last thing that touches a body before the SMTP builder,
+plus `_prepare_outgoing_list` for the subject. Whatever produced the mail, it
+comes through there. Rules in `reference/mail_debrand.py` (plain Python, rule
+10), goldens in `tests_fast/`, quoting upstream markup verbatim.
+
+**Not a find-and-replace on the word** — a client emailing their consultant
+about an Odoo migration keeps their sentence. Only the branding Odoo injects
+into mail sent over the client's name is removed.
+
+Two things worth carrying forward:
+
+* **`pytest addons/<module>/reference/` does not work and never has.** CLAUDE.md
+  documents it; pytest walks up through the addon's `__init__.py`, which imports
+  `odoo`, and collection dies before a test runs. CI runs `pytest tests_fast/`
+  and nothing else, so the 45 payroll goldens in `addons/l10n_et_payroll/
+  reference/` have never run there — they are duplicated in `tests_fast/`, which
+  is why nobody noticed. Not fixed here; it is not this item.
+* The guard asserts the POSITIVE — zero branding in the outgoing form of every
+  `mail.template` in the database — rather than that the rules ran. The phrase
+  rules are the part that can rot, and a reworded upstream sentence must fail a
+  test rather than ship.
 
 ### 10. LANDING SLOT AND GRID TOGGLE — Phase A discovery first
 
@@ -351,6 +390,52 @@ pick one yourself.** Register entry 12.
 ### 11. BRANCH CLEANUP
 
 35 remote branches. Delete the merged ones; **list what was kept and why.**
+
+### 13. ONE MARK, EVERYWHERE — DONE, PR #75 (`b096078`)
+
+**What it turned out to be: 8 of 26 display points were falling back to Odoo's,
+including the browser tab icon, which had never been set at all.**
+
+The inventory came first and corrected three premises before anything changed:
+16 app tiles (6 on Odoo's placeholder), the bot avatar (byte-identical to
+sapian_core's tile — one image doing two jobs, which is what "two logos at once"
+looked like), 2 mark renderings painted flat by `fill="currentColor"`, 3 single
+assets of which the favicon and default logo did not exist, and 4 company-driven
+surfaces that were already correct. 26 points, 17 ours, 8 falling back, 1
+duplicated. Afterwards: 26 ours, 0 falling back.
+
+`res.company` HAS NO `favicon` FIELD IN ODOO 19 — worth writing down, because
+assuming it did cost a full CI run. `logo`, `uses_default_logo` and
+`primary_color` are on `base`'s res.company; the favicon belongs to the `website`
+MODEL. Writing one from `post_init_hook` raised `AttributeError`, which fails the
+registry load, which killed every job that installs `sapian_theme` — eight of
+nine reds at an identical ~80 seconds. The browser tab is branded by a view
+inheriting `web.layout` instead (`x_icon or` is kept, so a client's own website
+favicon still wins on the frontend), and a view reaches install and upgrade by
+the same route: no hook, no migration, no per-company write a later tenant can
+slip past.
+
+**Every raster is generated by `scripts/build_brand_assets.py` from the committed
+SVGs** — 16 tiles, bot avatar, favicon, default logo, 35 files — and CI
+regenerates and compares sha256 over all 54 PNGs, so a hand-edited raster fails.
+Not `git diff`: the odoo image has no git, and because it has none,
+actions/checkout downloads a tarball rather than cloning, so there is no `.git`
+either.
+
+**Four of the five red rounds after the AttributeError were guards failing on
+correct code**, all of them left behind by the mark's reversal or by their own
+text: a test still requiring `fill="currentColor"`; the same test then matching
+the COMMENT that documents the reversal (the hex-in-a-comment trap, second time);
+a test-count floor reading `result: N tests` when Odoo prints `of N tests`, which
+failed a run where all 7 passed; and the rail's browser guard reading
+`getComputedStyle(svg).fill` after the fills moved onto the paths, so it read
+black on a perfectly painted mark.
+
+**One was a real hole, and it is the one worth carrying forward:** the upgrade
+phase reported `wrong=1 of 1` and was right. A fresh install sits AT the manifest
+version, so `-u` runs no migrations at all — the phase had been proving nothing.
+It now rewinds `latest_version` first, the mechanism the bot-rename job already
+uses, and requires the migration's own log line before believing the comparison.
 
 ---
 

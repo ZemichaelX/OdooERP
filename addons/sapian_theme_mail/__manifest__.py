@@ -1,6 +1,13 @@
 # -*- coding: utf-8 -*-
 {
     "name": "SapianERP Theme — Mail bridge",
+    # 1.4.0 carries the send-time debrand. NO migration directory, and that is
+    # not an omission: this version changes CODE, not records. A `-u` reloads
+    # the Python and `mail.mail._prepare_outgoing_body` is ours from the next
+    # mail onwards, on every tenant, with nothing to backfill. The rule the
+    # bot's rename needed — a post_init_hook cannot reach an existing database
+    # — applies to data, and there is none here.
+    #
     # 1.3.0 carries the system partner's rename (SapianBot). The number is
     # LOAD-BEARING, not decoration: migrations/19.0.1.3.0/end-bot_identity.py
     # runs only when the installed version is below this one, and that script
@@ -12,7 +19,7 @@
     # the module's own position in the graph, which is exactly the ordering
     # this version stops relying on — see the migration for why `end-` is not
     # a cosmetic rename of the file.
-    "version": "19.0.1.3.0",
+    "version": "19.0.1.4.0",
     "summary": "Brands OUTGOING EMAIL: the call-to-action button takes the "
     "house colour, and the footer stops attributing the client's invoices to "
     "Odoo. Renames the system partner from OdooBot to SapianBot.",

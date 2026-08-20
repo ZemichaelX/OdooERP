@@ -111,7 +111,7 @@ jobs:
         # reports "12 passed" and exits 0.
         run: |
           set -euo pipefail
-          MIN_FAST_TESTS=260   # 269 at this commit
+          MIN_FAST_TESTS=280   # 286 at this commit
           pytest tests_fast/ -q | tee /tmp/fast-tests.log
           passed=$(grep -oE '[0-9]+ passed' /tmp/fast-tests.log | tail -1 | grep -oE '^[0-9]+' || true)
           passed=${passed:-0}
@@ -1496,6 +1496,110 @@ jobs:
             exit 1
           fi
           echo "OK — install and upgrade both write the default logo."
+
+  outgoing-email-debranded:
+    name: No outgoing email carries another vendor's name
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # THE MODULES THAT ACTUALLY CARRY IT, and why this is not the integration
+    # job with one more tag.
+    #
+    # A sweep of the 83 modules reachable from STANDARD_CATALOG — 1,362 data
+    # files read — found ELEVEN templates carrying Odoo branding plus TWO
+    # carrying Odoo's logo image, spread across auth_signup, im_livechat, lunch,
+    # gamification, hr_expense, website_slides, website_profile, digest and
+    # account. `ci_test` installs none of the optional ones, so the sweep would
+    # run there against a database with almost nothing to find and pass by
+    # having nothing to do.
+    #
+    # RED FIRST, IN THE SAME JOB AND ON THE SAME DATABASE. Phase 1 builds it
+    # WITHOUT our module and shows the branding survives the real send path;
+    # phase 2 installs our module into THAT database and shows it does not. A
+    # green phase 2 alone cannot tell a working scrub from a database that was
+    # never branded.
+    container:
+      image: odoo:19.0@sha256:e415f9924395e7521245813135112f264b9222bcde3b1d3c2ee9ff073081540a
+      options: --user root
+    services:
+      db:
+        image: postgres:16@sha256:33f923b05f64ca54ac4401c01126a6b92afe839a0aa0a52bc5aeb5cc958e5f20
+        env:
+          POSTGRES_USER: odoo
+          POSTGRES_PASSWORD: odoo
+          POSTGRES_DB: postgres
+        options: >-
+          --health-cmd "pg_isready -U odoo"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Branded before, clean after, on one database
+        shell: bash
+        run: |
+          set -uo pipefail
+          mkdir -p /tmp/odoo-data
+          ARGS="--db_host=db --db_port=5432 --db_user=odoo --db_password=odoo
+                --data-dir=/tmp/odoo-data
+                --addons-path=${GITHUB_WORKSPACE}/addons,${GITHUB_WORKSPACE}/vendor/oca_web,/usr/lib/python3/dist-packages/odoo/addons
+                --workers=0 --max-cron-threads=0 --stop-after-init"
+          BRANDED="auth_signup,im_livechat,lunch,gamification,hr_expense,website_slides,website_profile,digest,account,calendar"
+          PROBE="${GITHUB_WORKSPACE}/scripts/ci_mail_probe.py"
+
+          # ---- PHASE 1: that database, WITHOUT our module -----------------
+          odoo ${ARGS} -d ci_mail -i base --without-demo=all --log-level=warn
+          odoo ${ARGS} -d ci_mail -i "${BRANDED}" --without-demo=all --log-level=warn
+          odoo shell ${ARGS} -d ci_mail --no-http --log-level=warn < "${PROBE}" 2>&1 \
+            | tee /tmp/mail-red.log
+
+          grep -q "SAPIAN-MAIL leaks=" /tmp/mail-red.log \
+            || { echo "::error::The red probe never reported. That is ABORTED, not red."; exit 1; }
+          if grep -q "SAPIAN-MAIL leaks=0" /tmp/mail-red.log; then
+            echo "::error::Without sapian_theme_mail the outgoing mail was ALREADY clean, so the scrub cannot be shown to do anything and phase 2 would prove nothing."
+            exit 1
+          fi
+          BRANDED_N=$(sed -n 's/.*branded_templates=\([0-9][0-9]*\).*/\1/p' /tmp/mail-red.log | tail -1)
+          echo "Branded templates in this database: ${BRANDED_N:-none}"
+          if [ -z "${BRANDED_N:-}" ] || [ "${BRANDED_N}" -lt 8 ]; then
+            echo "::error::Only ${BRANDED_N:-none} branded templates here; expected at least 8. The install list is wrong, so the sweep in the guard would prove almost nothing."
+            exit 1
+          fi
+          echo "OK — red proof: $(grep -o 'SAPIAN-MAIL leaks=[0-9]*' /tmp/mail-red.log | tail -1) without our module."
+
+          # ---- PHASE 2: install ours into the SAME database ---------------
+          odoo ${ARGS} -d ci_mail -i sapian_theme_mail --without-demo=all \
+            --test-enable --test-tags '/sapian_theme_mail:TestOutgoingDebrand' \
+            --log-level=test 2>&1 | tee /tmp/mail-green.log
+
+          grep -q "odoo\.tests\.result:" /tmp/mail-green.log \
+            || { echo "::error::The guard never reported."; exit 1; }
+          if grep -qE "tests\.result: ([1-9][0-9]* failed|0 failed, [1-9][0-9]* error)" /tmp/mail-green.log; then
+            echo "::error::Outgoing email still carries another vendor's branding."
+            exit 1
+          fi
+          RAN=$(sed -n 's/.*tests\.result:.* of \([0-9][0-9]*\) tests.*/\1/p' /tmp/mail-green.log | tail -1)
+          if [ -z "${RAN:-}" ] || [ "${RAN}" -lt 7 ]; then
+            echo "::error::Expected at least 7 debrand tests, the runner reported '${RAN:-none}'. A mis-typed --test-tags selects nothing and still prints a clean result line."
+            exit 1
+          fi
+          if grep -qE "[1-9][0-9]* skipped" /tmp/mail-green.log; then
+            echo "::error::A debrand test skipped, so it proved nothing:"
+            grep -E "skipped" /tmp/mail-green.log
+            exit 1
+          fi
+
+          # The SAME probe, on the SAME database, now that our module is on it.
+          odoo shell ${ARGS} -d ci_mail --no-http --log-level=warn < "${PROBE}" 2>&1 \
+            | tee /tmp/mail-after.log
+          grep -q "SAPIAN-MAIL leaks=" /tmp/mail-after.log \
+            || { echo "::error::The post-install probe never reported."; exit 1; }
+          if ! grep -q "SAPIAN-MAIL leaks=0" /tmp/mail-after.log; then
+            echo "::error::With sapian_theme_mail installed the outgoing mail STILL names the other vendor:"
+            grep "SAPIAN-MAIL leaks=" /tmp/mail-after.log
+            exit 1
+          fi
+          echo "OK — ${RAN} tests, and the same probe went from $(grep -o 'leaks=[0-9]*' /tmp/mail-red.log | tail -1) to leaks=0 on one database."
 
   auth-controls-palette:
     name: Every auth control is in the palette

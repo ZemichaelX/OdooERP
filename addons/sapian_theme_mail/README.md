@@ -198,12 +198,59 @@ launched.
 actually use (`_get_mail_layout`, `account_move_send.py:583`) — is a **primary
 inheritance** of `mail_notification_layout` and picks the change up for free.
 
-**Not fixed here, and stated rather than left to be discovered:**
-`auth_signup.reset_password_email` still says "Powered by Odoo". It is a
-template of its own rather than a layout, so the two overrides in this module do
-not reach it, and its button *is* fixed by the colour field. It is a portal
-password reset, not a commercial document, so it did not justify widening this
-PR. It is the obvious next one.
+**The rest of the estate — measured, then closed by a third mechanism.** The two
+layouts above cover the mails a *document* produces. They do not cover a mail
+that carries its own body, and nobody had counted those. A sweep of the 83
+modules reachable from `sapian.module.catalog.STANDARD_CATALOG`, reading all
+1,362 data files each of them loads, found **thirteen more surfaces**:
+
+| Surface | Who receives it | What it carried |
+|---|---|---|
+| `auth_signup.set_password_email` | the client's own staff | **8 mentions** — subject line, "Welcome to Odoo", "Your Odoo domain is", a tour link, and a paragraph of competitor marketing |
+| `auth_signup.portal_set_password_email` | **the client's customer** | Powered by Odoo |
+| `auth_signup.mail_template_user_signup_account_created` | **the client's customer** | Powered by Odoo |
+| `im_livechat.livechat_email_template` | **the client's customer** | Powered by Odoo |
+| `website_slides.mail_notification_channel_invite` | a course attendee | Powered by Odoo |
+| `website_profile.validation_email` | a website visitor | Powered by Odoo |
+| `lunch.lunch_order_mail_supplier` | **the client's supplier** | Powered by Odoo |
+| `gamification.email_template_badge_received` | the client's own staff | Powered by Odoo |
+| `hr_expense.hr_expense_template_submitted_expenses` | a manager | Powered by Odoo |
+| `hr_expense.hr_expense_template_register_no_user` | whoever mailed a receipt | Powered by Odoo |
+| `digest.digest_mail_main` | the client's managers | Powered by Odoo |
+| `account.mail_template_einvoice_notification` | **the client's customer** | Odoo's **logo image** |
+| `account.mail_template_invoice_subscriber` | a journal subscriber | Odoo's **logo image** |
+
+`auth_signup.reset_password_email` was the fourteenth and is fixed by xpath in
+`sapian_theme_auth_signup`, because it is a QWeb template.
+
+Ten of the thirteen are `mail.template` RECORDS, which cannot be
+xpath-inherited: overriding one means copying upstream's entire `body_html` into
+this repository, per template, in a bridge per upstream module, and every copy
+rots at the next Odoo release. The set is not closed either — an optional module
+nobody enumerated, a future version, or a client duplicating an Odoo template
+all put it back.
+
+So the third mechanism is a **send-time scrub** at
+`mail.mail._prepare_outgoing_body`, upstream's own documented extension point
+and the last thing that touches a body before `IrMailServer._build_email__`,
+plus `_prepare_outgoing_list` for the subject. Whatever produced the mail, it
+comes through there. The rules are plain string work and live in
+`reference/mail_debrand.py` with goldens in `tests_fast/test_mail_debrand.py`
+that quote upstream's markup verbatim.
+
+**It is not a find-and-replace on the word.** Somebody at the client emailing
+their consultant about an Odoo migration keeps their sentence; what is removed
+is the branding Odoo injects into mail sent over the client's name — the
+attribution, odoo.com links, the logo image, and a short explicit list of
+phrases each commented with the template it came from. That last list is the
+part that can rot, which is why the guard asserts the POSITIVE: zero branding in
+the outgoing form of **every** `mail.template` installed in the database. A
+reworded upstream sentence then fails a test instead of shipping.
+
+**Red proof, on one database.** The CI job installs the ten branded modules
+WITHOUT this one and shows the probe leaking, then installs this one into that
+same database and shows the same probe at zero. A green second phase on its own
+could not tell a working scrub from a database that was never branded.
 
 ---
 
