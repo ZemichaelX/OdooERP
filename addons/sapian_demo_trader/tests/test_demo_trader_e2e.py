@@ -24,6 +24,7 @@ The payroll figures are independent of the catalogue and do not move with it.
 """
 
 from odoo import fields
+from odoo.addons.sapian_demo_trader.reference import demo_calendar
 from odoo.tests import TransactionCase, tagged
 
 from odoo.addons.sapian_core.models.sapian_module_catalog import SapianModuleCatalog
@@ -41,6 +42,10 @@ class TestDemoTraderE2E(TransactionCase):
             company_name="E2E Trading PLC"
         )
         cls.env = cls.env(context=dict(cls.env.context, allowed_company_ids=cls.company.ids))
+        # COMPUTED, like the tenant's own dates. A literal month here would
+        # assert the defect this change removed — see reference/demo_calendar.py.
+        cls.calendar = demo_calendar.demo_calendar()
+        cls.period = tuple(demo_calendar.iso(day) for day in cls.calendar["current"])
 
     def _report(self, model_name):
         return (
@@ -49,8 +54,8 @@ class TestDemoTraderE2E(TransactionCase):
             .create(
                 {
                     "company_id": self.company.id,
-                    "date_from": "2026-07-01",
-                    "date_to": "2026-07-31",
+                    "date_from": self.period[0],
+                    "date_to": self.period[1],
                 }
             )
         )
@@ -219,10 +224,10 @@ class TestDemoTraderE2E(TransactionCase):
         bands = self.env["l10n.et.paye.band"].search(
             [
                 ("company_id", "=", self.company.id),
-                ("effective_from", "<=", "2026-07-31"),
+                ("effective_from", "<=", self.period[1]),
                 "|",
                 ("effective_to", "=", False),
-                ("effective_to", ">=", "2026-07-01"),
+                ("effective_to", ">=", self.period[0]),
             ]
         )
         self.assertTrue(bands, "no PAYE bands configured; this test would prove nothing")
@@ -331,7 +336,7 @@ class TestDemoTraderE2E(TransactionCase):
         # presenter improvising a cash receipt on one of these is never blocked
         # on camera. The already-invoiced July flow is not held to it (the
         # Abyssinia credit sale is 92,115); see demo_catalogue.QUOTATIONS.
-        cap = self.env["l10n.et.cash.cap.config"]._get_config(self.company, "2026-07-31")
+        cap = self.env["l10n.et.cash.cap.config"]._get_config(self.company, self.period[1])
         self.assertTrue(cap, "no cash cap configured; this check would prove nothing")
         open_orders = orders.filtered(lambda order: not order.invoice_ids)
         for order in open_orders:
@@ -363,9 +368,9 @@ class TestDemoTraderE2E(TransactionCase):
         self.assertTrue(orders, "no orders to check")
         stray = orders.filtered(
             lambda order: not (
-                fields.Date.to_date("2026-07-01")
+                fields.Date.to_date(self.period[0])
                 <= fields.Date.to_date(order.date_order)
-                <= fields.Date.to_date("2026-07-31")
+                <= fields.Date.to_date(self.period[1])
             )
         )
         self.assertFalse(

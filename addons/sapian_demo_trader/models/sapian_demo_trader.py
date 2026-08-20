@@ -36,18 +36,28 @@ period window with exact GL tie-outs, independent of the wall clock.
 
 import base64
 import logging
+from datetime import timedelta
 
 from odoo import Command, api, models
 from odoo.exceptions import UserError
 from odoo.tools import file_open
 
 from . import demo_catalogue as cat
+from ..reference import demo_calendar
 
 _logger = logging.getLogger(__name__)
 
 DEMO_COMPANY_NAME = "Selam General Trading PLC"
-PERIOD_FROM = "2026-07-01"
-PERIOD_TO = "2026-07-31"
+
+# THE PERIOD IS NO LONGER A CONSTANT, and the two that were here are gone
+# rather than left pointing at July 2026: a constant that no longer says when
+# the demo traded is a comment that looks like code.
+#
+# `_calendar()` computes three whole trading months ending in the month BEFORE
+# the build, because that is the month the landing page reads — the one with a
+# filing deadline attached. Pinned to July 2026, this tenant was right in
+# August 2026 and empty from September, and the landing page correctly showed
+# nothing at all. See reference/demo_calendar.py.
 
 # The support line the demo's login page and backend footer carry.
 #
@@ -181,17 +191,86 @@ class SapianDemoTrader(models.AbstractModel):
         partners = demo._create_partners()
         demo._create_opening_stock(products)
         employees = demo._create_employees()
+        # THREE TRADING MONTHS, oldest first, and the order is the point: each
+        # month's stock and cash position is what the next one opens with, so
+        # they have to be built forward. A tenant whose books begin twenty days
+        # before the demo is not a business anybody recognises, and — the reason
+        # this changed — the landing page reads the month that has FINISHED, so
+        # a tenant with only the build month in it shows an empty page from the
+        # first of the following month onwards.
+        #
+        # The two earlier months carry SERVICES, expenses, payments and payroll;
+        # the newest carries those AND the goods flow, the quotation pipeline
+        # and the full compliance showcase. Stated rather than implied: the
+        # inventory story is deliberately not repeated three times, because
+        # opening stock would have to be three times larger to survive it and
+        # the demo's headline stock figures would stop being readable.
+        for month in ("early", "middle"):
+            demo._run_earlier_month(partners, products, employees, month)
         demo._run_sales_flow(partners, products)
         # After the invoiced flow, so the pipeline's one confirmed order draws
-        # on what July actually leaves on hand rather than on opening stock.
+        # on what the month actually leaves on hand rather than on opening stock.
         demo._create_quotations(partners, products)
         demo._run_purchase_flow(partners, products)
         demo._create_direct_bills(partners, products)
         demo._run_payroll(employees)
-        demo._create_report_periods()
+        for month in ("early", "middle", "current"):
+            demo._create_report_periods(month)
         if company_name == DEMO_COMPANY_NAME:
             self._configure_demo_login(company)
         return company
+
+    @api.model
+    def _calendar(self):
+        """The three trading months and the opening date, from today.
+
+        Read once per provisioning run rather than per call: a build that
+        straddled midnight on the first of a month would otherwise put half the
+        tenant in one month and half in another, and the statutory reports would
+        tie out against neither.
+        """
+        if not self.env.context.get("sapian_demo_calendar"):
+            return demo_calendar.demo_calendar()
+        return self.env.context["sapian_demo_calendar"]
+
+    @api.model
+    def _day(self, window_key, day):
+        """The ISO date of ``day`` within one of the calendar's months."""
+        calendar = self._calendar()
+        return demo_calendar.iso(demo_calendar.day_in(calendar[window_key], day))
+
+    @api.model
+    def _window(self, window_key):
+        """One month as (from, to) ISO strings, for a report or a payroll run."""
+        first, last = self._calendar()[window_key]
+        return demo_calendar.iso(first), demo_calendar.iso(last)
+
+    @api.model
+    def _opening_date(self):
+        """The day stock and capital arrive: the day before trading starts."""
+        return demo_calendar.iso(self._calendar()["opening"])
+
+    @api.model
+    def _due_date(self, window_key, invoice_day):
+        """Net-30 from the invoice date, which lands in the following month.
+
+        Computed rather than written down: with no payment term Odoo leaves the
+        due date at the (earlier) creation date, and a receivables ageing that
+        reads "overdue on the day it was raised" is worse than none.
+        """
+        first, _last = self._calendar()[window_key]
+        issued = demo_calendar.day_in((first, _last), invoice_day)
+        return demo_calendar.iso(issued + timedelta(days=cat.INVOICE_DUE_DAYS))
+
+    @api.model
+    def _validity_date(self):
+        """How long the open quotations stand: a month past the newest month.
+
+        Ahead of the build date on purpose. A pipeline of quotations that all
+        expired before the prospect saw them is a pipeline of nothing.
+        """
+        _first, last = self._calendar()["current"]
+        return demo_calendar.iso(last + timedelta(days=cat.QUOTE_VALIDITY_DAYS))
 
     @api.model
     def _enable_multi_uom(self):
@@ -744,7 +823,7 @@ class SapianDemoTrader(models.AbstractModel):
         """
         return self.env.ref("base.user_admin")
 
-    def _create_quotations(self, partners, products):
+    def _create_quotations(self, partners, products, month="current"):
         """The sales pipeline: drafts, one sent, one confirmed-not-invoiced.
 
         Without these the Sales app opens on an empty list, and the demo has
@@ -768,14 +847,14 @@ class SapianDemoTrader(models.AbstractModel):
             limit=1,
         )
         created = order_model
-        for state, customer_key, lines, order_date in cat.QUOTATIONS:
+        for state, customer_key, lines, order_day in cat.QUOTATIONS:
             order = order_model.create(
                 {
                     "partner_id": partners[customer_key].id,
                     "pricelist_id": pricelist.id,
                     "user_id": salesperson.id,
-                    "date_order": "%s 09:00:00" % order_date,
-                    "validity_date": "2026-08-31",
+                    "date_order": "%s 09:00:00" % self._day(month, order_day),
+                    "validity_date": self._validity_date(),
                     "order_line": [
                         Command.create(
                             {
@@ -797,7 +876,7 @@ class SapianDemoTrader(models.AbstractModel):
                 order.action_confirm()
                 # Same rewrite as the invoiced flow above: confirmation resets
                 # date_order to now().
-                order.date_order = "%s 09:00:00" % order_date
+                order.date_order = "%s 09:00:00" % self._day(month, order_day)
                 self._validate_pickings(order.picking_ids)
             created |= order
         return created
@@ -885,9 +964,9 @@ class SapianDemoTrader(models.AbstractModel):
                     # 235100 Stock at -670,000.00: goods sold out of a warehouse
                     # they had never been received into. `accounting_date` is
                     # what stock_account reads into force_period_date.
-                    "accounting_date": cat.OPENING_DATE,
+                    "accounting_date": self._opening_date(),
                 }
-            )._apply_inventory(date=cat.OPENING_DATE)
+            )._apply_inventory(date=self._opening_date())
         self._create_opening_cash()
 
     def _create_opening_cash(self):
@@ -908,7 +987,7 @@ class SapianDemoTrader(models.AbstractModel):
         entry = self.env["account.move"].create(
             {
                 "move_type": "entry",
-                "date": cat.OPENING_DATE,
+                "date": self._opening_date(),
                 "ref": self.env._("Opening balance — capital introduced"),
                 "journal_id": journal.id,
                 "line_ids": [
@@ -934,7 +1013,7 @@ class SapianDemoTrader(models.AbstractModel):
         entry.action_post()
         return entry
 
-    def _run_sales_flow(self, partners, products):
+    def _run_sales_flow(self, partners, products, month="current"):
         """Two quotation -> delivery -> invoice flows with 15% VAT.
 
         Output VAT golden: 35,200 + 80,100 = 115,300 base -> 17,295 VAT.
@@ -963,7 +1042,8 @@ class SapianDemoTrader(models.AbstractModel):
                 "partner_id": partners["mebrat"].id,
                 "pricelist_id": pricelist.id,
                 "user_id": salesperson.id,
-                "date_order": "%s 09:00:00" % cat.INVOICED_ORDER_DATES["mebrat"],
+                "date_order": "%s 09:00:00"
+                % self._day(month, cat.INVOICED_ORDER_DAYS["mebrat"]),
                 "order_line": [
                     Command.create(
                         {
@@ -980,7 +1060,8 @@ class SapianDemoTrader(models.AbstractModel):
                 "partner_id": partners["abyssinia"].id,
                 "pricelist_id": pricelist.id,
                 "user_id": salesperson.id,
-                "date_order": "%s 09:00:00" % cat.INVOICED_ORDER_DATES["abyssinia"],
+                "date_order": "%s 09:00:00"
+                % self._day(month, cat.INVOICED_ORDER_DAYS["abyssinia"]),
                 "order_line": [
                     Command.create(
                         {
@@ -1013,15 +1094,22 @@ class SapianDemoTrader(models.AbstractModel):
             # Set the due date alongside the invoice date: with no payment term
             # the due date is otherwise left at the (earlier) creation date,
             # producing a due-before-issued document.
-            invoices.write({"invoice_date": "2026-07-10", "invoice_date_due": "2026-08-09"})
+            invoices.write(
+                {
+                    "invoice_date": self._day(month, cat.INVOICE_DAY),
+                    "invoice_date_due": self._due_date(month, cat.INVOICE_DAY),
+                }
+            )
             invoices.action_post()
             # Mebrat settles in full on the 20th; Abyssinia pays 60% and still
             # owes the rest at month end, so trade debtors is a real figure
             # rather than either everything or nothing.
             if order == order_mebrat:
-                self._pay(invoices, "2026-07-20")
+                self._pay(invoices, self._day(month, cat.PAYMENT_DAY_FULL))
             else:
-                self._pay(invoices, "2026-07-24", partial_ratio=0.6)
+                self._pay(
+                    invoices, self._day(month, cat.PAYMENT_DAY_PARTIAL), partial_ratio=0.6
+                )
 
     def _stock_journal(self):
         """The journal stock valuation entries are written in.
@@ -1129,7 +1217,7 @@ class SapianDemoTrader(models.AbstractModel):
             paid |= move
         return paid
 
-    def _run_purchase_flow(self, partners, products):
+    def _run_purchase_flow(self, partners, products, month="current"):
         """PO -> receipt -> vendor bill from the COMPLIANT supplier.
 
         THE UNIT MOMENT: cement is ordered in QUINTALS and lands in stock as
@@ -1187,13 +1275,13 @@ class SapianDemoTrader(models.AbstractModel):
         self._validate_pickings(order.picking_ids)
         order.action_create_invoice()
         bill = order.invoice_ids
-        bill.write({"invoice_date": "2026-07-15"})
+        bill.write({"invoice_date": self._day(month, cat.SUPPLIER_BILL_DAY)})
         bill.action_post()
         # The supplier is paid, so the money leaves the bank and 230100 stops
         # being where the month's purchases live.
-        self._pay(bill, "2026-07-28")
+        self._pay(bill, self._day(month, cat.SUPPLIER_PAYMENT_DAY))
 
-    def _create_direct_bills(self, partners, products):
+    def _create_direct_bills(self, partners, products, month="current"):
         """Two direct vendor bills: the punitive-WHT and foreign-digital paths.
 
         Yonas Transport (no TIN), 15,000 -> 30% WHT 4,500 + 2,250 input VAT.
@@ -1202,15 +1290,20 @@ class SapianDemoTrader(models.AbstractModel):
         """
         move_model = self.env["account.move"]
         bills = move_model.browse()
-        for partner, product, price, date in (
-            (partners["yonas"], products["delivery"], 15000, "2026-07-18"),
-            (partners["buildsoft"], products["software"], 8000, "2026-07-20"),
+        for partner, product, price, day in (
+            (partners["yonas"], products["delivery"], 15000, cat.DIRECT_BILL_DAYS["yonas"]),
+            (
+                partners["buildsoft"],
+                products["software"],
+                8000,
+                cat.DIRECT_BILL_DAYS["buildsoft"],
+            ),
         ):
             bill = move_model.create(
                 {
                     "move_type": "in_invoice",
                     "partner_id": partner.id,
-                    "invoice_date": date,
+                    "invoice_date": self._day(month, day),
                     "company_id": self.env.company.id,
                     "invoice_line_ids": [
                         Command.create(
@@ -1228,16 +1321,92 @@ class SapianDemoTrader(models.AbstractModel):
         # Paid, like the goods bill. A payables balance made only of bills
         # nobody ever settled is the same defect as debtors made only of
         # invoices nobody ever paid.
-        self._pay(bills, "2026-07-30")
+        self._pay(bills, self._day(month, cat.DIRECT_BILL_PAYMENT_DAY))
 
-    def _run_payroll(self, employees):
-        """July 2026 payroll: one payslip per PAYE band, posted + bank file.
+    def _run_earlier_month(self, partners, products, employees, month):
+        """One of the two months BEFORE the newest: services, expenses, payroll.
 
-        July 2026 is the most recent CLOSED month for this tenant, and it is
-        pinned rather than computed from the wall clock for the same reason
-        every other date here is: the statutory reports need one clean period
-        window with exact GL tie-outs, and a demo whose numbers move with the
-        calendar cannot have goldens at all.
+        WHAT IT DELIBERATELY DOES NOT DO is buy and sell goods. The inventory
+        story — opening stock, a purchase order received, the same SKU sold out
+        again, a stock valuation that ties to the balance sheet — is built to be
+        followed end to end in ONE month, and running it three times would need
+        three times the opening stock to survive, which would make every
+        headline stock figure in the demo unreadable.
+
+        What these months carry is what a trading company also does every month
+        and what the books need in order to look like books: revenue, an
+        expense with withholding on it, money moving both ways, and a payroll
+        run. The result is a tenant whose profit & loss has three months of
+        history behind the month on the landing page, rather than one month
+        that started twenty days ago.
+
+        Everything here goes through the same helpers the newest month uses, so
+        there is no second way of creating an invoice in this module.
+        """
+        move_model = self.env["account.move"]
+
+        # REVENUE: delivery services, invoiced and settled inside the month.
+        # A service and not goods, precisely so this leaves the stock ledger
+        # alone — see the docstring.
+        invoice = move_model.create(
+            {
+                "move_type": "out_invoice",
+                "partner_id": partners["mebrat"].id,
+                "invoice_date": self._day(month, cat.INVOICE_DAY),
+                "invoice_date_due": self._due_date(month, cat.INVOICE_DAY),
+                "company_id": self.env.company.id,
+                "invoice_line_ids": [
+                    Command.create(
+                        {
+                            "product_id": products["delivery"].id,
+                            "quantity": 1,
+                            "price_unit": cat.EARLIER_MONTH_SERVICE_REVENUE,
+                        }
+                    )
+                ],
+            }
+        )
+        invoice.action_post()
+        self._pay(invoice, self._day(month, cat.PAYMENT_DAY_FULL))
+
+        # AN EXPENSE WITH WITHHOLDING ON IT, from the supplier with no TIN, so
+        # each earlier month exercises the punitive path rather than only the
+        # newest one.
+        bill = move_model.create(
+            {
+                "move_type": "in_invoice",
+                "partner_id": partners["yonas"].id,
+                "invoice_date": self._day(month, cat.SUPPLIER_BILL_DAY),
+                "company_id": self.env.company.id,
+                "invoice_line_ids": [
+                    Command.create(
+                        {
+                            "product_id": products["delivery"].id,
+                            "quantity": 1,
+                            "price_unit": cat.EARLIER_MONTH_SERVICE_COST,
+                        }
+                    )
+                ],
+            }
+        )
+        bill.action_post()
+        self._pay(bill, self._day(month, cat.SUPPLIER_PAYMENT_DAY))
+
+        # AND THE STAFF WERE PAID. Payroll is the largest recurring cost this
+        # tenant has, and a profit & loss whose two earlier months carry none of
+        # it would show a margin no trading company recognises.
+        self._run_payroll(employees, month=month)
+
+    def _run_payroll(self, employees, month="current"):
+        """One month's payroll: a payslip per PAYE band, posted + bank file.
+
+        THE MONTH IS COMPUTED, and this docstring used to argue the opposite —
+        that pinning it to July 2026 was what made exact GL tie-outs possible.
+        The tie-outs never depended on WHICH month it was, only on it being one
+        clean whole month, which `reference/demo_calendar.py` still guarantees.
+        What pinning actually bought was a tenant that emptied out the month
+        after the build, and a landing page correctly reporting that it had
+        nothing to show.
 
         EVERY FIGURE ON EVERY PAYSLIP IS COMPUTED BY THE REAL ENGINE. Nothing
         below writes an amount: the run generates payslips from
@@ -1246,11 +1415,12 @@ class SapianDemoTrader(models.AbstractModel):
         l10n_et_payroll. A hand-written payslip is a number nobody can defend,
         and it would eventually get quoted at a prospect.
         """
+        period_from, period_to = self._window(month)
         run = self.env["l10n.et.payroll.run"].create(
             {
                 "company_id": self.env.company.id,
-                "date_from": PERIOD_FROM,
-                "date_to": PERIOD_TO,
+                "date_from": period_from,
+                "date_to": period_to,
                 "employee_ids": [Command.set([emp.id for emp in employees.values()])],
             }
         )
@@ -1272,10 +1442,10 @@ class SapianDemoTrader(models.AbstractModel):
         )
         run.action_confirm()
         run.action_export_bank_file()
-        self._pay_net_wages(run)
+        self._pay_net_wages(run, month=month)
         return run
 
-    def _pay_net_wages(self, run):
+    def _pay_net_wages(self, run, month="current"):
         """Actually pay the staff, instead of only writing the bank file.
 
         The run posted its journal entry and exported a transfer file, and then
@@ -1310,8 +1480,10 @@ class SapianDemoTrader(models.AbstractModel):
         entry = self.env["account.move"].create(
             {
                 "move_type": "entry",
-                "date": "2026-07-31",
-                "ref": self.env._("July 2026 salaries paid"),
+                "date": self._day(month, cat.MONTH_END_DAY),
+                "ref": self.env._(
+                    "%(period)s salaries paid", period=run.name or self._day(month, 1)
+                ),
                 "journal_id": journal.id,
                 "line_ids": [
                     Command.create(
@@ -1344,12 +1516,18 @@ class SapianDemoTrader(models.AbstractModel):
         return entry
         return run
 
-    def _create_report_periods(self):
-        """The July statutory report records, ready to print in the demo."""
+    def _create_report_periods(self, month="current"):
+        """The statutory report records for a month, ready to print.
+
+        Created for EVERY trading month, not only the newest: a prospect who
+        asks "what did May look like" should find May's declaration already
+        there rather than a form to fill in.
+        """
+        period_from, period_to = self._window(month)
         period = {
             "company_id": self.env.company.id,
-            "date_from": PERIOD_FROM,
-            "date_to": PERIOD_TO,
+            "date_from": period_from,
+            "date_to": period_to,
         }
         self.env["l10n.et.vat.declaration"].create(dict(period))
         self.env["l10n.et.wht.summary"].create(dict(period))

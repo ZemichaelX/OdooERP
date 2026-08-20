@@ -1659,6 +1659,19 @@ jobs:
           odoo ${ARGS} -d ci_landing -i sapian_demo_trader,sapian_landing,web_responsive \
             --log-level=warn 2>&1 | tail -5
 
+          # INSTALLING THE DEMO MODULE DOES NOT CREATE THE TENANT, and the
+          # first version of this job assumed it did. There is no data/ or
+          # demo/ entry that provisions — deliberately, see that module's
+          # manifest — so `scripts/build_demo.sh` calls the provisioner by name
+          # and so must this. Without it the database has Odoo's stock company
+          # and nothing else, the page is correctly all-unavailable, and the
+          # probe correctly refuses it. That refusal is what found this.
+          echo 'env["sapian.demo.trader"]._provision_demo_tenant_on_install(); env.cr.commit(); print("SAPIAN-LANDING provisioned=%s" % env["res.company"].search_count([]))' \
+            | odoo shell ${ARGS} -d ci_landing --no-http --log-level=warn 2>&1 \
+            | tee /tmp/landing-provision.log
+          grep -q "SAPIAN-LANDING provisioned=" /tmp/landing-provision.log \
+            || { echo "::error::The demo tenant was never provisioned, so there is nothing to measure."; exit 1; }
+
           # ---- 1. was there anything to compare? ------------------------
           odoo shell ${ARGS} -d ci_landing --no-http --log-level=warn \
             < "${GITHUB_WORKSPACE}/scripts/ci_landing_probe.py" 2>&1 | tee /tmp/landing-probe.log

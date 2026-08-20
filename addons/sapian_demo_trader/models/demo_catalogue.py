@@ -119,10 +119,22 @@ OPENING_EQUITY_CODE = "401000"  # Share capital / equity
 # the bank and the balance sheet still balances.
 OPENING_CASH = 1_500_000.0
 
-# The day the business opens its July. Everything that belongs to the opening
-# position — stock and cash — carries this date, so a statement drawn at
-# 31 July sees the goods that July sold as having been there to sell.
-OPENING_DATE = "2026-06-30"
+# DAY NUMBERS, NOT DATES, from here down.
+#
+# Every date in this file used to be a literal inside July 2026. The reasoning
+# was sound as far as it went — the statutory reports want one clean period with
+# exact tie-outs — and it made the tenant silently wrong from the month after
+# the build onwards: the landing page reads the month that has FINISHED, and a
+# tenant pinned to July has nothing in it from September on.
+#
+# So the month comes from `reference/demo_calendar.py`, computed from the build
+# date, and what lives here is the day WITHIN that month. The story the dates
+# tell — quoted, delivered, invoiced, paid, inside one month — is preserved
+# exactly, because it was never about which month it was.
+#
+# The opening position (stock and cash) is dated by the calendar, one day
+# before the first trading month, so the oldest month opens with goods that
+# were there to sell.
 
 # (key, display name, Amharic)
 CATEGORIES = [
@@ -386,25 +398,43 @@ _CEMENT_OPC_BAG_SALE = PRICES["cement_opc_quintal_sale"] / BAGS_PER_QUINTAL
 # is what made the Sales list read "seven orders all placed at 15:51 today".
 # Both sit a few days ahead of the 10 July invoice, so the list tells the
 # ordinary story: quoted, delivered, invoiced, inside one month.
-INVOICED_ORDER_DATES = {
-    "mebrat": "2026-07-06",
-    "abyssinia": "2026-07-08",
+INVOICED_ORDER_DAYS = {
+    "mebrat": 6,
+    "abyssinia": 8,
 }
 
-# (state, customer key, [(product key, qty, unit price)], order date)
+#: Day of the month for the flows that used to carry a literal date.
+INVOICE_DAY = 10  # the invoice both delivered orders are billed on
+INVOICE_DUE_DAYS = 30  # net 30, so the due date lands in the following month
+PAYMENT_DAY_FULL = 20  # the customer who settles in full
+PAYMENT_DAY_PARTIAL = 24  # and the one who leaves 40% outstanding
+SUPPLIER_BILL_DAY = 15
+SUPPLIER_PAYMENT_DAY = 28
+DIRECT_BILL_DAYS = {"yonas": 18, "buildsoft": 20}
+DIRECT_BILL_PAYMENT_DAY = 30
+MONTH_END_DAY = 31  # clamped to the month's real length by `day_in`
+QUOTE_VALIDITY_DAYS = 31
+
+# The two earlier trading months. Smaller than the newest month on purpose: the
+# newest is the showcase and should read as the busiest, and a demo whose three
+# months are identical looks generated rather than traded.
+EARLIER_MONTH_SERVICE_REVENUE = 240_000.0  # delivery work invoiced and settled
+EARLIER_MONTH_SERVICE_COST = 60_000.0  # sub-contracted haulage, 30% WHT (no TIN)
+
+# (state, customer key, [(product key, qty, unit price)], DAY of the month)
 QUOTATIONS = [
     (
         "draft",
         "rift_valley",
         [("cement_dangote", 20, _CEMENT_OPC_BAG_SALE), ("rebar_16", 60, PRICES["rebar_sale"])],
-        "2026-07-27",
+        27,
     ),
-    ("draft", "tsehay", [("hcb_20", 400, PRICES["hcb_sale"])], "2026-07-28"),
+    ("draft", "tsehay", [("hcb_20", 400, PRICES["hcb_sale"])], 28),
     (
         "draft",
         "hawassa",
         [("sand", 4, PRICES["sand_sale"]), ("binding_wire", 25, PRICES["binding_wire_sale"])],
-        "2026-07-29",
+        29,
     ),
     (
         "sent",
@@ -413,12 +443,12 @@ QUOTATIONS = [
             ("sheet_g32", 30, PRICES["sheet_sale"]),
             ("binding_wire", 40, PRICES["binding_wire_sale"]),
         ],
-        "2026-07-24",
+        24,
     ),
     # Confirmed and delivered, deliberately NOT invoiced: the demo's live
     # moment is pressing "Create Invoice" on a real order in front of the
     # prospect. Delivered rather than left pending so the tenant carries no
     # half-finished picking, which reads as an unfinished demo rather than as
     # a business.
-    ("sale", "abyssinia", [("sheet_g32", 20, PRICES["sheet_sale"])], "2026-07-30"),
+    ("sale", "abyssinia", [("sheet_g32", 20, PRICES["sheet_sale"])], 30),
 ]

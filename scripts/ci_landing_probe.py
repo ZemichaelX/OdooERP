@@ -28,7 +28,16 @@ looking at it.
 
 import datetime
 
-WINDOW = (datetime.date(2026, 7, 1), datetime.date(2026, 7, 31))
+# THE MONTH THE PAGE ITSELF READS, not a pinned one and not "whichever month
+# has data". The landing page shows the month that has FINISHED, because that
+# is the month with a filing deadline attached, and the demo tenant now trades
+# in the three months before the build for the same reason. Asking the probe
+# about any other month would make it a proxy for the thing it is supposed to
+# prove.
+_TODAY = datetime.date.today()
+_FIRST_OF_THIS = _TODAY.replace(day=1)
+_LAST_OF_PREV = _FIRST_OF_THIS - datetime.timedelta(days=1)
+WINDOW = (_LAST_OF_PREV.replace(day=1), _LAST_OF_PREV)
 
 # THE COMPANY THAT HAS DATA, and not `search([], limit=1)`.
 #

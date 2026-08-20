@@ -12,6 +12,8 @@ import logging
 
 from odoo.tests import TransactionCase, tagged
 
+from odoo.addons.sapian_demo_trader.reference import demo_calendar
+
 _logger = logging.getLogger(__name__)
 
 
@@ -24,8 +26,16 @@ class TestDemoTraderBooks(TransactionCase):
             company_name="Books Trading PLC"
         )
         cls.env = cls.env(context=dict(cls.env.context, allowed_company_ids=cls.company.ids))
+        # THE MONTH IS COMPUTED, like the tenant's. Pinning "2026-07" here
+        # would assert the defect this change removed: the demo now trades in
+        # the three months before the build, so a fixed month reads empty from
+        # the month after it was written.
+        cls.calendar = demo_calendar.demo_calendar()
+        cls.period = tuple(demo_calendar.iso(day) for day in cls.calendar["current"])
 
-    def _statement(self, model_name, date_from="2026-07-01", date_to="2026-07-31"):
+    def _statement(self, model_name, date_from=None, date_to=None):
+        date_from = date_from or self.period[0]
+        date_to = date_to or self.period[1]
         return (
             self.env[model_name]
             .with_company(self.company)
@@ -68,8 +78,9 @@ class TestDemoTraderBooks(TransactionCase):
         gross = data["gross_profit"]
         net = data["net_profit"]
         _logger.info(
-            "SAPIAN-BOOKS P&L 2026-07 revenue=%.2f cost_of_sales=%.2f "
+            "SAPIAN-BOOKS P&L %s revenue=%.2f cost_of_sales=%.2f "
             "gross_profit=%.2f net_profit=%.2f operating=%.2f",
+            self.period[0][:7],
             revenue,
             cogs,
             gross,
@@ -136,8 +147,9 @@ class TestDemoTraderBooks(TransactionCase):
         identity = data["tie_out"][0]
         cross = data["tie_out"][1]
         _logger.info(
-            "SAPIAN-BOOKS BS 2026-07-31 assets=%.2f liabilities_and_equity=%.2f "
+            "SAPIAN-BOOKS BS %s assets=%.2f liabilities_and_equity=%.2f "
             "difference=%.2f result=%.2f pl_says=%.2f",
+            self.period[1],
             assets,
             equity_and_liabilities,
             identity["difference"],
