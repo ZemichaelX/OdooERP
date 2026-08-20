@@ -1722,7 +1722,7 @@ jobs:
                 --addons-path=${GITHUB_WORKSPACE}/addons,${GITHUB_WORKSPACE}/vendor/oca_web,/usr/lib/python3/dist-packages/odoo/addons
                 --workers=0 --max-cron-threads=0 --stop-after-init"
           odoo ${ARGS} -d ci_landing -u sapian_landing \
-            --test-enable --test-tags '/sapian_landing:TestGridTogglesBackToTheLanding' \
+            --test-enable --test-tags 'sapian_grid' \
             --log-level=test 2>&1 | tee /tmp/landing-grid.log
 
           grep -q "odoo\.tests\.result:" /tmp/landing-grid.log \
@@ -1731,12 +1731,31 @@ jobs:
             echo "::error::The grid button does not toggle back to the landing page."
             exit 1
           fi
-          # THE BROWSER'S OWN LINE. A `-standard` test that was never selected
-          # reports a clean result over zero tests, and this is the only thing
-          # that distinguishes "it toggled" from "it never ran".
+          # A `-standard` class is selected by its OWN TAG. `/module:Class`
+          # resolves the tag to `standard`, which this class is explicitly not,
+          # so that spec selected NOTHING and the runner reported a clean
+          # "0 failed, 0 error(s) of 0 tests" — a green produced by the work not
+          # happening. Two guards, because the count and the browser's own line
+          # fail for different reasons:
+          RAN=$(sed -n 's/.*tests\.result:.* of \([0-9][0-9]*\) tests.*/\1/p' /tmp/landing-grid.log | tail -1)
+          if [ -z "${RAN:-}" ] || [ "${RAN}" -lt 1 ]; then
+            echo "::error::--test-tags selected ${RAN:-no} grid tests. Nothing ran, so nothing was proved."
+            exit 1
+          fi
           grep -q "SAPIAN-GRID toggled=2 landed=overview" /tmp/landing-grid.log \
             || { echo "::error::The browser never reported the toggle, so nothing was measured."; exit 1; }
           echo "OK — the launcher opens over the overview and closes back onto it."
+
+      - name: What this job actually measured
+        # A GREEN RUN SHOULD REPORT ITS FIGURES, not merely stay quiet about
+        # them — the same reason test_demo_trader_books logs SAPIAN-BOOKS. The
+        # probe's counts are 200 lines up the log by the time the job ends, so
+        # they are reprinted here where a reader lands.
+        if: always()
+        shell: bash
+        run: |
+          set -uo pipefail
+          grep "SAPIAN-LANDING" /tmp/landing-probe.log || echo "(the probe never reported)"
 
   auth-controls-palette:
     name: Every auth control is in the palette
