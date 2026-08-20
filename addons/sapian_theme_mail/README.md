@@ -202,7 +202,8 @@ inheritance** of `mail_notification_layout` and picks the change up for free.
 layouts above cover the mails a *document* produces. They do not cover a mail
 that carries its own body, and nobody had counted those. A sweep of the 83
 modules reachable from `sapian.module.catalog.STANDARD_CATALOG`, reading all
-1,362 data files each of them loads, found **thirteen more surfaces**:
+1,362 data files each of them loads, found **fourteen more templates**, carrying **thirteen emails** (the digest is
+two templates, one mail):
 
 | Surface | Who receives it | What it carried |
 |---|---|---|
@@ -216,7 +217,8 @@ modules reachable from `sapian.module.catalog.STANDARD_CATALOG`, reading all
 | `gamification.email_template_badge_received` | the client's own staff | Powered by Odoo |
 | `hr_expense.hr_expense_template_submitted_expenses` | a manager | Powered by Odoo |
 | `hr_expense.hr_expense_template_register_no_user` | whoever mailed a receipt | Powered by Odoo |
-| `digest.digest_mail_main` | the client's managers | Powered by Odoo |
+| `digest.digest_mail_main` | the client's managers | "Powered by Odoo" **and** "Sent by Odoo" |
+| `digest.digest_section_mobile` | the client's managers | an advert for the vendor's **phone app** — a screenshot on odoo.com, "Run your business from anywhere with Odoo Mobile", two app-store badges |
 | `account.mail_template_einvoice_notification` | **the client's customer** | Odoo's **logo image** |
 | `account.mail_template_invoice_subscriber` | a journal subscriber | Odoo's **logo image** |
 
@@ -250,7 +252,26 @@ reworded upstream sentence then fails a test instead of shipping.
 **Red proof, on one database.** The CI job installs the ten branded modules
 WITHOUT this one and shows the probe leaking, then installs this one into that
 same database and shows the same probe at zero. A green second phase on its own
-could not tell a working scrub from a database that was never branded.
+could not tell a working scrub from a database that was never branded. First
+run: `leaks=3`, `branded_templates=14 of 31`.
+
+**Two things the guard caught in the scrub itself,** which is the argument for
+writing it before believing the fix:
+
+* **`/odoo/...` is not branding.** It is Odoo 19's own backend route, and
+  `account.mail_template_einvoice_notification` links into it for the "View your
+  invoice" button the mail exists for. `\bOdoo\b` matches inside it, so the
+  detector flagged two clean templates. Rewriting that URL would have broken the
+  button.
+* **The vendor's app advert is mostly not the word.** A Play Store link and a
+  CDN image carry it; only one of the three markers is "Odoo". A word-level
+  scrub would have left the advert standing with our name on it, which is worse
+  than leaving it alone.
+
+Two of the fourteen are removed rather than rebranded, and the difference is
+deliberate: the "Never heard of Odoo? ... 12+ million users" paragraph and the
+phone-app promo are advertising, and there is no version of them that belongs in
+a client's mail under anybody's name.
 
 ---
 

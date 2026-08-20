@@ -59,6 +59,37 @@ _ATTRIBUTION = re.compile(
     re.I | re.S,
 )
 
+# "Sent by <a href=odoo.com><span>Odoo</span></a>" — the digest's OTHER
+# attribution, above the "Powered by" one. Kept apart because the replacement
+# has to keep its own two words: turning "Sent by" into a second "Powered by"
+# would print the line twice in one email.
+_SENT_BY = re.compile(
+    r"Sent\s+by\s*<a\b[^>]*href=[\"'][^\"']*odoo\.com[^\"']*[\"'][^>]*>.*?</a>",
+    re.I | re.S,
+)
+
+# The vendor's own MARKETING ASSETS, which `digest` puts in the mail a client's
+# managers read every week: a screenshot hosted on odoo.com, the sentence "Run
+# your business from anywhere with Odoo Mobile", and two app-store badges
+# linking to the vendor's phone app. Rewriting the words would leave a client's
+# digest advertising an app that is not theirs and not ours, so the whole promo
+# is removed rather than renamed. Piece by piece and not by matching the <td>
+# that holds them: that cell nests two more tables, so a regex for its closing
+# tag would take out half the mail.
+_VENDOR_IMAGE = re.compile(
+    r"<img\b[^>]*src=[\"'][^\"']*(?:odoo\.com|odoocdn\.com)[^\"']*[\"'][^>]*/?>",
+    re.I,
+)
+_APP_STORE_LINK = re.compile(
+    r"<a\b[^>]*href=[\"'][^\"']*(?:play\.google\.com[^\"']*odoo|"
+    r"itunes\.apple\.com[^\"']*odoo|apps\.apple\.com[^\"']*odoo)[^\"']*[\"'][^>]*>.*?</a>",
+    re.I | re.S,
+)
+_MOBILE_PITCH = re.compile(
+    r"<p\b[^>]*class=[\"'][^\"']*run_business[^\"']*[\"'][^>]*>.*?</p>",
+    re.I | re.S,
+)
+
 # Any remaining odoo.com anchor: the tour link, a domain sample, a footer link
 # in a template we have not seen. Unwrapped to its own text rather than
 # deleted, so a sentence that merely LINKS somewhere keeps reading correctly;
@@ -75,6 +106,17 @@ _LOGO_IMG = re.compile(
     r"<img\b[^>]*src=[\"'][^\"']*/web/static/img/logo[^\"']*[\"'][^>]*/?>",
     re.I,
 )
+
+# A HOSTNAME under the vendor's domain, left as visible text rather than as a
+# link — `auth_signup.set_password_email` ships
+# `<a t-att-href="website_url" t-out="website_url or ''">http://yourcompany.odoo.com</a>`,
+# where the odoo.com is the anchor's TEXT and the href is a variable, so the
+# link rule above never sees it. In practice `t-out` overwrites that text with
+# the tenant's real URL, so it does not reach a recipient — but a sample naming
+# a competitor's hosting has no business in the file either, and the same rule
+# catches a template that puts a real odoo.com URL in visible prose.
+_DOMAIN_SAMPLE = re.compile(r"https?://[\w.-]*\bodoo\.com[^\s<\"']*", re.I)
+NEUTRAL_DOMAIN_SAMPLE = "https://yourcompany.example.com"
 
 # A last resort for detection, never for rewriting: the word on its own.
 _WORD = re.compile(r"\bOdoo\b", re.I)
@@ -123,7 +165,13 @@ def _phrase_rules(product):
     ]
 
 
-def debrand_html(html, product, attribution_html=None, logo_src=SAPIAN_LOGO_SRC):
+def debrand_html(
+    html,
+    product,
+    attribution_html=None,
+    logo_src=SAPIAN_LOGO_SRC,
+    vendor_url="https://sapiantech.com",
+):
     """Return ``html`` with the other vendor's branding replaced.
 
     :param str html: a RENDERED email body. Rendered, not template source:
@@ -134,12 +182,26 @@ def debrand_html(html, product, attribution_html=None, logo_src=SAPIAN_LOGO_SRC)
         ``None`` removes it outright, which is what a company that switched the
         line off has asked for. It never falls back to another vendor's name.
     :param str logo_src: what Odoo's logo image becomes.
+    :param str vendor_url: our own address, for the "Sent by" variant, which
+        keeps its own wording rather than borrowing the attribution's.
     :returns: the scrubbed body.
     """
     if not html:
         return html
 
     out = _ATTRIBUTION.sub(lambda m: attribution_html or "", html)
+    out = _SENT_BY.sub(
+        lambda m: (
+            'Sent by <a target="_blank" href="%s">%s</a>' % (vendor_url, product)
+            if attribution_html
+            else ""
+        ),
+        out,
+    )
+    # The promo block, before anything unwraps its anchors.
+    out = _MOBILE_PITCH.sub("", out)
+    out = _APP_STORE_LINK.sub("", out)
+    out = _VENDOR_IMAGE.sub("", out)
     out = _LOGO_IMG.sub(
         '<img alt="%s" src="%s" style="height: 2em; object-fit: contain;"/>'
         % (product, logo_src),
@@ -148,6 +210,8 @@ def debrand_html(html, product, attribution_html=None, logo_src=SAPIAN_LOGO_SRC)
     # Unwrap before the phrase rules run: "Odoo Tour" is inside an anchor, and
     # the rule that deletes that sentence matches the TEXT.
     out = _ANY_ODOO_LINK.sub(lambda m: m.group(1), out)
+    # Whatever odoo.com is left is text, not a link, by the line above.
+    out = _DOMAIN_SAMPLE.sub(NEUTRAL_DOMAIN_SAMPLE, out)
     for pattern, replacement in _phrase_rules(product):
         out = pattern.sub(replacement, out)
     return out
@@ -187,6 +251,16 @@ def odoo_branding_in(text):
         # this every link would count as two findings and the counts in the
         # goldens would mean nothing.
         if any(s <= match.start() < e for s, e in url_spans):
+            continue
+        # `/odoo/...` IS NOT BRANDING. It is Odoo 19's own backend route, and
+        # `account.mail_template_einvoice_notification` and `base.mail_template
+        # _data_module_install_request` both link into it — "View your invoice",
+        # "Review the request". Rewriting it would break the button the mail
+        # exists for. Nothing here reads it as a word: the recipient sees link
+        # text, and the URL never leaves the tenant's own domain.
+        before = text[match.start() - 1] if match.start() else ""
+        after = text[match.end() : match.end() + 1]
+        if before == "/" or after == "/":
             continue
         start = max(0, match.start() - 40)
         found.append((match.start(), text[start : match.end() + 20].strip()))

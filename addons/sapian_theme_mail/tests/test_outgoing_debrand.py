@@ -153,6 +153,85 @@ class TestOutgoingDebrand(TransactionCase):
             "must be installed for this test to mean anything" % checked,
         )
 
+    # ---- the mail bodies that are QWeb templates, not records ------------
+
+    #: Measured, not guessed: these are the QWeb templates the sweep of the 83
+    #: catalogue modules found carrying branding. They are mail BODIES, so the
+    #: `mail.template` sweep above cannot see them — `mail.template.search([])`
+    #: returns records, and these are `ir.ui.view`.
+    QWEB_MAIL_BODIES = [
+        "digest.digest_mail_main",
+        "digest.digest_section_mobile",
+        "hr_expense.hr_expense_template_submitted_expenses",
+        "hr_expense.hr_expense_template_register_no_user",
+        "im_livechat.livechat_email_template",
+        "website_slides.mail_notification_channel_invite",
+    ]
+
+    def _arch(self, view):
+        arch = view.sudo().arch_db or ""
+        if isinstance(arch, dict):  # translated field
+            arch = next(iter(arch.values()), "")
+        return arch
+
+    def test_no_qweb_mail_body_can_send_odoo_branding(self):
+        """The other half of the estate, asserted as a LIST.
+
+        A template that stops being branded upstream fails here too, as a stale
+        expectation, because a list nobody re-measures is a list that quietly
+        stops covering anything.
+        """
+        checked, still_branded, no_longer_branded = 0, [], []
+        for xmlid in self.QWEB_MAIL_BODIES:
+            view = self.env.ref(xmlid, raise_if_not_found=False)
+            if not view:
+                continue  # its module is not installed in this database
+            checked += 1
+            arch = self._arch(view)
+            if not mail_debrand.odoo_branding_in(arch):
+                no_longer_branded.append(xmlid)
+                continue
+            out_body, _ = self._outgoing(arch)
+            leaks = mail_debrand.odoo_branding_in(out_body)
+            if leaks:
+                still_branded.append("%s -> %s" % (xmlid, leaks[:3]))
+        self.assertTrue(
+            checked,
+            "not one of the QWeb mail bodies exists here, so this test proved "
+            "nothing. The CI job installs the modules that carry them.",
+        )
+        self.assertFalse(
+            no_longer_branded,
+            "these are no longer branded upstream, so the list is stale and "
+            "each needs re-measuring rather than deleting: %s" % no_longer_branded,
+        )
+        self.assertFalse(
+            still_branded,
+            "%d of %d QWeb mail bodies still send Odoo branding:\n  %s"
+            % (len(still_branded), checked, "\n  ".join(still_branded)),
+        )
+
+        # THE APP ADVERT, named rather than left to the word-detector. `digest`
+        # mails the client's managers a competitor's phone app: a screenshot
+        # hosted on odoo.com, "Run your business from anywhere with Odoo
+        # Mobile", and two store badges. Renaming the words would leave a
+        # client's own digest advertising an app that is neither theirs nor
+        # ours, so the promo is removed — and none of those three markers is
+        # the word "Odoo", so nothing above would notice if it came back.
+        #
+        # Folded in here rather than given its own test so it cannot SKIP: a
+        # test that skips when `digest` is absent proves nothing on exactly the
+        # database it was written for, and this job's own guard fails on skips.
+        promo = self.env.ref("digest.digest_section_mobile", raise_if_not_found=False)
+        if promo:
+            out, _ = self._outgoing(self._arch(promo))
+            for marker in ("run_business", "play.google.com", "odoocdn.com"):
+                self.assertNotIn(
+                    marker,
+                    out,
+                    "the digest still carries the other vendor's app advert (%s)" % marker,
+                )
+
     # ---- the switch ------------------------------------------------------
 
     def test_the_attribution_is_ours_by_default(self):

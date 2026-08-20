@@ -82,6 +82,20 @@ INVITE_BODY = (
 
 INVITE_SUBJECT = "Abebe from Selam General Trading PLC invites you to connect to Odoo"
 
+# addons/account/data/mail_template_data.xml and base's install-request mail:
+# `/odoo/...` is Odoo 19's own BACKEND ROUTE, not branding. Both link into it
+# for the button the mail exists for.
+BACKEND_ROUTE = (
+    '<a t-attf-href="/odoo/accounting/action-account_move/{{ object.id }}" '
+    'style="color: #14454F;">View your invoice</a>'
+)
+
+# addons/auth_signup/data/mail_template_data.xml — the odoo.com is the anchor's
+# TEXT and the href is a variable, so the link rule never sees it.
+DOMAIN_SAMPLE = (
+    '<a t-att-href="website_url" t-out="website_url or \'\'">' "http://yourcompany.odoo.com</a>"
+)
+
 
 # ---- the fixtures really are branded (the red half) ------------------------
 
@@ -148,6 +162,74 @@ def test_the_subject_is_scrubbed_too():
     out = debrand_subject(INVITE_SUBJECT, PRODUCT)
     assert odoo_branding_in(out) == []
     assert out.endswith("invites you to connect to SapianERP")
+
+
+def test_the_backend_route_is_not_branding_and_is_left_intact():
+    """`/odoo/...` is the product's own route, and the button the mail exists for.
+
+    Found by the guard, not by inspection: the sweep flagged
+    `account.mail_template_einvoice_notification` and the module install request
+    because `\\bOdoo\\b` matches inside `/odoo/accounting/...`. Rewriting that URL
+    would break "View your invoice" — the recipient reads link text and the URL
+    never leaves the tenant's own domain.
+    """
+    assert odoo_branding_in(BACKEND_ROUTE) == []
+    assert debrand_html(BACKEND_ROUTE, PRODUCT, attribution_html=OURS) == BACKEND_ROUTE
+
+
+def test_a_domain_sample_naming_the_vendors_hosting_is_replaced():
+    """The anchor's TEXT, where the link rule cannot reach it.
+
+    `t-out` overwrites this with the tenant's real URL, so it does not reach a
+    recipient — but the same rule catches a template that puts a real odoo.com
+    URL in visible prose, and a sample naming a competitor's hosting has no
+    business in the file either.
+    """
+    assert len(odoo_branding_in(DOMAIN_SAMPLE)) == 1
+    out = debrand_html(DOMAIN_SAMPLE, PRODUCT, attribution_html=OURS)
+    assert odoo_branding_in(out) == []
+    assert "yourcompany.example.com" in out
+
+
+# addons/digest/data/digest_data.xml — the digest carries TWO attributions and
+# an advert for the vendor's phone app.
+DIGEST_SENT_BY = (
+    'Sent by <a href="https://www.odoo.com" target="_blank">'
+    '<span class="odoo_link_text">Odoo</span></a>'
+)
+DIGEST_APP_ADVERT = (
+    '<img src="https://www.odoo.com/web/image/38874595/odoo-mobile.png" alt="Odoo Mobile" />'
+    '<p class="run_business">Run your business from anywhere with <b>Odoo Mobile</b>.</p>'
+    '<a href="https://play.google.com/store/apps/details?id=com.odoo.mobile" target="_blank">'
+    '<img class="download_app" src="https://download.odoocdn.com/digests/google_play.png" /></a>'
+)
+
+
+def test_the_digests_second_attribution_keeps_its_own_wording():
+    """ "Sent by", not a second "Powered by".
+
+    The digest carries both lines. Replacing this one with the attribution run
+    would print "Powered by SapianERP" twice in one email.
+    """
+    assert len(odoo_branding_in(DIGEST_SENT_BY)) == 2
+    out = debrand_html(DIGEST_SENT_BY, PRODUCT, attribution_html=OURS)
+    assert odoo_branding_in(out) == []
+    assert out.startswith("Sent by ")
+    assert "Powered by" not in out
+
+
+def test_the_vendors_app_advert_is_removed_not_renamed():
+    """A client's digest must not advertise a phone app that is not theirs.
+
+    Two of the three markers are not the word at all — a Play Store link and a
+    CDN image — so a word-level scrub would leave the advert standing with our
+    name on it.
+    """
+    out = debrand_html(DIGEST_APP_ADVERT, PRODUCT, attribution_html=OURS)
+    assert odoo_branding_in(out) == []
+    assert "run_business" not in out
+    assert "play.google.com" not in out
+    assert "odoocdn.com" not in out
 
 
 def test_a_clients_own_sentence_is_left_alone():

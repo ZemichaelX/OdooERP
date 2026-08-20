@@ -39,7 +39,7 @@ block on it, and never guess it into code.
 | 6 | #50 — diagnose before fixing | **DONE** — merged as `5f21188` |
 | 7 | #49 — write-tripwire out, fix order-independent | **DONE** — merged as `1b87105` |
 | 8 | Palette additions | **DONE** — PR #73 merged as `95ad144` |
-| 9 | PR 4 — the remaining "Powered by Odoo" mails | **DONE** — it was 13, not 4 |
+| 9 | PR 4 — the remaining "Powered by Odoo" mails | **DONE** — it was 14 templates, not 4 |
 | 10 | Landing slot and grid toggle — Phase A discovery first | todo |
 | 11 | Branch cleanup — 35 remote branches | **DONE** — 33 deleted, 7 live branches remain |
 | 12 | **Self-hosted CI runner** | **DONE, then deliberately undone** — see below |
@@ -340,8 +340,8 @@ did occur were the four above, and all were diagnosed rather than re-run.
 
 ### 9. THE REMAINING "POWERED BY ODOO" MAILS — DONE
 
-**What it turned out to be: thirteen surfaces, not four, and four of them go to
-someone outside the client's company.** The four in this item were the four
+**What it turned out to be: fourteen templates carrying thirteen emails, not
+four — and four of them go to someone outside the client's company.** The four in this item were the four
 somebody had noticed; a sweep of the 83 modules reachable from
 `STANDARD_CATALOG`, reading all 1,362 data files they load, found the rest.
 
@@ -369,7 +369,19 @@ comes through there. Rules in `reference/mail_debrand.py` (plain Python, rule
 about an Odoo migration keeps their sentence. Only the branding Odoo injects
 into mail sent over the client's name is removed.
 
-Two things worth carrying forward:
+`digest` is the one nobody would have found by reading: it mails the client's
+managers an advert for the VENDOR'S PHONE APP — a screenshot hosted on odoo.com,
+"Run your business from anywhere with Odoo Mobile", and two app-store badges.
+Two of those three markers are not the word "Odoo" at all, so a word-level scrub
+would have left the advert standing with our name on it.
+
+Three things worth carrying forward:
+
+* **`/odoo/...` is not branding, it is the backend route.** `\bOdoo\b` matches
+  inside it, and `account.mail_template_einvoice_notification` links into it for
+  the "View your invoice" button. The first version of the guard flagged two
+  clean templates; rewriting that URL would have broken the button.
+
 
 * **`pytest addons/<module>/reference/` does not work and never has.** CLAUDE.md
   documents it; pytest walks up through the addon's `__init__.py`, which imports
