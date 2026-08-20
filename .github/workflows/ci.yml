@@ -1459,7 +1459,32 @@ jobs:
           grep -qE "SAPIAN-BRAND reset=[1-9]" /tmp/brand-reset.log \
             || { echo "::error::The reset step never reported, so the upgrade below proves nothing."; exit 1; }
 
-          odoo ${ARGS} -d ci_brand -u sapian_theme --log-level=warn 2>&1 | tee /tmp/brand-upgrade.log
+          # REWIND THE RECORDED VERSION, or the migration never runs and this
+          # whole phase measures nothing. Odoo executes migrations/<version>/
+          # only when the INSTALLED version is below the manifest's, and phase 1
+          # installed this module at the manifest version — so a bare
+          # `-u sapian_theme` on a freshly installed database skips every
+          # migration script silently. The first version of this step did
+          # exactly that and reported `wrong=1 of 1`: the check was right and
+          # the proof was empty.
+          #
+          # Same mechanism the bot-rename job uses, and the same reason: it puts
+          # the database into the state of a tenant that installed this module
+          # before the migration existed, which is the only state the migration
+          # is for.
+          echo 'env.cr.execute("UPDATE ir_module_module SET latest_version = %s WHERE name = %s", ("19.0.2.1.0", "sapian_theme")); env.cr.commit(); print("SAPIAN-BRAND rewound")' \
+            | odoo shell ${ARGS} -d ci_brand --no-http --log-level=warn 2>&1 | tee /tmp/brand-rewind.log
+          grep -q "SAPIAN-BRAND rewound" /tmp/brand-rewind.log \
+            || { echo "::error::Could not rewind the module version, so the migration below would not run."; exit 1; }
+
+          odoo ${ARGS} -d ci_brand -u sapian_theme --log-level=info 2>&1 | tee /tmp/brand-upgrade.log
+          # THE MIGRATION'S OWN LINE, not the absence of an error. A `-u` that
+          # skipped it exits 0 and looks identical to one that ran it.
+          if ! grep -qE "sapian_theme: upgrade wrote the default logo on [1-9]" /tmp/brand-upgrade.log; then
+            echo "::error::migrations/19.0.2.2.0/end-brand_assets.py did not run, or ran and wrote nothing. Whatever the check below reports, it is not about the migration."
+            grep -i "migration" /tmp/brand-upgrade.log | head -20
+            exit 1
+          fi
 
           echo 'c = env["res.company"].sudo().search([]); import base64; from odoo.tools import file_open; ours = base64.b64encode(file_open("sapian_theme/static/src/img/sapian_logo.png","rb").read()); print("SAPIAN-BRAND wrong=%d of %d" % (len(c.filtered(lambda x: x.logo != ours)), len(c)))' \
             | odoo shell ${ARGS} -d ci_brand --no-http --log-level=warn 2>&1 | tee /tmp/brand-after.log
