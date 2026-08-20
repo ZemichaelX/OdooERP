@@ -33,7 +33,7 @@ DB_NAME="${1:?usage: provision_client.sh <db_name> [modules]}"
 # provisioned without it opens on a configuration screen every morning. It is
 # vendored at a pinned commit (vendor/README.md) and its per-user defaults are
 # applied in phase 5 below — installing it is not enough on its own.
-MODULES="${2:-sapian_core,sapian_theme,web_responsive,l10n_et_base,l10n_et_payroll,l10n_et_reports}"
+MODULES="${2:-sapian_core,sapian_theme,web_responsive,l10n_et_base,l10n_et_payroll,l10n_et_reports,sapian_landing}"
 COUNTRY_CODE="${SAPIAN_COUNTRY:-et}"   # override for a non-Ethiopian tenant
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=scripts/lib/preflight.sh

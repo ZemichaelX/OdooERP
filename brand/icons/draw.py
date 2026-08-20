@@ -245,3 +245,18 @@ render(
        fill="none" stroke="{W}" stroke-width="44"/>
 """,
 )
+
+
+# ------------------------------------------------------------ Landing page
+# The overview: what is owed on top, what was earned underneath. A stacked
+# pair of bars over a baseline — the compliance band in the WARN colour
+# because it is the half with a deadline on it, the business band in GREEN.
+render(
+    "sapian_landing",
+    f"""
+ <rect x="40" y="40" width="432" height="432" rx="56" fill="{T}"/>
+ <rect x="96" y="128" width="320" height="64" rx="32" fill="{A}"/>
+ <rect x="96" y="224" width="224" height="64" rx="32" fill="{G2}"/>
+ <rect x="96" y="320" width="288" height="64" rx="32" fill="{G}"/>
+""",
+)

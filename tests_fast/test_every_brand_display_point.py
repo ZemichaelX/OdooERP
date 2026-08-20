@@ -40,6 +40,7 @@ MODULES_WITH_TILES = [
     "sapian_demo_pharma",
     "sapian_demo_trader",
     "sapian_dress_rehearsal",
+    "sapian_landing",
     "sapian_sentry",
     "sapian_theme",
     "sapian_theme_auth_signup",
@@ -173,7 +174,7 @@ def test_every_mark_rendering_carries_the_brand_colours():
 
 
 def test_the_display_point_count_is_what_we_claim():
-    """26 display points: 16 tiles, 3 single assets, 2 mark renderings, and the
+    """27 display points: 17 tiles, 3 single assets, 2 mark renderings, and the
     5 surfaces `res.company` feeds — navbar, login, PDF header, e-mail, tab.
 
     Stated as a number so a silent shrink is visible. The company-fed surfaces
@@ -184,4 +185,4 @@ def test_the_display_point_count_is_what_we_claim():
     total = (
         len(MODULES_WITH_TILES) + len(SINGLE_ASSETS) + len(MARK_RENDERINGS) + company_fed_surfaces
     )
-    assert total == 26, "the inventory is %d display points, not 26" % total
+    assert total == 27, "the inventory is %d display points, not 27" % total

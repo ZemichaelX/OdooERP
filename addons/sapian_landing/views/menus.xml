@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <menuitem id="menu_sapian_landing_root"
+              name="Overview"
+              action="action_sapian_landing"
+              web_icon="sapian_landing,static/description/icon.png"
+              sequence="1"/>
+
+    <menuitem id="menu_sapian_filing"
+              name="Filings Submitted"
+              action="action_sapian_filing"
+              parent="l10n_et_reports.menu_l10n_et_reports"
+              sequence="50"/>
+
+    <menuitem id="menu_sapian_filing_deadline"
+              name="Filing Deadlines"
+              action="action_sapian_filing_deadline"
+              parent="l10n_et_reports.menu_l10n_et_reports"
+              sequence="60"/>
+</odoo>

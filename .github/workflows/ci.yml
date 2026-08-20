@@ -111,7 +111,7 @@ jobs:
         # reports "12 passed" and exits 0.
         run: |
           set -euo pipefail
-          MIN_FAST_TESTS=285   # 290 at this commit
+          MIN_FAST_TESTS=300   # 308 at this commit
           pytest tests_fast/ -q | tee /tmp/fast-tests.log
           passed=$(grep -oE '[0-9]+ passed' /tmp/fast-tests.log | tail -1 | grep -oE '^[0-9]+' || true)
           passed=${passed:-0}
@@ -220,9 +220,9 @@ jobs:
             --data-dir=/tmp/odoo-data \
             --addons-path="${GITHUB_WORKSPACE}/addons,${GITHUB_WORKSPACE}/vendor/oca_web,/usr/lib/python3/dist-packages/odoo/addons" \
             -d ci_test \
-            -i sapian_demo_trader,sapian_demo_pharma,sapian_theme,sapian_theme_mail,sapian_theme_auth_signup,web_responsive,sapian_dress_rehearsal,l10n_et_calendar,l10n_et_calendar_account,l10n_et_calendar_purchase \
+            -i sapian_demo_trader,sapian_demo_pharma,sapian_theme,sapian_theme_mail,sapian_theme_auth_signup,web_responsive,sapian_dress_rehearsal,l10n_et_calendar,l10n_et_calendar_account,l10n_et_calendar_purchase,sapian_landing \
             --test-enable \
-            --test-tags '/sapian_core,/l10n_et_base,/l10n_et_payroll,/l10n_et_reports,/vertical_pharma,/sapian_demo_trader,/sapian_demo_pharma,/sapian_theme,/sapian_theme_mail,/sapian_theme_auth_signup,/sapian_dress_rehearsal,/l10n_et_calendar,/l10n_et_calendar_account,/l10n_et_calendar_purchase' \
+            --test-tags '/sapian_core,/l10n_et_base,/l10n_et_payroll,/l10n_et_reports,/vertical_pharma,/sapian_demo_trader,/sapian_demo_pharma,/sapian_theme,/sapian_theme_mail,/sapian_theme_auth_signup,/sapian_dress_rehearsal,/l10n_et_calendar,/l10n_et_calendar_account,/l10n_et_calendar_purchase,/sapian_landing' \
             --workers=0 --max-cron-threads=0 \
             --stop-after-init --log-level=test 2>&1 | tee /tmp/odoo-test.log
           # `set -o pipefail` already makes a non-zero odoo exit fail this step.
@@ -1600,6 +1600,130 @@ jobs:
             exit 1
           fi
           echo "OK — ${RAN} tests, and the same probe went from $(grep -o 'leaks=[0-9]*' /tmp/mail-red.log | tail -1) to leaks=0 on one database."
+
+  landing-page:
+    name: The landing page agrees with its reports
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # THREE THINGS, and the first is the one that makes the other two mean
+    # something.
+    #
+    # 1. THE COMPARISON HAD SOMETHING TO COMPARE. Every figure test passes on a
+    #    company that has posted nothing — 0.0 == 0.0, five times — and it MUST,
+    #    because the page has to be right on an empty tenant too. So "was this
+    #    run meaningful" is a fact about the database, and the probe asserts it
+    #    here: at least three figures available AND non-zero on the demo trader,
+    #    whose golden month is July 2026.
+    # 2. Every figure equals its source report, and every absent figure says
+    #    why. Run against that same populated database.
+    # 3. The grid button toggles BACK to the landing page — measured in Chrome,
+    #    because the defect is in a click handler and nothing in Python can see
+    #    which branch of it ran.
+    container:
+      image: odoo:19.0@sha256:e415f9924395e7521245813135112f264b9222bcde3b1d3c2ee9ff073081540a
+      options: --user root
+    services:
+      db:
+        image: postgres:16@sha256:33f923b05f64ca54ac4401c01126a6b92afe839a0aa0a52bc5aeb5cc958e5f20
+        env:
+          POSTGRES_USER: odoo
+          POSTGRES_PASSWORD: odoo
+          POSTGRES_DB: postgres
+        options: >-
+          --health-cmd "pg_isready -U odoo"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install headless Chrome and websocket-client
+        shell: bash
+        run: |
+          set -euo pipefail
+          apt-get update -qq
+          apt-get install -y -qq chromium >/dev/null
+          pip install --quiet --break-system-packages websocket-client
+          chromium --version
+
+      - name: Figures agree with their reports, on a tenant that has data
+        shell: bash
+        run: |
+          set -uo pipefail
+          mkdir -p /tmp/odoo-data
+          ARGS="--db_host=db --db_port=5432 --db_user=odoo --db_password=odoo
+                --data-dir=/tmp/odoo-data
+                --addons-path=${GITHUB_WORKSPACE}/addons,${GITHUB_WORKSPACE}/vendor/oca_web,/usr/lib/python3/dist-packages/odoo/addons
+                --workers=0 --max-cron-threads=0 --stop-after-init"
+
+          odoo ${ARGS} -d ci_landing -i base --log-level=warn
+          odoo ${ARGS} -d ci_landing -i sapian_demo_trader,sapian_landing,web_responsive \
+            --log-level=warn 2>&1 | tail -5
+
+          # ---- 1. was there anything to compare? ------------------------
+          odoo shell ${ARGS} -d ci_landing --no-http --log-level=warn \
+            < "${GITHUB_WORKSPACE}/scripts/ci_landing_probe.py" 2>&1 | tee /tmp/landing-probe.log
+          grep -q "SAPIAN-LANDING lines=" /tmp/landing-probe.log \
+            || { echo "::error::The landing probe never reported. That is ABORTED, not a result."; exit 1; }
+          NONZERO=$(sed -n 's/.*nonzero=\([0-9][0-9]*\).*/\1/p' /tmp/landing-probe.log | tail -1)
+          if [ -z "${NONZERO:-}" ] || [ "${NONZERO}" -lt 3 ]; then
+            echo "::error::Only ${NONZERO:-none} figures were available AND non-zero on the demo tenant. The comparison below would pass over a page of zeros."
+            grep "SAPIAN-LANDING" /tmp/landing-probe.log
+            exit 1
+          fi
+          BLANK=$(sed -n 's/.*blank_without_reason=\([0-9][0-9]*\).*/\1/p' /tmp/landing-probe.log | tail -1)
+          if [ "${BLANK:-1}" -ne 0 ]; then
+            echo "::error::${BLANK} figure(s) are absent with no reason given — a blank cell the reader will take for zero."
+            exit 1
+          fi
+          echo "OK — ${NONZERO} real figures on the page, every absent one explained."
+
+          # ---- 2. every figure equals its source ------------------------
+          odoo ${ARGS} -d ci_landing -u sapian_landing \
+            --test-enable --test-tags '/sapian_landing:TestLandingFigures' \
+            --log-level=test 2>&1 | tee /tmp/landing-tests.log
+          grep -q "odoo\.tests\.result:" /tmp/landing-tests.log \
+            || { echo "::error::The figure guard never reported."; exit 1; }
+          if grep -qE "tests\.result: ([1-9][0-9]* failed|0 failed, [1-9][0-9]* error)" /tmp/landing-tests.log; then
+            echo "::error::A figure on the landing page disagrees with the report behind it."
+            exit 1
+          fi
+          RAN=$(sed -n 's/.*tests\.result:.* of \([0-9][0-9]*\) tests.*/\1/p' /tmp/landing-tests.log | tail -1)
+          if [ -z "${RAN:-}" ] || [ "${RAN}" -lt 16 ]; then
+            echo "::error::Expected at least 16 landing tests, the runner reported '${RAN:-none}'."
+            exit 1
+          fi
+          if grep -qE "[1-9][0-9]* skipped" /tmp/landing-tests.log; then
+            echo "::error::A landing test skipped, so it proved nothing:"
+            grep -E "skipped" /tmp/landing-tests.log
+            exit 1
+          fi
+          echo "OK — ${RAN} figure tests."
+
+      - name: The grid button toggles back to the landing page
+        shell: bash
+        run: |
+          set -uo pipefail
+          ARGS="--db_host=db --db_port=5432 --db_user=odoo --db_password=odoo
+                --data-dir=/tmp/odoo-data
+                --addons-path=${GITHUB_WORKSPACE}/addons,${GITHUB_WORKSPACE}/vendor/oca_web,/usr/lib/python3/dist-packages/odoo/addons
+                --workers=0 --max-cron-threads=0 --stop-after-init"
+          odoo ${ARGS} -d ci_landing -u sapian_landing \
+            --test-enable --test-tags '/sapian_landing:TestGridTogglesBackToTheLanding' \
+            --log-level=test 2>&1 | tee /tmp/landing-grid.log
+
+          grep -q "odoo\.tests\.result:" /tmp/landing-grid.log \
+            || { echo "::error::The grid test never reported. That is ABORTED, not red."; exit 1; }
+          if grep -qE "tests\.result: ([1-9][0-9]* failed|0 failed, [1-9][0-9]* error)" /tmp/landing-grid.log; then
+            echo "::error::The grid button does not toggle back to the landing page."
+            exit 1
+          fi
+          # THE BROWSER'S OWN LINE. A `-standard` test that was never selected
+          # reports a clean result over zero tests, and this is the only thing
+          # that distinguishes "it toggled" from "it never ran".
+          grep -q "SAPIAN-GRID toggled=2 landed=overview" /tmp/landing-grid.log \
+            || { echo "::error::The browser never reported the toggle, so nothing was measured."; exit 1; }
+          echo "OK — the launcher opens over the overview and closes back onto it."
 
   auth-controls-palette:
     name: Every auth control is in the palette

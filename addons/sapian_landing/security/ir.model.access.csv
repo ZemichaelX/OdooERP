@@ -1,0 +1,8 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_sapian_landing_user,sapian.landing user,model_sapian_landing,base.group_user,1,1,1,1
+access_sapian_landing_line_user,sapian.landing.line user,model_sapian_landing_line,base.group_user,1,1,1,1
+access_sapian_filing_invoice,sapian.filing invoice,model_sapian_filing,account.group_account_invoice,1,1,1,0
+access_sapian_filing_manager,sapian.filing manager,model_sapian_filing,account.group_account_manager,1,1,1,1
+access_sapian_filing_user,sapian.filing read,model_sapian_filing,base.group_user,1,0,0,0
+access_sapian_filing_deadline_manager,sapian.filing.deadline manager,model_sapian_filing_deadline,account.group_account_manager,1,1,1,1
+access_sapian_filing_deadline_user,sapian.filing.deadline read,model_sapian_filing_deadline,base.group_user,1,0,0,0
