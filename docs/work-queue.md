@@ -36,9 +36,9 @@ block on it, and never guess it into code.
 | 3 | **Account types** — nine accounts, three-digit rules | **DONE** — PR #53 merged |
 | 4 | **Profit and loss** | **DONE** — merged, both checks proved red |
 | 5 | **Balance sheet** | **DONE** — both new checks proved red |
-| 6 | #50 — diagnose before fixing | todo |
-| 7 | #49 — write-tripwire out, fix order-independent | todo |
-| 8 | Palette additions | todo |
+| 6 | #50 — diagnose before fixing | **DONE** — merged as `5f21188` |
+| 7 | #49 — write-tripwire out, fix order-independent | **DONE** — merged as `1b87105` |
+| 8 | Palette additions | **DONE** — PR #73 merged as `95ad144` |
 | 9 | PR 4 — the four remaining "Powered by Odoo" mails | todo |
 | 10 | Landing slot and grid toggle — Phase A discovery first | todo |
 | 11 | Branch cleanup — 35 remote branches | **DONE** — 33 deleted, 7 live branches remain |
@@ -47,6 +47,18 @@ block on it, and never guess it into code.
 ## Items 0 and 12: the runner decision, settled — do not re-litigate
 
 Recorded here so no future session reopens it from first principles.
+
+**Where the runner-only work lives now (20 Aug).** PR #57 was closed as obsolete
+once the repository went public and all ten jobs returned to `ubuntu-latest`.
+Everything in it that is useful on hosted runners had already landed on master —
+`paths-ignore` with its negations, the concurrency block, `push` on master only,
+and `PYTHONDONTWRITEBYTECODE`, which is kept precisely because it is load-bearing
+on the fallback. **One piece never landed and is not lost:** the workspace-reclaim
+step, which stops root-owned `.git` and `__pycache__` wedging the runner
+permanently the first time a `container:` job checks out before the lint job. It
+is inert on a hosted runner and matters only if the fallback is used again, so it
+stays on the branch `claude/ci-self-hosted-runner` — **do not delete that
+branch.** Re-registering the runner means taking that step with it.
 
 **What happened.** On 18 August the account's GitHub-hosted Actions minutes hit
 2,000 of 2,000, with a reset on 1 September. CI could not run at all, and CI is
@@ -286,13 +298,44 @@ Remove the write-tripwire probe from **shipping** code, and make the fix
 27/30 across identical runs. **The guard must force `mail_bot` to load after us,
 not hope for it.**
 
-### 8. PALETTE ADDITIONS — one PR
+### 8. PALETTE ADDITIONS — DONE, PR #73 (`95ad144`)
 
-Focus ring and outline inside `.o_sapian_auth`, outline on "Choose a user", and
-the property guard **enumerating every interactive control**. It must run on a
-page **with a stored user list**, or it cannot see the element that started this
-(register entry 1). Fix the CDP `TimeoutError` that made the first attempt
-establish nothing — an attempt that establishes nothing is rule 3.
+**What it turned out to be: a guard that had never run and could not fail, hiding
+one real leak** — a purple focus ring on the email input of `/web/reset_password`,
+while three brand checks beside it reported the page clean because they measure
+the sign-in button.
+
+`TestEveryControlIsInThePalette` existed already, and every part of it was
+inert. It was tagged `-standard, sapian_palette` and **nothing in the repository
+selected that tag** — its own docstring claimed a CI job grepped for its output,
+and that job did not exist. Had it run, it could not have failed: the JavaScript
+built a report and logged `test successful` unconditionally. Had it been able to
+fail, it would not have seen this: it enumerated `a, button, .btn,
+input[type=submit], [role=button], summary` (no plain inputs) and read `color`
+and `background-color` only (a focus ring is `box-shadow` and `border-color`).
+
+Four ways to be inert, in one guard, all of them invisible while the page was
+visibly wrong.
+
+The rebuilt guard then passed for four MORE wrong reasons before it was
+trustworthy — wrong database (no `website`, so no `html_editor`, so nothing
+could be purple), `/web/reset_password` never visited (lost `post_install`), a
+coverage assertion satisfied by a passkey link carrying the same Bootstrap class
+as the user switcher, and a CI floor met by Odoo echoing the guard's own source
+text. Each was found by reading a green run's log rather than accepting it.
+
+Final measurement, on `sapian_theme, auth_signup, website, website_sale`, both
+pages required by name: **11 controls, 119 control-states, 1 foreign** before
+the fix, **0 foreign** after. The stored-user list renders and is expanded, so
+"Choose a user" and its rows are audited — the element that started this.
+
+The fix is real declarations, not variable overrides: Bootstrap compiles the
+form-control focus ring from Sass variables at BUILD time, so with `website`
+installed there is nothing to override at runtime. Checkbox rules in the same
+block are **prophylactic** — no checkbox renders on either page today.
+
+The CDP `TimeoutError` from the first attempt never recurred; the failures that
+did occur were the four above, and all were diagnosed rather than re-run.
 
 ### 9. PR 4 — the four remaining "Powered by Odoo" mails
 
