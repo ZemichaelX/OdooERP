@@ -69,6 +69,7 @@ MODULES = [
     "sapian_demo_pharma",
     "sapian_demo_trader",
     "sapian_dress_rehearsal",
+    "sapian_landing",
     "sapian_sentry",
     "sapian_theme",
     "sapian_theme_auth_signup",

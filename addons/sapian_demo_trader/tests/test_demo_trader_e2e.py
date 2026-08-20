@@ -4,7 +4,7 @@
 Provisions a tenant through the REAL onboarding wizard and REAL business flows
 (quotation → delivery → invoice, PO → receipt → bill, payroll batch), then
 asserts every hand-computed month total and that all four statutory reports
-tie out to the GL. Numbers (July 2026):
+tie out to the GL. Numbers (the newest trading month, whichever it is):
 
 - Sales: 35,200 (Mebrat, 40 sheets G32) + 80,100 (Abyssinia, rebar+HCB) = 115,300
   → output VAT 17,295
@@ -24,6 +24,7 @@ The payroll figures are independent of the catalogue and do not move with it.
 """
 
 from odoo import fields
+from odoo.addons.sapian_demo_trader.reference import demo_calendar
 from odoo.tests import TransactionCase, tagged
 
 from odoo.addons.sapian_core.models.sapian_module_catalog import SapianModuleCatalog
@@ -41,6 +42,21 @@ class TestDemoTraderE2E(TransactionCase):
             company_name="E2E Trading PLC"
         )
         cls.env = cls.env(context=dict(cls.env.context, allowed_company_ids=cls.company.ids))
+        # COMPUTED, like the tenant's own dates. A literal month here would
+        # assert the defect this change removed — see reference/demo_calendar.py.
+        cls.calendar = demo_calendar.demo_calendar()
+        cls.period = tuple(demo_calendar.iso(day) for day in cls.calendar["current"])
+
+    def _in_the_newest_month(self, field="invoice_date"):
+        """Domain terms scoping a search to the month these goldens describe.
+
+        EVERY GOLDEN BELOW IS ONE MONTH'S. They used to search across all time
+        and get away with it because the tenant only ever traded in one month;
+        now that it trades in three, an unscoped search silently answers a
+        different question — four invoices where the golden names two — and the
+        figure that comes back is not wrong so much as not the one asked for.
+        """
+        return [(field, ">=", self.period[0]), (field, "<=", self.period[1])]
 
     def _report(self, model_name):
         return (
@@ -49,8 +65,8 @@ class TestDemoTraderE2E(TransactionCase):
             .create(
                 {
                     "company_id": self.company.id,
-                    "date_from": "2026-07-01",
-                    "date_to": "2026-07-31",
+                    "date_from": self.period[0],
+                    "date_to": self.period[1],
                 }
             )
         )
@@ -93,6 +109,7 @@ class TestDemoTraderE2E(TransactionCase):
                 ("company_id", "=", self.company.id),
                 ("move_type", "=", "out_invoice"),
                 ("state", "=", "posted"),
+                *self._in_the_newest_month(),
             ]
         )
         self.assertEqual(len(invoices), 2)
@@ -150,11 +167,17 @@ class TestDemoTraderE2E(TransactionCase):
                 ("company_id", "=", self.company.id),
                 ("move_type", "=", "in_invoice"),
                 ("state", "=", "posted"),
+                *self._in_the_newest_month(),
             ]
         )
+        # SUMMED, not assigned. `wht_by_kind[kind] = line.credit` kept only the
+        # LAST line of each kind, which was invisible while every kind had
+        # exactly one line and reported 18,000 for a 4,500 golden the moment a
+        # second punitive bill existed. A total is what the sentence means.
         wht_by_kind = {}
         for line in bills.line_ids.filtered(lambda line: line.tax_line_id.l10n_et_wht_kind):
-            wht_by_kind[line.tax_line_id.l10n_et_wht_kind] = line.credit
+            kind = line.tax_line_id.l10n_et_wht_kind
+            wht_by_kind[kind] = wht_by_kind.get(kind, 0.0) + line.credit
         self.assertEqual(
             wht_by_kind,
             {"goods": 14484.0, "punitive": 4500.0, "foreign_digital": 1200.0},
@@ -185,7 +208,13 @@ class TestDemoTraderE2E(TransactionCase):
         Journal = gross 58,300 + employer pension 6,193 = 64,493, which must
         equal PAYE 11,525 + pension payable 10,134 + net payable 42,834.
         """
-        run = self.env["l10n.et.payroll.run"].search([("company_id", "=", self.company.id)])
+        run = self.env["l10n.et.payroll.run"].search(
+            [
+                ("company_id", "=", self.company.id),
+                *self._in_the_newest_month("date_from"),
+            ]
+        )
+        self.assertEqual(len(run), 1, "one payroll run per month, and this is the newest")
         self.assertEqual(run.state, "done")
         self.assertEqual(run.total_gross, 58300.0)
         self.assertEqual(run.total_paye, 11525.0)
@@ -219,10 +248,10 @@ class TestDemoTraderE2E(TransactionCase):
         bands = self.env["l10n.et.paye.band"].search(
             [
                 ("company_id", "=", self.company.id),
-                ("effective_from", "<=", "2026-07-31"),
+                ("effective_from", "<=", self.period[1]),
                 "|",
                 ("effective_to", "=", False),
-                ("effective_to", ">=", "2026-07-01"),
+                ("effective_to", ">=", self.period[0]),
             ]
         )
         self.assertTrue(bands, "no PAYE bands configured; this test would prove nothing")
@@ -331,7 +360,7 @@ class TestDemoTraderE2E(TransactionCase):
         # presenter improvising a cash receipt on one of these is never blocked
         # on camera. The already-invoiced July flow is not held to it (the
         # Abyssinia credit sale is 92,115); see demo_catalogue.QUOTATIONS.
-        cap = self.env["l10n.et.cash.cap.config"]._get_config(self.company, "2026-07-31")
+        cap = self.env["l10n.et.cash.cap.config"]._get_config(self.company, self.period[1])
         self.assertTrue(cap, "no cash cap configured; this check would prove nothing")
         open_orders = orders.filtered(lambda order: not order.invoice_ids)
         for order in open_orders:
@@ -363,9 +392,9 @@ class TestDemoTraderE2E(TransactionCase):
         self.assertTrue(orders, "no orders to check")
         stray = orders.filtered(
             lambda order: not (
-                fields.Date.to_date("2026-07-01")
+                fields.Date.to_date(self.period[0])
                 <= fields.Date.to_date(order.date_order)
-                <= fields.Date.to_date("2026-07-31")
+                <= fields.Date.to_date(self.period[1])
             )
         )
         self.assertFalse(
@@ -458,7 +487,15 @@ class TestDemoTraderE2E(TransactionCase):
         self.assertIn("N/A (foreign)", html)
         self.assertIn("20184.00", html)
 
-        run = self.env["l10n.et.payroll.run"].search([("company_id", "=", self.company.id)])
+        run = self.env["l10n.et.payroll.run"].search(
+            [
+                ("company_id", "=", self.company.id),
+                *self._in_the_newest_month("date_from"),
+            ]
+        )
+        # ONE month's declaration. Rendering all three and grepping for one
+        # month's PAYE would pass on a report that had the wrong month on it.
+        self.assertEqual(len(run), 1)
         html = render("l10n_et_payroll.report_paye_declaration", run.ids)[0].decode()
         self.assertIn("11,525", html)
         html = render("l10n_et_payroll.report_pension_schedule", run.ids)[0].decode()
@@ -540,16 +577,26 @@ class TestDemoTraderE2E(TransactionCase):
         )
 
     def test_demo_provision_idempotent(self):
-        """Provisioning again with the same name is a no-op."""
+        """Provisioning again with the same name is a no-op.
+
+        MEASURED AS "UNCHANGED", not as a literal count. `== 1` was a second
+        statement of how many months the demo trades, in a file that has no
+        business knowing: it went red at `3 != 1` when the tenant grew two more
+        months, and it would have gone red again at every later change to the
+        calendar while the thing it checks — that nothing is created twice —
+        stayed true throughout.
+        """
+        domain = [("company_id", "=", self.company.id)]
+        before = self.env["l10n.et.payroll.run"].search_count(domain)
+        self.assertTrue(before, "the tenant was provisioned with no payroll at all")
         again = self.env["sapian.demo.trader"]._provision_demo_tenant(
             company_name="E2E Trading PLC"
         )
         self.assertEqual(again, self.company)
         self.assertEqual(
-            self.env["l10n.et.payroll.run"].search_count(
-                [("company_id", "=", self.company.id)]
-            ),
-            1,
+            self.env["l10n.et.payroll.run"].search_count(domain),
+            before,
+            "provisioning twice created a second set of payroll runs",
         )
 
     def test_multi_uom_setting_is_enabled(self):

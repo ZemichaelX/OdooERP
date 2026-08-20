@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- THE PAGE. Compliance on top, the money underneath — the order is the
+         decision, not a layout preference: what is owed to the Ministry of
+         Revenues is the thing that has a deadline attached, and a deadline is
+         the only figure here that gets worse while you are not looking. -->
+
+    <record id="view_sapian_landing_line_list" model="ir.ui.view">
+        <field name="name">sapian.landing.line.list</field>
+        <field name="model">sapian.landing.line</field>
+        <field name="arch" type="xml">
+            <list create="false" delete="false" edit="false" class="o_sapian_landing_lines">
+                <field name="label" string="Figure"/>
+                <!-- The amount and the reason share the row: a figure that is
+                     not available shows WHY in the same place the number would
+                     have been, so the eye never lands on an empty cell and
+                     reads it as nought. -->
+                <field name="value" widget="monetary" invisible="not available"/>
+                <field name="unavailable_reason" string="" invisible="available"/>
+                <field name="currency_id" column_invisible="True"/>
+                <field name="available" column_invisible="True"/>
+                <field name="deadline" optional="show"/>
+                <field name="status" widget="badge"
+                       decoration-danger="status == 'late'"
+                       decoration-warning="status == 'due'"
+                       decoration-success="status == 'filed'"
+                       decoration-muted="status == 'unknown'"/>
+                <button name="action_open_source" type="object" icon="fa-external-link"
+                        string="Open the report" title="Open the report this figure comes from"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_sapian_landing_check_list" model="ir.ui.view">
+        <field name="name">sapian.landing.line.check.list</field>
+        <field name="model">sapian.landing.line</field>
+        <field name="arch" type="xml">
+            <list create="false" delete="false" edit="false"
+                  decoration-danger="not check_ok">
+                <field name="label" string="Check"/>
+                <field name="check_ok" string="Ties" widget="boolean_toggle" readonly="1"/>
+                <field name="detail" string="Detail"/>
+                <button name="action_open_source" type="object" icon="fa-external-link"
+                        string="Open the report" title="Open the report this check comes from"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_sapian_landing_money_list" model="ir.ui.view">
+        <field name="name">sapian.landing.line.money.list</field>
+        <field name="model">sapian.landing.line</field>
+        <field name="arch" type="xml">
+            <list create="false" delete="false" edit="false">
+                <field name="label" string="Figure"/>
+                <field name="value" widget="monetary" invisible="not available"/>
+                <field name="unavailable_reason" string="" invisible="available"/>
+                <field name="currency_id" column_invisible="True"/>
+                <field name="available" column_invisible="True"/>
+                <button name="action_open_source" type="object" icon="fa-external-link"
+                        string="Open the report" title="Open the report this figure comes from"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_sapian_landing_form" model="ir.ui.view">
+        <field name="name">sapian.landing.form</field>
+        <field name="model">sapian.landing</field>
+        <field name="arch" type="xml">
+            <form create="false" edit="false" class="o_sapian_landing">
+                <sheet>
+                    <div class="oe_title">
+                        <h1><field name="company_id" readonly="1" options="{'no_open': True}"/></h1>
+                        <h2>
+                            <span>Filing period </span>
+                            <field name="period_label" readonly="1" class="oe_inline"/>
+                        </h2>
+                    </div>
+                    <group>
+                        <field name="date_from" readonly="1"/>
+                        <field name="date_to" readonly="1"/>
+                        <field name="currency_id" invisible="1"/>
+                    </group>
+
+                    <separator string="Due to the Ministry of Revenues"/>
+                    <field name="compliance_line_ids" readonly="1" nolabel="1"
+                           context="{'list_view_ref': 'sapian_landing.view_sapian_landing_line_list'}"/>
+
+                    <separator string="What does not reconcile"/>
+                    <field name="reconciliation_line_ids" readonly="1" nolabel="1"
+                           context="{'list_view_ref': 'sapian_landing.view_sapian_landing_check_list'}"/>
+
+                    <separator string="The business"/>
+                    <field name="business_line_ids" readonly="1" nolabel="1"
+                           context="{'list_view_ref': 'sapian_landing.view_sapian_landing_money_list'}"/>
+
+                    <!-- Said on the page, not only in the README: the deadline
+                         rule has not been checked against a current schedule,
+                         and an operator planning a filing needs to know that
+                         before they plan it. -->
+                    <div class="text-muted mt-3">
+                        <i class="fa fa-info-circle" role="img" aria-label="Note"/>
+                        <span> Deadlines come from the filing rules under Accounting, and the
+                        seeded 30-day window is unverified against a current Ministry of
+                        Revenues schedule. Correct it there and this page follows.</span>
+                    </div>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_sapian_landing" model="ir.actions.server">
+        <field name="name">Overview</field>
+        <field name="model_id" ref="model_sapian_landing"/>
+        <field name="state">code</field>
+        <!-- A SERVER ACTION, because the page must be built for the month it is
+             OPENED in. An act_window pinned to a record would show whichever
+             month it was first opened in, for ever. -->
+        <field name="code">action = model.action_open_landing()</field>
+    </record>
+
+</odoo>

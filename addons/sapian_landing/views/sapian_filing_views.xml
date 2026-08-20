@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="view_sapian_filing_list" model="ir.ui.view">
+        <field name="name">sapian.filing.list</field>
+        <field name="model">sapian.filing</field>
+        <field name="arch" type="xml">
+            <list editable="bottom">
+                <field name="filing_key"/>
+                <field name="period_start"/>
+                <field name="period_end"/>
+                <field name="filed_on"/>
+                <field name="reference"/>
+                <field name="filed_by_id" optional="hide"/>
+                <field name="company_id" groups="base.group_multi_company"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="action_sapian_filing" model="ir.actions.act_window">
+        <field name="name">Filings Submitted</field>
+        <field name="res_model">sapian.filing</field>
+        <field name="view_mode">list</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">Record a return once it has gone in</p>
+            <p>Nothing else in SapianERP knows that a declaration was submitted —
+            a posted payroll run is not a filing, and a printed VAT declaration is
+            not one either. Recording it here is what turns "late" into "filed"
+            on the overview.</p>
+        </field>
+    </record>
+
+    <record id="view_sapian_filing_deadline_list" model="ir.ui.view">
+        <field name="name">sapian.filing.deadline.list</field>
+        <field name="model">sapian.filing.deadline</field>
+        <field name="arch" type="xml">
+            <list editable="bottom">
+                <field name="filing_key"/>
+                <field name="effective_from"/>
+                <field name="days_after_period_end"/>
+                <field name="source_note"/>
+                <field name="company_id" groups="base.group_multi_company"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="action_sapian_filing_deadline" model="ir.actions.act_window">
+        <field name="name">Filing Deadlines</field>
+        <field name="res_model">sapian.filing.deadline</field>
+        <field name="view_mode">list</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">When each return is due</p>
+            <p>Effective-dated on purpose: correcting a deadline must never move a
+            period that was already assessed against the old rule. The seeded
+            30-day window is UNVERIFIED against a current Ministry of Revenues
+            schedule — correct it here rather than in code.</p>
+        </field>
+    </record>
+
+</odoo>
