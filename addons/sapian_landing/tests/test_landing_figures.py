@@ -475,7 +475,7 @@ class TestLandingFigures(TransactionCase):
                 "company_id": company.id,
                 "filing_key": "paye",
                 "effective_from": date(2000, 1, 1),
-                "window": filing_status.WINDOW_DAYS,
+                "deadline_window": filing_status.WINDOW_DAYS,
                 "days_after_period_end": 30,
             }
         )

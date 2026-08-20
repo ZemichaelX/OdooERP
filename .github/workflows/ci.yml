@@ -1753,7 +1753,7 @@ jobs:
                 --addons-path=${GITHUB_WORKSPACE}/addons,${GITHUB_WORKSPACE}/vendor/oca_web,/usr/lib/python3/dist-packages/odoo/addons
                 --workers=0 --max-cron-threads=0 --stop-after-init"
 
-          echo 'rule = env.ref("sapian_landing.deadline_paye"); rule.sudo().write({"window": "days", "days_after_period_end": 30}); env["ir.module.module"].sudo().search([("name", "=", "sapian_landing")]).write({"latest_version": "19.0.1.0.0"}); env.cr.commit(); print("SAPIAN-MIGRATE before window=%s days=%s" % (rule.window, rule.days_after_period_end))' \
+          echo 'rule = env.ref("sapian_landing.deadline_paye"); rule.sudo().write({"deadline_window": "days", "days_after_period_end": 30}); env["ir.module.module"].sudo().search([("name", "=", "sapian_landing")]).write({"latest_version": "19.0.1.0.0"}); env.cr.commit(); print("SAPIAN-MIGRATE before window=%s days=%s" % (rule.deadline_window, rule.days_after_period_end))' \
             | odoo shell ${ARGS} -d ci_landing --no-http --log-level=warn 2>&1 \
             | tee /tmp/migrate-before.log
           grep -q "SAPIAN-MIGRATE before window=days days=30" /tmp/migrate-before.log \
@@ -1764,7 +1764,7 @@ jobs:
           grep -q "employment income tax deadline corrected on 1 row" /tmp/migrate-run.log \
             || { echo "::error::The migration never reported. A migration that did not run is not a migration that passed."; grep -i "migrat" /tmp/migrate-run.log || true; exit 1; }
 
-          echo 'rule = env.ref("sapian_landing.deadline_paye"); print("SAPIAN-MIGRATE after window=%s days=%s" % (rule.window, rule.days_after_period_end))' \
+          echo 'rule = env.ref("sapian_landing.deadline_paye"); print("SAPIAN-MIGRATE after window=%s days=%s" % (rule.deadline_window, rule.days_after_period_end))' \
             | odoo shell ${ARGS} -d ci_landing --no-http --log-level=warn 2>&1 \
             | tee /tmp/migrate-after.log
           grep -q "SAPIAN-MIGRATE after window=end_of_next_period" /tmp/migrate-after.log \

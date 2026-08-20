@@ -21,6 +21,13 @@ answer, and this is not the place to overrule it; it is reported instead.
 CLAUDE.md, "a success signal that can be produced by doing nothing": this logs
 the count it changed AND the count it deliberately left, so an upgrade that
 matched nothing is visible instead of silent.
+
+The column is DOUBLE-QUOTED below even though `deadline_window` needs no
+quoting. The first cut of this file called the field `window`, which is a
+reserved word in PostgreSQL, and the unquoted reference failed with
+`syntax error at or near "window"` — after the ORM had happily created the
+column, because Odoo quotes everything it generates. Quoting by habit in raw SQL
+costs nothing and removes the whole class.
 """
 
 import logging
@@ -41,7 +48,7 @@ def migrate(cr, version):
 
     cr.execute(
         """
-        SELECT d.id, d.window, d.days_after_period_end
+        SELECT d.id, d."deadline_window", d.days_after_period_end
           FROM sapian_filing_deadline d
           JOIN ir_model_data m
             ON m.model = 'sapian.filing.deadline' AND m.res_id = d.id
@@ -58,14 +65,14 @@ def migrate(cr, version):
         return
 
     corrected, left_alone = 0, 0
-    for row_id, window, days in rows:
-        if window != "days" or days != 30:
+    for row_id, deadline_window, days in rows:
+        if deadline_window != "days" or days != 30:
             left_alone += 1
             continue
         cr.execute(
             """
             UPDATE sapian_filing_deadline
-               SET window = 'end_of_next_period',
+               SET "deadline_window" = 'end_of_next_period',
                    days_after_period_end = 0,
                    source_note = %s
              WHERE id = %s

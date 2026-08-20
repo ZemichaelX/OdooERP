@@ -37,13 +37,13 @@
             <list editable="bottom">
                 <field name="filing_key"/>
                 <field name="effective_from"/>
-                <field name="window"/>
+                <field name="deadline_window"/>
                 <!-- Only read for the day-count shape, so it is hidden for the
                      other one rather than showing a 0 somebody would take for
                      "due the same day". -->
                 <field name="days_after_period_end"
                        column_invisible="False"
-                       invisible="window != 'days'"/>
+                       invisible="deadline_window != 'days'"/>
                 <field name="source_note"/>
                 <field name="company_id" groups="base.group_multi_company"/>
             </list>

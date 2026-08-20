@@ -73,7 +73,14 @@ class SapianFilingDeadline(models.Model):
         "before every rule's start has NO deadline and reads as unknown on the "
         "landing page — it does not borrow a rule written later.",
     )
-    window = fields.Selection(
+    # NAMED `deadline_window`, NOT `window`. `WINDOW` is a RESERVED WORD in
+    # PostgreSQL (SQL:2003 window functions), so a column called `window` is
+    # legal only when quoted. Odoo's ORM quotes every identifier it generates,
+    # so the field itself worked and the tests passed — and the first piece of
+    # raw SQL to touch it, the migration next door, died on
+    # `syntax error at or near "window"`. A name that is safe only as long as
+    # nobody writes SQL is a trap with a fuse, not a name.
+    deadline_window = fields.Selection(
         [
             (filing_status.WINDOW_DAYS, "A number of days after the period ends"),
             (
@@ -108,10 +115,10 @@ class SapianFilingDeadline(models.Model):
         ),
     ]
 
-    @api.constrains("days_after_period_end", "window")
+    @api.constrains("days_after_period_end", "deadline_window")
     def _check_days(self):
         for rule in self:
-            if rule.window != filing_status.WINDOW_DAYS:
+            if rule.deadline_window != filing_status.WINDOW_DAYS:
                 continue
             if rule.days_after_period_end <= 0:
                 raise ValidationError(
@@ -120,7 +127,7 @@ class SapianFilingDeadline(models.Model):
 
     @api.model
     def _rule_for(self, filing_key, period_end, company):
-        """The (window, days) in force for ``period_end``, or ``None``.
+        """The (deadline_window, days) in force for ``period_end``, or ``None``.
 
         ``None`` is a real answer and reaches the page as "deadline unknown".
         """
@@ -131,7 +138,7 @@ class SapianFilingDeadline(models.Model):
             rules = self.sudo().search(domain + [("filing_key", "=", filing_key)])
             return filing_status.effective_rule(
                 [
-                    (item.effective_from, (item.window, item.days_after_period_end))
+                    (item.effective_from, (item.deadline_window, item.days_after_period_end))
                     for item in rules
                 ],
                 period_end,
