@@ -114,6 +114,29 @@ class TestLandingFigures(TransactionCase):
 
     # ---- rule 3: clicking opens the report --------------------------------
 
+    def test_every_stored_domain_survives_a_round_trip(self):
+        """`repr` out, `ast.literal_eval` back in — the exact trip it makes.
+
+        A domain holding `date` objects reprs to `datetime.date(2026, 7, 1)`,
+        which is a call and not a literal, and `literal_eval` refuses it. That
+        broke every figure on the page, not just the payroll ones, because
+        `_compute_value` receives the whole recordset and one line's exception
+        took the others with it. Asserted directly so the next domain added here
+        fails on its own terms.
+        """
+        import ast  # noqa: PLC0415 - local, beside its use
+
+        landing = self._landing()
+        domains = landing.line_ids.filtered("source_domain")
+        self.assertTrue(domains, "no line stores a domain, so this proved nothing")
+        for line in domains:
+            with self.subTest(figure=line.key):
+                parsed = ast.literal_eval(line.source_domain)
+                self.assertTrue(
+                    self.env[line.source_model].sudo().search_count(parsed) >= 0,
+                    "the round-tripped domain is not a domain",
+                )
+
     def test_every_line_opens_the_record_it_was_read_from(self):
         landing = self._landing()
         for line in landing.line_ids:

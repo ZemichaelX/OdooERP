@@ -176,11 +176,25 @@ class SapianLanding(models.TransientModel):
         }
 
     def _payroll_run_domain(self):
+        """The month's payroll runs, as a domain that SURVIVES `repr`.
+
+        The dates are ISO strings, not `date` objects, and that is the whole
+        reason this method exists rather than the domain being written inline.
+        The domain is stored on the line so the figure and the click-through
+        open exactly the same set, which means it makes a round trip through
+        `repr` and `ast.literal_eval` — and `repr(date(2026, 7, 1))` is
+        `datetime.date(2026, 7, 1)`, a CALL, which `literal_eval` refuses.
+
+        Found by the guard on its first run, and it presented as eight broken
+        figures rather than one: `_compute_value` is handed the whole recordset,
+        so the exception raised while computing the payroll lines surfaced under
+        whichever subtest happened to touch the field first.
+        """
         self.ensure_one()
         return [
             ("company_id", "=", self.company_id.id),
-            ("date_from", ">=", self.date_from),
-            ("date_to", "<=", self.date_to),
+            ("date_from", ">=", str(self.date_from)),
+            ("date_to", "<=", str(self.date_to)),
         ]
 
     def _has_posted_entries(self):
